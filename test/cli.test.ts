@@ -1,0 +1,60 @@
+import { describe, expect, test } from "bun:test";
+
+async function runCli(args: string[]) {
+	const proc = Bun.spawn(["bun", "run", "src/cli/index.ts", ...args], {
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const stdout = await new Response(proc.stdout).text();
+	const stderr = await new Response(proc.stderr).text();
+	const exitCode = await proc.exited;
+	return { exitCode, stdout, stderr };
+}
+
+describe("cli", () => {
+	test(
+		"exit codes: OK=0, CAUTION/WARNING=1, DANGER=2",
+		async () => {
+			const okResult = await runCli([
+				"analyze",
+				"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+			]);
+			expect(okResult.exitCode).toBe(0);
+
+			const cautionResult = await runCli([
+				"analyze",
+				"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+			]);
+			expect(cautionResult.exitCode).toBe(1);
+
+			const dangerResult = await runCli([
+				"analyze",
+				"0xdAC17F958D2ee523a2206206994597C13D831ec7",
+			]);
+			expect(dangerResult.exitCode).toBe(2);
+		},
+		120000,
+	);
+
+	test(
+		"--chain flag targets the requested network",
+		async () => {
+			const result = await runCli([
+				"analyze",
+				"0x4200000000000000000000000000000000000006",
+				"--chain",
+				"base",
+			]);
+
+			expect(result.exitCode).toBe(0);
+			expect(result.stdout).toContain("Chain: base");
+		},
+		120000,
+	);
+
+	test("invalid addresses return exit code 1", async () => {
+		const result = await runCli(["analyze", "not-an-address"]);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("valid contract address");
+	});
+});

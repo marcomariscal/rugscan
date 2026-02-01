@@ -138,6 +138,9 @@ async function main() {
 		if (result.recommendation === "danger") {
 			process.exit(2);
 		}
+		if (result.recommendation === "warning" || result.recommendation === "caution") {
+			process.exit(1);
+		}
 	} catch (error) {
 		console.error("Analysis failed:", error);
 		process.exit(1);

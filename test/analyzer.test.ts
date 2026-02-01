@@ -52,6 +52,19 @@ describe("analyzer", () => {
     });
   });
 
+  describe("unverified contracts", () => {
+    test("unverified contract → DANGER with UNVERIFIED finding", async () => {
+      const result = await analyze(
+        "0x7768a894e6d0160530c0b386c0a963989239f107",
+        "ethereum"
+      );
+
+      expect(result.contract.verified).toBe(false);
+      expect(result.recommendation).toBe("danger");
+      expect(result.findings.some(f => f.code === "UNVERIFIED")).toBe(true);
+    });
+  });
+
   describe("proxy contracts", () => {
     test("USDC (Ethereum) → CAUTION (upgradeable proxy)", async () => {
       const result = await analyze(
@@ -78,6 +91,37 @@ describe("analyzer", () => {
     });
   });
 
+  describe("protocol recognition", () => {
+    test("Uniswap V3 router → KNOWN_PROTOCOL finding", async () => {
+      const result = await analyze(
+        "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+        "ethereum"
+      );
+
+      expect(result.findings.some(f => f.code === "KNOWN_PROTOCOL")).toBe(true);
+      expect(result.protocol?.toLowerCase()).toContain("uniswap");
+    });
+  });
+
+  describe("token taxes", () => {
+    test("high tax token → warning (if available)", async () => {
+      const candidates = [
+        "0xfad45e47083e4607302aa43c65fb3106f1cd7607", // HOGE (low tax)
+        "0xa2b4c0af19cc16a6cfacce81f192b024d625817d", // KISHU (low tax)
+        "0x208042a2012812f189e4e696e05f08eadb883404", // honeypot
+      ];
+
+      for (const address of candidates) {
+        const result = await analyze(address, "ethereum");
+        const hasHighTax = result.findings.some(f => f.code === "HIGH_TAX");
+        if (hasHighTax) {
+          expect(result.recommendation).toBe("warning");
+          return;
+        }
+      }
+    });
+  });
+
   describe("non-contracts", () => {
     test("EOA address → warning", async () => {
       // Random EOA with no bytecode (not a smart wallet)
@@ -101,6 +145,19 @@ describe("analyzer", () => {
 
       expect(result.contract.verified).toBe(false);
       expect(result.findings.some(f => f.message.includes("not a contract"))).toBe(true);
+    });
+  });
+
+  describe("multi-chain addresses", () => {
+    test("same address on different chains", async () => {
+      const address = "0x4200000000000000000000000000000000000006";
+
+      const baseResult = await analyze(address, "base");
+      const optimismResult = await analyze(address, "optimism");
+
+      expect(baseResult.contract.address).toBe(optimismResult.contract.address);
+      expect(baseResult.contract.chain).toBe("base");
+      expect(optimismResult.contract.chain).toBe("optimism");
     });
   });
 

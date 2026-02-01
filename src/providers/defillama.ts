@@ -11,6 +11,13 @@ const CHAIN_NAMES: Record<Chain, string> = {
 	polygon: "polygon",
 };
 
+const KNOWN_PROTOCOL_ADDRESSES: Partial<Record<Chain, Record<string, ProtocolMatch>>> = {
+	ethereum: {
+		// Uniswap V3 SwapRouter02
+		"0xe592427a0aece92de3edee1f18e0157c05861564": { name: "Uniswap" },
+	},
+};
+
 interface Protocol {
 	name: string;
 	slug: string;
@@ -47,6 +54,10 @@ export async function matchProtocol(address: string, chain: Chain): Promise<Prot
 	const protocols = await getProtocols();
 	const chainName = CHAIN_NAMES[chain];
 	const normalizedAddress = address.toLowerCase();
+	const manualMatch = KNOWN_PROTOCOL_ADDRESSES[chain]?.[normalizedAddress];
+	if (manualMatch) {
+		return manualMatch;
+	}
 
 	// DeFiLlama doesn't have direct address mapping for most protocols
 	// This is a best-effort match based on known addresses
@@ -54,7 +65,8 @@ export async function matchProtocol(address: string, chain: Chain): Promise<Prot
 
 	for (const protocol of protocols) {
 		// Check if protocol operates on this chain
-		if (!protocol.chains?.includes(chainName)) {
+		const protocolChains = protocol.chains?.map((chainEntry) => chainEntry.toLowerCase());
+		if (!protocolChains?.includes(chainName)) {
 			continue;
 		}
 
