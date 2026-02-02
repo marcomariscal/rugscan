@@ -1,4 +1,5 @@
-import { analyze } from "./analyzer";
+import { analyze, determineRecommendation } from "./analyzer";
+import { analyzeCalldata } from "./analyzers/calldata";
 import type { AnalysisResult, Chain, Confidence, Config, Finding, FindingLevel } from "./types";
 import type { AnalyzeResponse, ContractInfo, ScanFinding, ScanInput, ScanResult } from "./schema";
 
@@ -63,8 +64,24 @@ export async function scanWithAnalysis(
 	}
 
 	const analysis = await analyze(targetAddress, chain, options?.config, options?.progress);
-	const response = buildAnalyzeResponse(normalizedInput, analysis, options?.requestId);
-	return { analysis, response };
+	const mergedAnalysis = await mergeCalldataAnalysis(normalizedInput, analysis);
+	const response = buildAnalyzeResponse(normalizedInput, mergedAnalysis, options?.requestId);
+	return { analysis: mergedAnalysis, response };
+}
+
+async function mergeCalldataAnalysis(
+	input: ScanInput,
+	analysis: AnalysisResult,
+): Promise<AnalysisResult> {
+	if (!input.calldata) return analysis;
+	const calldataAnalysis = await analyzeCalldata(input.calldata);
+	if (calldataAnalysis.findings.length === 0) return analysis;
+	const findings = [...analysis.findings, ...calldataAnalysis.findings];
+	return {
+		...analysis,
+		findings,
+		recommendation: determineRecommendation(findings),
+	};
 }
 
 export function buildAnalyzeResponse(
@@ -115,6 +132,8 @@ function mapFindings(findings: Finding[]): ScanFinding[] {
 		code: finding.code,
 		severity: mapFindingLevel(finding.level),
 		message: finding.message,
+		details: finding.details,
+		refs: finding.refs,
 	}));
 }
 

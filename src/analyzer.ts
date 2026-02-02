@@ -372,7 +372,7 @@ function countTokenFindings(tokenSecurity: TokenSecurity | null): number {
 	return count;
 }
 
-function determineRecommendation(findings: Finding[]): Recommendation {
+export function determineRecommendation(findings: Finding[]): Recommendation {
 	const hasDanger = findings.some((f) => f.level === "danger");
 	const hasWarning = findings.some((f) => f.level === "warning");
 	const hasSafe = findings.some((f) => f.level === "safe");

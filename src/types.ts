@@ -28,6 +28,10 @@ export type FindingCode =
 	| "PROXY"
 	| "AI_PARSE_FAILED"
 	| "AI_WARNING"
+	| "CALLDATA_DECODED"
+	| "CALLDATA_UNKNOWN_SELECTOR"
+	| "CALLDATA_SIGNATURES"
+	| "CALLDATA_EMPTY"
 	// Safe
 	| "VERIFIED"
 	| "KNOWN_PROTOCOL";
@@ -68,6 +72,8 @@ export interface Finding {
 	level: FindingLevel;
 	code: FindingCode;
 	message: string;
+	details?: Record<string, unknown>;
+	refs?: string[];
 }
 
 export interface ContractInfo {
