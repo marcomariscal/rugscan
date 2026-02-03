@@ -18,12 +18,29 @@ interface ProtocolOverride {
 
 const KNOWN_PROTOCOL_ADDRESSES: Partial<Record<Chain, Record<string, ProtocolOverride>>> = {
 	ethereum: {
-		// Aave V3 Pool
-		"0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2": { name: "Aave V3", slug: "aave-v3" },
-		// Uniswap V3 SwapRouter02
+		// Uniswap
+		"0x7a250d5630b4cf539739df2c5dacb4c659f2488d": { name: "Uniswap V2", slug: "uniswap-v2" },
 		"0xe592427a0aece92de3edee1f18e0157c05861564": { name: "Uniswap V3", slug: "uniswap-v3" },
-		// Curve 3pool
+		"0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45": { name: "Uniswap V3", slug: "uniswap-v3" },
+		"0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad": { name: "Uniswap", slug: "uniswap" },
+		// Aave
+		"0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2": { name: "Aave V3", slug: "aave-v3" },
+		"0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9": { name: "Aave V2", slug: "aave-v2" },
+		// Curve
 		"0xbebc44782c7db0a1a60cb6fe97d0e3d5c3c9f0fe": { name: "Curve DEX", slug: "curve-dex" },
+		"0x99a58482bd75cbab83b27ec03ca68ff489b5788f": { name: "Curve DEX", slug: "curve-dex" },
+		// 1inch
+		"0x1111111254eeb25477b68fb85ed929f73a960582": { name: "1inch", slug: "1inch-network" },
+		// WETH
+		"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": { name: "WETH", slug: "weth" },
+		// USDC/Circle
+		"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": { name: "Circle USDC", slug: "circle" },
+		// USDT/Tether
+		"0xdac17f958d2ee523a2206206994597c13d831ec7": { name: "Tether USDT", slug: "tether" },
+		// Lido
+		"0xae7ab96520de3a18e5e111b5eaab095312d7fe84": { name: "Lido", slug: "lido" },
+		// Compound
+		"0x3d9819210a31b4961b30ef54be2aed79b9c9cd3b": { name: "Compound", slug: "compound-finance" },
 	},
 };
 
