@@ -23,12 +23,14 @@ export interface ParsedTransfer {
 }
 
 export interface ParsedApproval {
-	standard: "erc20" | "erc721";
+	standard: "erc20" | "erc721" | "erc1155";
 	token: Address;
 	owner: Address;
 	spender: Address;
 	amount?: bigint;
 	tokenId?: bigint;
+	scope?: "token" | "all";
+	approved?: boolean;
 	logIndex: number;
 }
 
@@ -49,6 +51,7 @@ export interface ReadContractClient {
 }
 
 const ERC721_INTERFACE_ID = "0x80ac58cd";
+const ERC1155_INTERFACE_ID = "0xd9b67a26";
 
 const TRANSFER_EVENT: AbiEvent = {
 	anonymous: false,
@@ -80,6 +83,17 @@ const APPROVAL_EVENT_ERC721: AbiEvent = {
 		{ indexed: true, name: "owner", type: "address" },
 		{ indexed: true, name: "approved", type: "address" },
 		{ indexed: true, name: "tokenId", type: "uint256" },
+	],
+};
+
+const APPROVAL_FOR_ALL_EVENT: AbiEvent = {
+	anonymous: false,
+	type: "event",
+	name: "ApprovalForAll",
+	inputs: [
+		{ indexed: true, name: "owner", type: "address" },
+		{ indexed: true, name: "operator", type: "address" },
+		{ indexed: false, name: "approved", type: "bool" },
 	],
 };
 
@@ -122,12 +136,14 @@ const ERC165_ABI: Abi = [
 const TRANSFER_ABI: Abi = [TRANSFER_EVENT];
 const APPROVAL_ERC20_ABI: Abi = [APPROVAL_EVENT_ERC20];
 const APPROVAL_ERC721_ABI: Abi = [APPROVAL_EVENT_ERC721];
+const APPROVAL_FOR_ALL_ABI: Abi = [APPROVAL_FOR_ALL_EVENT];
 const TRANSFER_SINGLE_ABI: Abi = [TRANSFER_SINGLE_EVENT];
 const TRANSFER_BATCH_ABI: Abi = [TRANSFER_BATCH_EVENT];
 
 const TRANSFER_TOPIC = getEventSelector(TRANSFER_EVENT);
 const APPROVAL_ERC20_TOPIC = getEventSelector(APPROVAL_EVENT_ERC20);
 const APPROVAL_ERC721_TOPIC = getEventSelector(APPROVAL_EVENT_ERC721);
+const APPROVAL_FOR_ALL_TOPIC = getEventSelector(APPROVAL_FOR_ALL_EVENT);
 const TRANSFER_SINGLE_TOPIC = getEventSelector(TRANSFER_SINGLE_EVENT);
 const TRANSFER_BATCH_TOPIC = getEventSelector(TRANSFER_BATCH_EVENT);
 
@@ -139,6 +155,8 @@ export async function parseReceiptLogs(
 	const approvals: ParsedApproval[] = [];
 	const notes: string[] = [];
 	let confidence: ConfidenceLevel = "high";
+	const erc721Cache = new Map<Address, boolean | null>();
+	const erc1155Cache = new Map<Address, boolean | null>();
 
 	const rawTransfers: {
 		token: Address;
@@ -191,6 +209,35 @@ export async function parseReceiptLogs(
 				owner,
 				spender: approved,
 				tokenId,
+				scope: "token",
+				logIndex: log.logIndex,
+			});
+			continue;
+		}
+
+		if (topic === APPROVAL_FOR_ALL_TOPIC) {
+			const decoded = decodeLog(APPROVAL_FOR_ALL_ABI, log, "ApprovalForAll");
+			const owner = getAddressArg(decoded?.args, "owner");
+			const operator = getAddressArg(decoded?.args, "operator");
+			const approved = getBoolArg(decoded?.args, "approved");
+			if (!owner || !operator || approved === null) continue;
+			const standard = await resolveApprovalForAllStandard(
+				client,
+				erc721Cache,
+				erc1155Cache,
+				log.address,
+				notes,
+				() => {
+					confidence = "low";
+				},
+			);
+			approvals.push({
+				standard,
+				token: log.address,
+				owner,
+				spender: operator,
+				scope: "all",
+				approved,
 				logIndex: log.logIndex,
 			});
 			continue;
@@ -244,7 +291,6 @@ export async function parseReceiptLogs(
 		}
 	}
 
-	const erc721Cache = new Map<Address, boolean | null>();
 	for (const transfer of rawTransfers) {
 		const supports = await resolveErc721Support(client, erc721Cache, transfer.token, notes);
 		if (supports === null) {
@@ -290,6 +336,41 @@ async function resolveErc721Support(
 	const supports = await supportsInterface(client, address, ERC721_INTERFACE_ID);
 	if (supports === null) {
 		notes.push(`ERC-165 check failed for ${address}; defaulted to ERC-20`);
+	}
+	cache.set(address, supports);
+	return supports;
+}
+
+async function resolveApprovalForAllStandard(
+	client: ReadContractClient,
+	erc721Cache: Map<Address, boolean | null>,
+	erc1155Cache: Map<Address, boolean | null>,
+	address: Address,
+	notes: string[],
+	markLowConfidence: () => void,
+): Promise<"erc721" | "erc1155"> {
+	const erc721 = await resolveErc721Support(client, erc721Cache, address, notes);
+	if (erc721 === true) return "erc721";
+	const erc1155 = await resolveErc1155Support(client, erc1155Cache, address, notes);
+	if (erc1155 === true) return "erc1155";
+	if (erc721 === null || erc1155 === null) {
+		markLowConfidence();
+		notes.push(`ERC-165 check failed for ${address}; defaulted to ERC-721 ApprovalForAll`);
+	}
+	return "erc721";
+}
+
+async function resolveErc1155Support(
+	client: ReadContractClient,
+	cache: Map<Address, boolean | null>,
+	address: Address,
+	notes: string[],
+): Promise<boolean | null> {
+	const cached = cache.get(address);
+	if (cached !== undefined) return cached;
+	const supports = await supportsInterface(client, address, ERC1155_INTERFACE_ID);
+	if (supports === null) {
+		notes.push(`ERC-165 check failed for ${address}; unable to confirm ERC-1155`);
 	}
 	cache.set(address, supports);
 	return supports;
@@ -356,4 +437,11 @@ function getBigIntArrayArg(args: unknown, key: string): bigint[] | null {
 		parsed.push(amount);
 	}
 	return parsed;
+}
+
+function getBoolArg(args: unknown, key: string): boolean | null {
+	if (!isRecord(args)) return null;
+	const value = args[key];
+	if (typeof value !== "boolean") return null;
+	return value;
 }

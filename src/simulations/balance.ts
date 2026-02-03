@@ -1,4 +1,12 @@
-import { type Address, createPublicClient, type Hex, hexToString, http, isAddress } from "viem";
+import {
+	type Address,
+	createPublicClient,
+	decodeAbiParameters,
+	type Hex,
+	hexToString,
+	http,
+	isAddress,
+} from "viem";
 import { decodeKnownCalldata } from "../analyzers/calldata/decoder";
 import { isRecord, toBigInt } from "../analyzers/calldata/utils";
 import { getChainConfig } from "../chains";
@@ -70,24 +78,25 @@ export async function simulateBalance(
 	config?: Config,
 ): Promise<BalanceSimulationResult> {
 	const backend = config?.simulation?.backend ?? "anvil";
+	const hints = buildFailureHints(tx);
 	if (backend !== "anvil") {
-		return simulateHeuristic(tx, chain, "Simulation backend set to heuristic.");
+		return simulateHeuristic(tx, chain, "Simulation backend set to heuristic.", hints);
 	}
 	if (!tx.from || !isAddress(tx.from)) {
-		return simulateHeuristic(tx, chain, "Missing sender address; falling back to heuristic.");
+		return simulateHeuristic(tx, chain, "Missing sender address; falling back to heuristic.", hints);
 	}
 	if (!isAddress(tx.to)) {
-		return simulateHeuristic(tx, chain, "Invalid target address; falling back to heuristic.");
+		return simulateHeuristic(tx, chain, "Invalid target address; falling back to heuristic.", hints);
 	}
 	if (!isHexString(tx.data)) {
-		return simulateHeuristic(tx, chain, "Invalid calldata; falling back to heuristic.");
+		return simulateHeuristic(tx, chain, "Invalid calldata; falling back to heuristic.", hints);
 	}
 
 	try {
 		return await simulateWithAnvil(tx, chain, config);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Anvil simulation failed";
-		return simulateHeuristic(tx, chain, message);
+		return simulateHeuristic(tx, chain, message, hints);
 	}
 }
 
@@ -100,8 +109,14 @@ async function simulateWithAnvil(
 	const client = instance.client;
 	const from = tx.from && isAddress(tx.from) ? tx.from : null;
 	const to = tx.to && isAddress(tx.to) ? tx.to : null;
+	const data = isHexString(tx.data) ? tx.data : "0x";
 	if (!from || !to) {
-		return simulateHeuristic(tx, chain, "Invalid addresses; falling back to heuristic.");
+		return simulateHeuristic(
+			tx,
+			chain,
+			"Invalid addresses; falling back to heuristic.",
+			buildFailureHints(tx),
+		);
 	}
 
 	const notes: string[] = [];
@@ -132,13 +147,34 @@ async function simulateWithAnvil(
 		const nativeBefore = await client.getBalance({ address: from });
 		const preBalances = await readTokenBalances(client, tokenCandidates, from, notes);
 
-		const hash = await client.sendUnsignedTransaction({
-			from,
-			to,
-			data: tx.data,
-			value: txValue,
-		});
-		const receipt = await client.waitForTransactionReceipt({ hash });
+		type Receipt = Awaited<ReturnType<typeof client.waitForTransactionReceipt>>;
+		let receipt: Receipt | null = null;
+		try {
+			const hash = await client.sendUnsignedTransaction({
+				from,
+				to,
+				data,
+				value: txValue,
+			});
+			receipt = await client.waitForTransactionReceipt({ hash });
+		} catch (error) {
+			const reason =
+				(await attemptRevertReason(client, { from, to, data, value: txValue })) ??
+				(error instanceof Error ? error.message : "Simulation failed");
+			return simulateFailure(reason, notes, confidence, buildFailureHints(tx));
+		}
+
+		if (!receipt || receipt.status !== "success") {
+			const reason =
+				(await attemptRevertReason(client, {
+					from,
+					to,
+					data,
+					value: txValue,
+					blockNumber: receipt?.blockNumber,
+				})) ?? "Transaction reverted";
+			return simulateFailure(reason, notes, confidence, buildFailureHints(tx));
+		}
 
 		const parsedLogs = await parseReceiptLogs(receipt.logs, client);
 		notes.push(...parsedLogs.notes);
@@ -191,6 +227,8 @@ async function simulateWithAnvil(
 				spender: approval.spender,
 				amount: approval.amount,
 				tokenId: approval.tokenId,
+				scope: approval.scope,
+				approved: approval.approved,
 			}));
 
 		const gasCost = receipt.gasUsed * receipt.effectiveGasPrice;
@@ -213,7 +251,7 @@ async function simulateWithAnvil(
 		};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Simulation failed";
-		return simulateFailure(message, notes, confidence);
+		return simulateFailure(message, notes, confidence, buildFailureHints(tx));
 	} finally {
 		await client.revert({ id: snapshotId }).catch(() => undefined);
 		await client.stopImpersonatingAccount({ address: from }).catch(() => undefined);
@@ -224,8 +262,9 @@ function simulateFailure(
 	message: string,
 	notes: string[],
 	confidence: ConfidenceLevel,
+	hints: string[] = [],
 ): BalanceSimulationResult {
-	const mergedNotes = [...notes, message];
+	const mergedNotes = [...notes, message, ...hints];
 	return {
 		success: false,
 		revertReason: message,
@@ -240,8 +279,13 @@ function simulateHeuristic(
 	tx: CalldataInput,
 	chain: Chain,
 	reason: string,
+	hints: string[] = [],
 ): BalanceSimulationResult {
-	const notes: string[] = [reason, "Heuristic-only simulation (no Anvil fork)."].filter(Boolean);
+	const notes: string[] = [
+		reason,
+		"Heuristic-only simulation (no Anvil fork).",
+		...hints,
+	].filter(Boolean);
 	const assetChanges: AssetChange[] = [];
 	const approvals: ApprovalChange[] = [];
 
@@ -265,6 +309,7 @@ function simulateHeuristic(
 				owner: from,
 				spender,
 				amount,
+				scope: "token",
 			});
 		}
 
@@ -311,6 +356,7 @@ function simulateHeuristic(
 				owner,
 				spender,
 				amount,
+				scope: "token",
 			});
 		}
 	}
@@ -321,7 +367,8 @@ function simulateHeuristic(
 	}
 
 	return {
-		success: true,
+		success: false,
+		revertReason: reason,
 		nativeDiff,
 		assetChanges,
 		approvals,
@@ -341,6 +388,108 @@ function curatedTokens(chain: Chain): Address[] {
 
 function isHexString(value: string): value is Hex {
 	return /^0x[0-9a-fA-F]*$/.test(value);
+}
+
+function buildFailureHints(tx: CalldataInput): string[] {
+	const hints: string[] = [];
+	if (!tx.from) {
+		hints.push("Hint: missing sender (`from`) address.");
+	}
+	if (!tx.to) {
+		hints.push("Hint: missing target (`to`) address.");
+	}
+	if (!tx.data || tx.data === "0x") {
+		hints.push("Hint: missing calldata (`data`).");
+	}
+	const value = parseValue(tx.value);
+	if (value === null || value === 0n) {
+		hints.push("Hint: transaction value is 0; swaps often require non-zero ETH value.");
+	}
+	return hints;
+}
+
+async function attemptRevertReason(
+	client: {
+		call: (args: {
+			from: Address;
+			to: Address;
+			data: Hex;
+			value?: bigint;
+			blockNumber?: bigint;
+		}) => Promise<unknown>;
+	},
+	args: {
+		from: Address;
+		to: Address;
+		data: Hex;
+		value?: bigint;
+		blockNumber?: bigint;
+	},
+): Promise<string | null> {
+	try {
+		await client.call({
+			from: args.from,
+			to: args.to,
+			data: args.data,
+			value: args.value,
+			blockNumber: args.blockNumber,
+		});
+		return null;
+	} catch (error) {
+		return decodeRevertError(error);
+	}
+}
+
+function decodeRevertError(error: unknown): string | null {
+	const data = extractErrorData(error);
+	if (data) {
+		const selector = data.slice(0, 10).toLowerCase();
+		if (selector === "0x08c379a0") {
+			const encoded = `0x${data.slice(10)}`;
+			try {
+				const decoded = decodeAbiParameters([{ type: "string" }], encoded);
+				const reason = decoded[0];
+				if (typeof reason === "string" && reason.length > 0) {
+					return reason;
+				}
+			} catch {
+				return "Execution reverted";
+			}
+		}
+		if (selector === "0x4e487b71") {
+			const encoded = `0x${data.slice(10)}`;
+			try {
+				const decoded = decodeAbiParameters([{ type: "uint256" }], encoded);
+				const code = decoded[0];
+				if (typeof code === "bigint") {
+					return `Panic(0x${code.toString(16)})`;
+				}
+			} catch {
+				return "Panic";
+			}
+		}
+		return `Custom error ${selector}`;
+	}
+	if (error instanceof Error) {
+		return error.message;
+	}
+	return null;
+}
+
+function extractErrorData(error: unknown): Hex | null {
+	if (!isRecord(error)) return null;
+	if (isHexString(error.data)) return error.data;
+	const cause = error.cause;
+	if (cause) {
+		const nested = extractErrorData(cause);
+		if (nested) return nested;
+	}
+	const errorField = error.error;
+	if (errorField) {
+		const nested = extractErrorData(errorField);
+		if (nested) return nested;
+	}
+	return null;
 }
 
 async function readTokenBalances(

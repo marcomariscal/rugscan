@@ -271,6 +271,31 @@ function formatContractLabel(contract: AnalysisResult["contract"]): string {
 	return contract.name ? cleanLabel(contract.name) : contract.address;
 }
 
+function resolveActionLabel(result: AnalysisResult): string {
+	if (result.intent) return result.intent;
+	const decoded = findDecodedSignature(result.findings);
+	if (decoded) return decoded;
+	return "Unknown action";
+}
+
+function findDecodedSignature(findings: Finding[]): string | null {
+	for (const finding of findings) {
+		if (finding.code !== "CALLDATA_DECODED") continue;
+		if (!finding.details) continue;
+		const details = finding.details;
+		if (!isRecord(details)) continue;
+		const signature = details.signature;
+		if (typeof signature === "string" && signature.length > 0) {
+			return signature;
+		}
+		const functionName = details.functionName;
+		if (typeof functionName === "string" && functionName.length > 0) {
+			return functionName;
+		}
+	}
+	return null;
+}
+
 function recommendationRiskLabel(recommendation: Recommendation): string {
 	if (recommendation === "danger") return "HIGH";
 	if (recommendation === "warning") return "MEDIUM";
@@ -316,12 +341,24 @@ function renderBalanceSection(result: AnalysisResult, hasCalldata: boolean): str
 		return lines;
 	}
 	if (!result.simulation) {
-		lines.push(COLORS.dim(" - Simulation pending"));
+		lines.push(COLORS.warning(" - Simulation failed (not run)"));
 		return lines;
 	}
 	if (!result.simulation.success) {
 		const detail = result.simulation.revertReason ? ` (${result.simulation.revertReason})` : "";
 		lines.push(COLORS.warning(` - Simulation failed${detail}`));
+		const hints = extractSimulationHints(result.simulation.notes);
+		for (const hint of hints) {
+			lines.push(COLORS.warning(` - ${hint}`));
+		}
+		const partialChanges = buildBalanceChangeItems(result.simulation, result.contract.chain);
+		if (partialChanges.length > 0) {
+			const ordered = orderBalanceChanges(partialChanges);
+			lines.push(COLORS.warning(" - Partial estimates:"));
+			lines.push(COLORS.warning(formatBalanceChangeLine(ordered)));
+			return lines;
+		}
+		lines.push(COLORS.warning(" - Balance changes unknown"));
 		return lines;
 	}
 
@@ -338,8 +375,13 @@ function renderBalanceSection(result: AnalysisResult, hasCalldata: boolean): str
 	return lines;
 }
 
-function buildApprovalItems(result: AnalysisResult): Array<{ text: string; isUnlimited: boolean }> {
-	const items = new Map<string, { text: string; isUnlimited: boolean }>();
+function buildApprovalItems(
+	result: AnalysisResult,
+): Array<{ text: string; isUnlimited: boolean; source: "calldata" | "simulation" }> {
+	const items = new Map<
+		string,
+		{ text: string; isUnlimited: boolean; source: "calldata" | "simulation" }
+	>();
 	const tokenFallback = result.contract.name ?? shortenAddress(result.contract.address);
 
 	// From calldata findings
@@ -349,21 +391,19 @@ function buildApprovalItems(result: AnalysisResult): Array<{ text: string; isUnl
 		const spender = details && typeof details.spender === "string" ? details.spender : undefined;
 		const spenderLabel = spender ? shortenAddress(spender) : "unknown";
 		const key = `${tokenFallback.toLowerCase()}|${spenderLabel.toLowerCase()}`;
-		items.set(key, { text: `${tokenFallback}: UNLIMITED to ${spenderLabel}`, isUnlimited: true });
+		items.set(key, {
+			text: `${tokenFallback}: UNLIMITED to ${spenderLabel}`,
+			isUnlimited: true,
+			source: "calldata",
+		});
 	}
 
 	// From simulation
 	if (result.simulation) {
 		for (const approval of result.simulation.approvals) {
-			const tokenLabel = shortenAddress(approval.token);
-			const spenderLabel = shortenAddress(approval.spender);
-			const key = `${tokenLabel.toLowerCase()}|${spenderLabel.toLowerCase()}`;
-			const isUnlimited = approval.amount === MAX_UINT256;
-			const amountLabel =
-				isUnlimited || approval.amount === undefined
-					? "UNLIMITED"
-					: formatApprovalAmount(approval.amount, 18);
-			items.set(key, { text: `${tokenLabel}: ${amountLabel} to ${spenderLabel}`, isUnlimited });
+			const item = formatSimulationApproval(approval);
+			const key = `${item.key.toLowerCase()}`;
+			items.set(key, { text: item.text, isUnlimited: item.isUnlimited, source: "simulation" });
 		}
 	}
 
@@ -389,6 +429,14 @@ function renderApprovalsSection(result: AnalysisResult, hasCalldata: boolean): s
 	}
 
 	const approvals = buildApprovalItems(result);
+	const simulationFailed = !result.simulation || !result.simulation.success;
+	if (simulationFailed) {
+		if (approvals.length === 0) {
+			lines.push(COLORS.warning(" - Approvals unknown (simulation failed)"));
+			return lines;
+		}
+		lines.push(COLORS.warning(" - Partial approvals (simulation failed):"));
+	}
 	if (approvals.length === 0) {
 		lines.push(COLORS.dim(" - None detected"));
 		return lines;
@@ -422,7 +470,7 @@ export function renderResultBox(
 		result.protocolMatch?.slug && result.protocolMatch.slug !== protocol
 			? COLORS.dim(` (${result.protocolMatch.slug})`)
 			: "";
-	const action = hasCalldata ? (result.intent ?? "Unknown action") : "N/A";
+	const action = hasCalldata ? resolveActionLabel(result) : "N/A";
 	const contractLabel = formatContractLabel(result.contract);
 
 	const headerLines = [
@@ -504,6 +552,54 @@ function aggregateErc20(
 		}
 	}
 	return results;
+}
+
+function formatSimulationApproval(approval: BalanceSimulationResult["approvals"][number]): {
+	text: string;
+	isUnlimited: boolean;
+	key: string;
+} {
+	const tokenLabel = shortenAddress(approval.token);
+	const spenderLabel = shortenAddress(approval.spender);
+
+	if (approval.scope === "all") {
+		const approved = approval.approved !== false;
+		const label = approved ? "ALL" : "REVOKE ALL";
+		return {
+			text: `${tokenLabel}: ${label} to ${spenderLabel}`,
+			isUnlimited: approved,
+			key: `${tokenLabel}|${spenderLabel}|all`,
+		};
+	}
+
+	if (approval.tokenId !== undefined && approval.standard !== "erc20") {
+		return {
+			text: `${tokenLabel} #${approval.tokenId.toString()}: APPROVE to ${spenderLabel}`,
+			isUnlimited: false,
+			key: `${tokenLabel}|${spenderLabel}|${approval.tokenId.toString()}`,
+		};
+	}
+
+	const isUnlimited = approval.amount === MAX_UINT256;
+	const amountLabel =
+		isUnlimited || approval.amount === undefined
+			? "UNLIMITED"
+			: formatApprovalAmount(approval.amount, 18);
+	return {
+		text: `${tokenLabel}: ${amountLabel} to ${spenderLabel}`,
+		isUnlimited,
+		key: `${tokenLabel}|${spenderLabel}|amount`,
+	};
+}
+
+function extractSimulationHints(notes: string[]): string[] {
+	const hints = notes.filter((note) => note.startsWith("Hint:"));
+	if (hints.length === 0) return [];
+	return hints.map((hint) => hint.replace(/^Hint:\s*/, ""));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
 }
 
 function formatNftChange(change: AssetChange): string | null {

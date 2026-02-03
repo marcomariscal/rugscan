@@ -161,12 +161,14 @@ export interface AssetChange {
 }
 
 export interface ApprovalChange {
-	standard: "erc20" | "erc721";
+	standard: "erc20" | "erc721" | "erc1155";
 	token: string;
 	owner: string;
 	spender: string;
 	amount?: bigint;
 	tokenId?: bigint;
+	scope?: "token" | "all";
+	approved?: boolean;
 }
 
 export interface BalanceSimulationResult {

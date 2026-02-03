@@ -23,12 +23,14 @@ export interface AssetChange {
 }
 
 export interface ApprovalChange {
-	standard: "erc20" | "erc721";
+	standard: "erc20" | "erc721" | "erc1155";
 	token: string;
 	owner: string;
 	spender: string;
 	amount?: string;
 	tokenId?: string;
+	scope?: "token" | "all";
+	approved?: boolean;
 }
 
 export interface BalanceSimulationResult {
@@ -149,12 +151,14 @@ const assetChangeSchema = z
 
 const approvalChangeSchema = z
 	.object({
-		standard: z.enum(["erc20", "erc721"]),
+		standard: z.enum(["erc20", "erc721", "erc1155"]),
 		token: addressSchema,
 		owner: addressSchema,
 		spender: addressSchema,
 		amount: z.string().optional(),
 		tokenId: z.string().optional(),
+		scope: z.enum(["token", "all"]).optional(),
+		approved: z.boolean().optional(),
 	})
 	.strict();
 
