@@ -25,14 +25,18 @@ rugscan - Pre-transaction security analysis for EVM contracts
 
 Usage:
   rugscan analyze <address> [--chain <chain>] [--ai] [--model <model>]
-  rugscan scan [address] [--format json|sarif] [--calldata <json|@file|->] [--fail-on <caution|warning|danger>]
+  rugscan scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>]
   rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
 
 Options:
   --chain, -c    Chain to analyze on (default: ethereum)
                  Valid: ethereum, base, arbitrum, optimism, polygon
   --format       Output format for scan (json|sarif; default: text)
-  --calldata     Unsigned calldata JSON string, @file, or - for stdin
+  --calldata     Unsigned tx JSON (Rabby/MetaMask-like), canonical calldata JSON, raw hex calldata, @file, or - for stdin
+  --to           Required when passing raw hex calldata (MetaMask "Hex Data")
+  --from         Optional from address (used for simulation/intent when present)
+  --value        Optional tx value (decimal or 0x hex)
+  --data         Raw hex calldata (alternative to --calldata)
   --fail-on      Exit non-zero on recommendation >= threshold (default: warning)
   --output       Output file path or - for stdout (default: -)
   --quiet        Suppress non-essential logs
@@ -59,7 +63,11 @@ Examples:
   rugscan analyze 0x1234... --ai
   rugscan analyze 0x1234... --ai --model openrouter:anthropic/claude-3-haiku
   rugscan scan 0x1234... --format json
-  rugscan scan --calldata '{"to":"0x...","data":"0x..."}' --format sarif
+  # Paste Rabby JSON directly
+  rugscan scan --calldata '{"chainId":1,"from":"0x...","to":"0x...","value":"0x0","data":"0x..."}' --format json
+
+  # MetaMask "Hex Data" (raw calldata) + explicit target
+  rugscan scan --calldata 0x... --to 0x... --value 0x0 --chain 1 --format json
   rugscan approval --token 0x1234... --spender 0xabcd... --amount max
 `);
 }
@@ -166,20 +174,44 @@ async function runScan(args: string[]) {
 	const chainValue = getFlagValue(args, ["--chain", "-c"]);
 	const addressFlag = getFlagValue(args, ["--address"]);
 	const calldataFlag = getFlagValue(args, ["--calldata"]);
+	const toFlag = getFlagValue(args, ["--to"]);
+	const fromFlag = getFlagValue(args, ["--from"]);
+	const valueFlag = getFlagValue(args, ["--value"]);
+	const dataFlag = getFlagValue(args, ["--data"]);
 	const positional = getPositionalArgs(args);
 	const address = addressFlag ?? positional[0];
 
-	if (calldataFlag && address) {
-		console.error(renderError("Error: Provide either address or --calldata (not both)"));
+	if ((calldataFlag || dataFlag) && address) {
+		console.error(renderError("Error: Provide either address or tx input flags (not both)"));
 		process.exit(1);
 	}
 
 	let calldata: CalldataInput | undefined;
 	if (calldataFlag) {
 		try {
-			calldata = await parseCalldataInput(calldataFlag);
+			calldata = await parseCalldataInput(calldataFlag, {
+				to: toFlag,
+				from: fromFlag,
+				value: valueFlag,
+				chain: chainValue,
+			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Invalid calldata";
+			console.error(renderError(`Error: ${message}`));
+			process.exit(1);
+		}
+	} else if (dataFlag || toFlag || fromFlag || valueFlag) {
+		// MetaMask-style: raw calldata via --data plus explicit --to/--value.
+		try {
+			calldata = parseTxFlags({
+				to: toFlag,
+				from: fromFlag,
+				data: dataFlag,
+				value: valueFlag,
+				chain: chainValue,
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Invalid tx flags";
 			console.error(renderError(`Error: ${message}`));
 			process.exit(1);
 		}
@@ -337,6 +369,10 @@ function getPositionalArgs(args: string[]): string[] {
 	const argsWithValues = new Set([
 		"--format",
 		"--calldata",
+		"--to",
+		"--from",
+		"--value",
+		"--data",
 		"--chain",
 		"-c",
 		"--address",
@@ -361,17 +397,147 @@ function getPositionalArgs(args: string[]): string[] {
 	return positional;
 }
 
-async function parseCalldataInput(value: string): Promise<CalldataInput> {
-	const raw = await readInput(value);
+type TxFlags = {
+	to?: string;
+	from?: string;
+	value?: string;
+	data?: string;
+	chain?: string;
+};
+
+async function parseCalldataInput(value: string, flags: TxFlags): Promise<CalldataInput> {
+	const raw = (await readInput(value)).trim();
+
+	// Allow raw hex calldata (MetaMask "Hex Data")
+	if (isHexString(raw)) {
+		return parseTxFlags({ ...flags, data: raw });
+	}
+
 	const parsed = safeJsonParse(raw);
 	if (!parsed) {
-		throw new Error("Invalid calldata JSON");
+		throw new Error("Invalid tx input (expected JSON or 0x hex calldata)");
 	}
-	const result = scanInputSchema.safeParse({ calldata: parsed });
+
+	const normalized = normalizeWalletTx(parsed, flags.chain);
+	const result = scanInputSchema.safeParse({ calldata: normalized });
 	if (!result.success || !result.data.calldata) {
-		throw new Error("Invalid calldata shape");
+		throw new Error("Invalid calldata/tx shape");
 	}
 	return result.data.calldata;
+}
+
+function parseTxFlags(flags: TxFlags): CalldataInput {
+	if (!isValidAddress(flags.to)) {
+		throw new Error("--to is required and must be a valid address");
+	}
+	const data = flags.data?.trim();
+	if (!data || !isHexString(data)) {
+		throw new Error("--data (or raw --calldata hex) is required and must be 0x hex");
+	}
+	const candidate: CalldataInput = {
+		to: flags.to,
+		from: isValidAddress(flags.from) ? flags.from : undefined,
+		data,
+		value: flags.value,
+		chain: flags.chain,
+	};
+	const result = scanInputSchema.safeParse({ calldata: candidate });
+	if (!result.success || !result.data.calldata) {
+		throw new Error("Invalid tx flags");
+	}
+	return result.data.calldata;
+}
+
+function normalizeWalletTx(input: unknown, chainOverride?: string): unknown {
+	if (!isRecord(input)) return input;
+
+	const direct = coerceTxObject(input);
+	if (!direct) return input;
+
+	const chain =
+		(typeof direct.chain === "string" ? direct.chain : undefined) ??
+		parseChainId(direct.chainId) ??
+		chainOverride;
+
+	return {
+		to: direct.to,
+		from: direct.from,
+		data: direct.data,
+		value: direct.value,
+		chain,
+	};
+}
+
+type TxObject = {
+	to?: string;
+	from?: string;
+	data?: string;
+	value?: string;
+	chain?: unknown;
+	chainId?: unknown;
+};
+
+function coerceTxObject(record: Record<string, unknown>): TxObject | null {
+	// Rabby often provides a flat eth_sendTransaction-style payload.
+	// Some tools nest under tx/txParams.
+	const candidates: Array<Record<string, unknown>> = [record];
+	const tx = record.tx;
+	if (isRecord(tx)) candidates.push(tx);
+	const txParams = record.txParams;
+	if (isRecord(txParams)) candidates.push(txParams);
+
+	for (const obj of candidates) {
+		const to = getString(obj, "to");
+		const data = getString(obj, "data");
+		if (typeof to === "string" && typeof data === "string") {
+			return {
+				to,
+				from: getString(obj, "from"),
+				data,
+				value: getString(obj, "value"),
+				chain: getString(obj, "chain"),
+				chainId: obj.chainId,
+			};
+		}
+	}
+
+	return null;
+}
+
+function parseChainId(value: unknown): string | undefined {
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return String(value);
+	}
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	if (!trimmed) return undefined;
+	if (trimmed.startsWith("0x")) {
+		const parsed = safeParseHexToInt(trimmed);
+		return parsed ? String(parsed) : undefined;
+	}
+	if (/^[0-9]+$/.test(trimmed)) return trimmed;
+	return undefined;
+}
+
+function safeParseHexToInt(value: string): number | null {
+	try {
+		return Number.parseInt(value, 16);
+	} catch {
+		return null;
+	}
+}
+
+function isHexString(value: string): boolean {
+	return /^0x[0-9a-fA-F]*$/.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getString(record: Record<string, unknown>, key: string): string | undefined {
+	const value = record[key];
+	return typeof value === "string" ? value : undefined;
 }
 
 async function readInput(value: string): Promise<string> {
