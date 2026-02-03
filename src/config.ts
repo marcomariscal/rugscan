@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import type { AIConfig, Chain, Config } from "./types";
+import type { AIConfig, Chain, Config, SimulationConfig } from "./types";
 
 const VALID_CHAINS: Chain[] = ["ethereum", "base", "arbitrum", "optimism", "polygon"];
 
@@ -85,6 +85,10 @@ function parseConfig(value: unknown): Config {
 	if (ai) {
 		config.ai = ai;
 	}
+	const simulation = parseSimulationConfig(value.simulation);
+	if (simulation) {
+		config.simulation = simulation;
+	}
 	return config;
 }
 
@@ -131,6 +135,7 @@ function mergeConfig(base: Config, override: Config): Config {
 			...override.rpcUrls,
 		},
 		ai: mergeAIConfig(base.ai, override.ai),
+		simulation: mergeSimulationConfig(base.simulation, override.simulation),
 	};
 }
 
@@ -145,10 +150,45 @@ function mergeAIConfig(base?: AIConfig, override?: AIConfig): AIConfig | undefin
 	return Object.values(merged).some((value) => value !== undefined) ? merged : undefined;
 }
 
+function mergeSimulationConfig(
+	base?: SimulationConfig,
+	override?: SimulationConfig,
+): SimulationConfig | undefined {
+	if (!base && !override) return undefined;
+	return {
+		enabled: override?.enabled ?? base?.enabled,
+		backend: override?.backend ?? base?.backend,
+		anvilPath: override?.anvilPath ?? base?.anvilPath,
+		forkBlock: override?.forkBlock ?? base?.forkBlock,
+		rpcUrl: override?.rpcUrl ?? base?.rpcUrl,
+	};
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
 function isNonEmptyString(value: unknown): value is string {
 	return typeof value === "string" && value.trim().length > 0;
+}
+
+function parseSimulationConfig(value: unknown): SimulationConfig | undefined {
+	if (!isRecord(value)) return undefined;
+	const simulation: SimulationConfig = {};
+	if (typeof value.enabled === "boolean") {
+		simulation.enabled = value.enabled;
+	}
+	if (value.backend === "anvil" || value.backend === "heuristic") {
+		simulation.backend = value.backend;
+	}
+	if (isNonEmptyString(value.anvilPath)) {
+		simulation.anvilPath = value.anvilPath;
+	}
+	if (typeof value.forkBlock === "number" && Number.isFinite(value.forkBlock)) {
+		simulation.forkBlock = Math.trunc(value.forkBlock);
+	}
+	if (isNonEmptyString(value.rpcUrl)) {
+		simulation.rpcUrl = value.rpcUrl;
+	}
+	return Object.keys(simulation).length > 0 ? simulation : undefined;
 }

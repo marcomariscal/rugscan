@@ -187,6 +187,66 @@ describe("calldata analysis", () => {
 		}
 	});
 
+	test("decodes using Sourcify ABI when available", async () => {
+		let calls = 0;
+		globalThis.fetch = async (input) => {
+			calls += 1;
+			const url = typeof input === "string" ? input : input.url;
+			if (!url.includes("sourcify.dev")) {
+				throw new Error(`Unexpected fetch: ${url}`);
+			}
+			const metadata = {
+				output: {
+					abi: CUSTOM_ABI,
+				},
+			};
+			return new Response(
+				JSON.stringify({
+					status: "full",
+					files: [
+						{
+							name: "metadata.json",
+							path: "",
+							content: JSON.stringify(metadata),
+						},
+						{
+							name: "Contract.sol",
+							path: "",
+							content: "contract Contract {}",
+						},
+					],
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			);
+		};
+
+		const data = encodeFunctionData({
+			abi: CUSTOM_ABI,
+			functionName: "doThing",
+			args: ["0x0000000000000000000000000000000000000008", 5n],
+		});
+		const result = await analyzeCalldata(
+			{
+				to: "0x0000000000000000000000000000000000000009",
+				data,
+			},
+			"ethereum",
+		);
+
+		expect(calls).toBe(1);
+		const decoded = result.findings.find((finding) => finding.code === "CALLDATA_DECODED");
+		expect(decoded).toBeDefined();
+		if (decoded?.details && isRecord(decoded.details)) {
+			expect(decoded.details.source).toBe("contract-abi");
+			if (isRecord(decoded.details.args)) {
+				expect(decoded.details.args.target).toBe(
+					"0x0000000000000000000000000000000000000008",
+				);
+				expect(decoded.details.args.count).toBe("5");
+			}
+		}
+	});
+
 	test("selector resolver caches results", async () => {
 		let calls = 0;
 		globalThis.fetch = async () => {

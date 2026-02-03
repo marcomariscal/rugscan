@@ -1,7 +1,24 @@
 import { analyze, determineRecommendation } from "./analyzer";
 import { analyzeCalldata } from "./analyzers/calldata";
-import type { AnalysisResult, Chain, Confidence, Config, Finding, FindingLevel } from "./types";
-import type { AnalyzeResponse, ContractInfo, ScanFinding, ScanInput, ScanResult } from "./schema";
+import { buildIntent } from "./intent";
+import { simulateBalance } from "./simulations/balance";
+import type {
+	AnalysisResult,
+	BalanceSimulationResult,
+	Chain,
+	Confidence,
+	Config,
+	Finding,
+	FindingLevel,
+} from "./types";
+import type {
+	AnalyzeResponse,
+	BalanceSimulationResult as ScanBalanceSimulationResult,
+	ContractInfo,
+	ScanFinding,
+	ScanInput,
+	ScanResult,
+} from "./schema";
 
 export type ScanProgress = (event: {
 	provider: string;
@@ -65,8 +82,10 @@ export async function scanWithAnalysis(
 
 	const analysis = await analyze(targetAddress, chain, options?.config, options?.progress);
 	const mergedAnalysis = await mergeCalldataAnalysis(normalizedInput, analysis);
-	const response = buildAnalyzeResponse(normalizedInput, mergedAnalysis, options?.requestId);
-	return { analysis: mergedAnalysis, response };
+	const simulation = await runBalanceSimulation(normalizedInput, chain, options?.config);
+	const finalAnalysis = simulation ? { ...mergedAnalysis, simulation } : mergedAnalysis;
+	const response = buildAnalyzeResponse(normalizedInput, finalAnalysis, options?.requestId);
+	return { analysis: finalAnalysis, response };
 }
 
 async function mergeCalldataAnalysis(
@@ -74,13 +93,23 @@ async function mergeCalldataAnalysis(
 	analysis: AnalysisResult,
 ): Promise<AnalysisResult> {
 	if (!input.calldata) return analysis;
-	const calldataAnalysis = await analyzeCalldata(input.calldata);
-	if (calldataAnalysis.findings.length === 0) return analysis;
-	const findings = [...analysis.findings, ...calldataAnalysis.findings];
+	const calldataAnalysis = await analyzeCalldata(input.calldata, analysis.contract.chain);
+	const intent = calldataAnalysis.decoded
+		? buildIntent(calldataAnalysis.decoded, {
+				contractAddress: analysis.contract.address,
+				contractName: analysis.contract.name,
+			})
+		: null;
+	const hasFindings = calldataAnalysis.findings.length > 0;
+	if (!hasFindings && !intent) return analysis;
+	const findings = hasFindings
+		? [...analysis.findings, ...calldataAnalysis.findings]
+		: analysis.findings;
 	return {
 		...analysis,
 		findings,
-		recommendation: determineRecommendation(findings),
+		recommendation: hasFindings ? determineRecommendation(findings) : analysis.recommendation,
+		intent: intent ?? analysis.intent,
 	};
 }
 
@@ -98,10 +127,12 @@ export function buildAnalyzeResponse(
 export function buildScanResult(input: ScanInput, analysis: AnalysisResult): ScanResult {
 	return {
 		input,
+		intent: analysis.intent,
 		recommendation: analysis.recommendation,
 		confidence: scoreConfidence(analysis.confidence),
 		findings: mapFindings(analysis.findings),
 		contract: buildContractInfo(analysis),
+		simulation: analysis.simulation ? mapSimulation(analysis.simulation) : undefined,
 	};
 }
 
@@ -113,6 +144,7 @@ function normalizeInput(input: ScanInput): ScanInput {
 		return {
 			calldata: {
 				...input.calldata,
+				from: input.calldata.from ? input.calldata.from.toLowerCase() : undefined,
 				to: input.calldata.to.toLowerCase(),
 			},
 		};
@@ -158,6 +190,55 @@ function buildContractInfo(analysis: AnalysisResult): ContractInfo {
 		implementation: analysis.contract.implementation,
 		verifiedSource: analysis.contract.verified,
 		tags,
+	};
+}
+
+async function runBalanceSimulation(
+	input: ScanInput,
+	chain: Chain,
+	config?: Config,
+): Promise<BalanceSimulationResult | undefined> {
+	if (!input.calldata) return undefined;
+	if (!shouldRunSimulation(config)) return undefined;
+	return await simulateBalance(input.calldata, chain, config);
+}
+
+function shouldRunSimulation(config?: Config): boolean {
+	const simulation = config?.simulation;
+	if (!simulation) return false;
+	if (simulation.enabled === undefined) return true;
+	return simulation.enabled;
+}
+
+function mapSimulation(
+	simulation: BalanceSimulationResult,
+): ScanBalanceSimulationResult {
+	return {
+		success: simulation.success,
+		revertReason: simulation.revertReason,
+		gasUsed: simulation.gasUsed?.toString(),
+		effectiveGasPrice: simulation.effectiveGasPrice?.toString(),
+		nativeDiff: simulation.nativeDiff?.toString(),
+		assetChanges: simulation.assetChanges.map((change) => ({
+			assetType: change.assetType,
+			address: change.address,
+			tokenId: change.tokenId?.toString(),
+			amount: change.amount?.toString(),
+			direction: change.direction,
+			counterparty: change.counterparty,
+			symbol: change.symbol,
+			decimals: change.decimals,
+		})),
+		approvals: simulation.approvals.map((approval) => ({
+			standard: approval.standard,
+			token: approval.token,
+			owner: approval.owner,
+			spender: approval.spender,
+			amount: approval.amount?.toString(),
+			tokenId: approval.tokenId?.toString(),
+		})),
+		confidence: simulation.confidence,
+		notes: simulation.notes,
 	};
 }
 

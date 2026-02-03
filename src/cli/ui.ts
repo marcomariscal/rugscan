@@ -7,6 +7,8 @@ import type {
 	ApprovalAnalysisResult,
 	ApprovalContext,
 	ApprovalTx,
+	AssetChange,
+	BalanceSimulationResult,
 	Chain,
 	Finding,
 	Recommendation,
@@ -28,6 +30,13 @@ export interface ProviderEvent {
 }
 
 const SPINNER_FRAMES = ["◐", "◓", "◑", "◒"];
+const NATIVE_SYMBOLS: Record<Chain, string> = {
+	ethereum: "ETH",
+	base: "ETH",
+	arbitrum: "ETH",
+	optimism: "ETH",
+	polygon: "MATIC",
+};
 
 function stripAnsi(input: string): string {
 	return input.replace(/\x1b\[[0-9;]*m/g, "");
@@ -153,8 +162,8 @@ function renderBox(title: string, sections: string[][]): string {
 	const width = allLines.reduce((max, line) => Math.max(max, visibleLength(line)), 0);
 	const horizontal = "─".repeat(width + 2);
 
-	const top = `╭${horizontal}╮`;
-	const bottom = `╰${horizontal}╯`;
+	const top = `┌${horizontal}┐`;
+	const bottom = `└${horizontal}┘`;
 	const divider = `├${horizontal}┤`;
 
 	const lines: string[] = [top];
@@ -166,6 +175,29 @@ function renderBox(title: string, sections: string[][]): string {
 		}
 		if (index === sections.length - 1) {
 			return;
+		}
+	});
+	lines.push(bottom);
+	return lines.join("\n");
+}
+
+function renderUnifiedBox(headerLines: string[], sections: string[][]): string {
+	const allLines = [...headerLines, ...sections.flat()];
+	const width = allLines.reduce((max, line) => Math.max(max, visibleLength(line)), 0);
+	const horizontal = "─".repeat(width + 2);
+
+	const top = `┌${horizontal}┐`;
+	const bottom = `└${horizontal}┘`;
+	const divider = `├${horizontal}┤`;
+
+	const lines: string[] = [top];
+	for (const line of headerLines) {
+		lines.push(`│ ${padRight(line, width)} │`);
+	}
+	sections.forEach((section) => {
+		lines.push(divider);
+		for (const line of section) {
+			lines.push(`│ ${padRight(line, width)} │`);
 		}
 	});
 	lines.push(bottom);
@@ -204,61 +236,291 @@ function renderAISection(ai: AIAnalysis): string[] {
 	return lines;
 }
 
-export function renderResultBox(result: AnalysisResult): string {
-	const { label, icon, color } = recommendationStyle(result.recommendation);
-	const title = ` ${color(`${icon} ${label}`)}`;
+function formatProtocolDisplay(result: AnalysisResult): string {
+	if (result.protocolMatch?.name) return result.protocolMatch.name;
+	if (!result.protocol) return "Unknown";
+	const separator = " — ";
+	const index = result.protocol.indexOf(separator);
+	return index === -1 ? result.protocol : result.protocol.slice(0, index);
+}
 
-	const contractLabel = result.contract.name ?? result.contract.address;
-	const contractLines: string[] = [];
-	contractLines.push(` Contract: ${contractLabel}`);
-	contractLines.push(` Chain: ${result.contract.chain}`);
+function formatContractLabel(contract: AnalysisResult["contract"]): string {
+	if (contract.is_proxy && contract.proxy_name) {
+		const implementationName =
+			contract.implementation_name ??
+			(contract.implementation ? shortenAddress(contract.implementation) : "implementation");
+		return `${contract.proxy_name} → ${implementationName}`;
+	}
+	return contract.name ?? contract.address;
+}
 
-	const verifiedMark = result.contract.verified ? COLORS.ok("✓") : COLORS.danger("✗");
-	contractLines.push(` Verified: ${verifiedMark}`);
+function recommendationRiskLabel(recommendation: Recommendation): string {
+	if (recommendation === "danger") return "HIGH";
+	if (recommendation === "warning") return "MEDIUM";
+	if (recommendation === "caution") return "LOW";
+	return "SAFE";
+}
 
-	if (result.contract.name) {
-		contractLines.push(COLORS.dim(` Address: ${result.contract.address}`));
+function riskColor(label: string) {
+	if (label === "CRITICAL" || label === "HIGH") return COLORS.danger;
+	if (label === "MEDIUM") return COLORS.warning;
+	if (label === "LOW") return COLORS.warning;
+	return COLORS.ok;
+}
+
+function formatBalanceChangeLine(changes: string[]): string {
+	const normalized = changes.map((change, index) => {
+		const trimmed = change.trim();
+		if (index === 0 && (trimmed.startsWith("- ") || trimmed.startsWith("+ "))) {
+			return trimmed.slice(2);
+		}
+		return trimmed;
+	});
+	const first = changes[0]?.trim() ?? "";
+	const bullet = first.startsWith("+") ? "+" : "-";
+	return ` ${bullet} ${normalized.join(" / ")}`;
+}
+
+function orderBalanceChanges(changes: string[]): string[] {
+	const negative = changes.filter((item) => item.trim().startsWith("-"));
+	const positive = changes.filter((item) => item.trim().startsWith("+"));
+	const other = changes.filter(
+		(item) => !item.trim().startsWith("-") && !item.trim().startsWith("+"),
+	);
+	return [...negative, ...positive, ...other];
+}
+
+function renderBalanceSection(result: AnalysisResult, hasCalldata: boolean): string[] {
+	const lines: string[] = [];
+	lines.push(" 💰 BALANCE CHANGES");
+
+	if (!hasCalldata) {
+		lines.push(COLORS.dim(" - Not available (no calldata)"));
+		return lines;
+	}
+	if (!result.simulation) {
+		lines.push(COLORS.dim(" - Simulation pending"));
+		return lines;
+	}
+	if (!result.simulation.success) {
+		const detail = result.simulation.revertReason
+			? ` (${result.simulation.revertReason})`
+			: "";
+		lines.push(COLORS.warning(` - Simulation failed${detail}`));
+		return lines;
 	}
 
-	if (result.protocol) {
-		contractLines.push(` Protocol: ${result.protocol}`);
+	const changes = buildBalanceChangeItems(result.simulation, result.contract.chain);
+	if (changes.length === 0) {
+		lines.push(COLORS.dim(" - No balance changes detected"));
+		return lines;
 	}
 
-	if (result.contract.age_days !== undefined) {
-		contractLines.push(COLORS.dim(` Age: ${result.contract.age_days} days`));
-	}
-	if (result.contract.tx_count !== undefined) {
-		contractLines.push(COLORS.dim(` Transactions: ${result.contract.tx_count}`));
-	}
-	if (result.contract.is_proxy) {
-		const proxyLabel = result.contract.implementation
-			? `Yes (${result.contract.implementation})`
-			: "Yes";
-		contractLines.push(COLORS.dim(` Proxy: ${proxyLabel}`));
+	const ordered = orderBalanceChanges(changes);
+	const confidenceNote =
+		result.simulation.confidence !== "high"
+			? ` (${result.simulation.confidence} confidence)`
+			: "";
+	lines.push(`${formatBalanceChangeLine(ordered)}${confidenceNote}`);
+	return lines;
+}
+
+function buildApprovalWarnings(result: AnalysisResult): string[] {
+	const warnings = new Map<string, string>();
+	const tokenFallback = result.contract.name ?? shortenAddress(result.contract.address);
+
+	for (const finding of result.findings) {
+		if (finding.code !== "UNLIMITED_APPROVAL") continue;
+		const details = finding.details;
+		const spender =
+			details && typeof details.spender === "string" ? details.spender : undefined;
+		const spenderLabel = spender ? shortenAddress(spender) : "unknown";
+		const warning = `${tokenFallback}: UNLIMITED to ${spenderLabel}`;
+		warnings.set(`${tokenFallback.toLowerCase()}|${spenderLabel.toLowerCase()}`, warning);
 	}
 
-	const confidence = result.confidence.level.toUpperCase();
-	contractLines.push(COLORS.dim(` Confidence: ${confidence}`));
-	for (const reason of result.confidence.reasons) {
-		contractLines.push(COLORS.dim(` Reason: ${reason}`));
-	}
-
-	const findingsLines: string[] = [];
-	findingsLines.push(" Findings:");
-	if (result.findings.length === 0) {
-		findingsLines.push(COLORS.dim("  None"));
-	} else {
-		for (const finding of result.findings) {
-			findingsLines.push(` ${formatFindingLine(finding)}`);
+	if (result.simulation) {
+		for (const approval of result.simulation.approvals) {
+			if (approval.amount !== MAX_UINT256) continue;
+			const tokenLabel = shortenAddress(approval.token);
+			const spenderLabel = shortenAddress(approval.spender);
+			const warning = `${tokenLabel}: UNLIMITED to ${spenderLabel}`;
+			warnings.set(`${tokenLabel.toLowerCase()}|${spenderLabel.toLowerCase()}`, warning);
 		}
 	}
 
-	const sections = [contractLines, findingsLines];
-	if (result.ai) {
-		sections.push(renderAISection(result.ai));
+	return Array.from(warnings.values());
+}
+
+function renderApprovalsSection(result: AnalysisResult, hasCalldata: boolean): string[] {
+	const lines: string[] = [];
+	lines.push(" 🔐 APPROVALS");
+	if (!hasCalldata) {
+		lines.push(COLORS.dim(" - Not available (no calldata)"));
+		return lines;
 	}
 
-	return renderBox(title, sections);
+	const warnings = buildApprovalWarnings(result);
+	if (warnings.length === 0) {
+		lines.push(COLORS.dim(" - None detected"));
+		return lines;
+	}
+	for (const warning of warnings) {
+		lines.push(` ${COLORS.warning(`⚠️ ${warning}`)}`);
+	}
+	return lines;
+}
+
+function renderRiskSection(result: AnalysisResult): string[] {
+	const label = result.ai ? riskLabel(result.ai.risk_score) : recommendationRiskLabel(result.recommendation);
+	const note = result.ai ? "" : " (AI disabled)";
+	const colored = riskColor(label)(label);
+	return [` 📊 RISK: ${colored}${note}`];
+}
+
+export function renderResultBox(
+	result: AnalysisResult,
+	context?: { hasCalldata?: boolean },
+): string {
+	const hasCalldata = context?.hasCalldata ?? false;
+	const protocol = formatProtocolDisplay(result);
+	const protocolSuffix =
+		result.protocolMatch?.slug && result.protocolMatch.slug !== protocol
+			? COLORS.dim(` (${result.protocolMatch.slug})`)
+			: "";
+	const action = hasCalldata ? result.intent ?? "Unknown action" : "N/A";
+	const contractLabel = formatContractLabel(result.contract);
+
+	const headerLines = [
+		` Chain: ${result.contract.chain}`,
+		` Protocol: ${protocol}${protocolSuffix}`,
+		` Action: ${action}`,
+		` Contract: ${contractLabel}`,
+	];
+
+	const sections = [
+		renderBalanceSection(result, hasCalldata),
+		renderApprovalsSection(result, hasCalldata),
+		renderRiskSection(result),
+	];
+
+	return renderUnifiedBox(headerLines, sections);
+}
+
+function buildBalanceChangeItems(
+	simulation: BalanceSimulationResult,
+	chain: Chain,
+): string[] {
+	const items: string[] = [];
+	if (simulation.nativeDiff && simulation.nativeDiff !== 0n) {
+		items.push(formatSignedAmount(simulation.nativeDiff, 18, nativeSymbol(chain)));
+	}
+
+	const erc20Net = aggregateErc20(simulation.assetChanges);
+	for (const change of erc20Net) {
+		const symbol = change.symbol ?? shortenAddress(change.address);
+		items.push(formatSignedAmount(change.amount, change.decimals, symbol));
+	}
+
+	for (const change of simulation.assetChanges) {
+		if (change.assetType === "erc20") continue;
+		const item = formatNftChange(change);
+		if (item) {
+			items.push(item);
+		}
+	}
+
+	return items;
+}
+
+function aggregateErc20(
+	changes: AssetChange[],
+): { address: string; amount: bigint; symbol?: string; decimals?: number }[] {
+	const net = new Map<string, { amount: bigint; symbol?: string; decimals?: number }>();
+	for (const change of changes) {
+		if (change.assetType !== "erc20") continue;
+		if (!change.address || !change.amount) continue;
+		const address = change.address.toLowerCase();
+		const delta = change.direction === "out" ? -change.amount : change.amount;
+		const existing = net.get(address);
+		if (existing) {
+			existing.amount += delta;
+			if (!existing.symbol && change.symbol) {
+				existing.symbol = change.symbol;
+			}
+			if (existing.decimals === undefined && change.decimals !== undefined) {
+				existing.decimals = change.decimals;
+			}
+		} else {
+			net.set(address, {
+				amount: delta,
+				symbol: change.symbol,
+				decimals: change.decimals,
+			});
+		}
+	}
+	const results: { address: string; amount: bigint; symbol?: string; decimals?: number }[] = [];
+	for (const [address, value] of net.entries()) {
+		if (value.amount !== 0n) {
+			results.push({ address, amount: value.amount, symbol: value.symbol, decimals: value.decimals });
+		}
+	}
+	return results;
+}
+
+function formatNftChange(change: AssetChange): string | null {
+	if (change.assetType !== "erc721" && change.assetType !== "erc1155") return null;
+	const label = change.address ? shortenAddress(change.address) : change.assetType.toUpperCase();
+	const tokenId = change.tokenId ? ` #${change.tokenId.toString()}` : "";
+	if (change.assetType === "erc1155" && change.amount) {
+		const signed = change.direction === "out" ? -change.amount : change.amount;
+		const amount = formatSignedAmount(signed, 0, `${label}${tokenId}`);
+		return amount;
+	}
+	const sign = change.direction === "out" ? "-" : "+";
+	return `${sign} ${label}${tokenId}`;
+}
+
+function formatSignedAmount(amount: bigint, decimals: number | undefined, symbol: string): string {
+	const sign = amount < 0n ? "-" : "+";
+	const absolute = amount < 0n ? -amount : amount;
+	const formatted =
+		decimals === undefined
+			? formatNumberString(absolute.toString())
+			: formatNumberString(formatFixed(absolute, decimals), 4);
+	return `${sign} ${formatted} ${symbol}`;
+}
+
+function formatFixed(value: bigint, decimals: number): string {
+	if (decimals <= 0) return value.toString();
+	const base = value.toString().padStart(decimals + 1, "0");
+	const index = base.length - decimals;
+	const integer = base.slice(0, index);
+	const fraction = base.slice(index);
+	return `${integer}.${fraction}`;
+}
+
+function formatNumberString(value: string, maxFractionDigits?: number): string {
+	const [rawInteger, rawFraction] = value.split(".");
+	const integer = rawInteger && rawInteger.length > 0 ? rawInteger : "0";
+	const formattedInt = new Intl.NumberFormat("en-US").format(BigInt(integer));
+	if (!rawFraction || rawFraction.length === 0) {
+		return formattedInt;
+	}
+	let fraction = rawFraction.replace(/0+$/, "");
+	if (maxFractionDigits !== undefined && fraction.length > maxFractionDigits) {
+		fraction = fraction.slice(0, maxFractionDigits).replace(/0+$/, "");
+	}
+	return fraction.length > 0 ? `${formattedInt}.${fraction}` : formattedInt;
+}
+
+function nativeSymbol(chain: Chain): string {
+	return NATIVE_SYMBOLS[chain] ?? "ETH";
+}
+
+function shortenAddress(address: string): string {
+	if (address.length <= 10) return address;
+	return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
 function formatApprovalAmount(amount: bigint): string {

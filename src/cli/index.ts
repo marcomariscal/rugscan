@@ -3,6 +3,7 @@ import { analyze } from "../analyzer";
 import { analyzeApproval } from "../approval";
 import { MAX_UINT256 } from "../constants";
 import { loadConfig } from "../config";
+import { resolveProvider } from "../providers/ai";
 import type { ApprovalContext, ApprovalTx, Chain, Recommendation } from "../types";
 import type { CalldataInput, ScanInput } from "../schema";
 import { scanInputSchema } from "../schema";
@@ -120,6 +121,13 @@ async function runAnalyze(args: string[]) {
 
 		const config = await loadConfig();
 		if (enableAI) {
+			try {
+				void resolveProvider(config.ai, model);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : "No AI API keys found.";
+				console.error(renderError(`Error: ${message}`));
+				process.exit(1);
+			}
 			config.aiOptions = {
 				enabled: true,
 				model,
@@ -133,7 +141,7 @@ async function runAnalyze(args: string[]) {
 		const result = await analyze(address, chain, config, renderProgress);
 
 		console.log("");
-		console.log(renderResultBox(result));
+		console.log(renderResultBox(result, { hasCalldata: false }));
 		console.log("");
 
 		// Exit code based on recommendation
@@ -211,7 +219,7 @@ async function runScan(args: string[]) {
 				? JSON.stringify(response, null, 2)
 				: format === "sarif"
 					? JSON.stringify(formatSarif(response), null, 2)
-					: renderResultBox(analysis);
+					: renderResultBox(analysis, { hasCalldata: Boolean(parsed.data.calldata) });
 
 		await writeOutput(output, outputPayload, format === "text");
 

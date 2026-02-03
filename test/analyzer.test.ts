@@ -20,7 +20,7 @@ describe("analyzer", () => {
       expect(result.contract.name).toBe("Uni");
       expect(result.recommendation).toBe("ok");
       expect(result.findings.some(f => f.code === "VERIFIED")).toBe(true);
-    });
+    }, 120000);
 
     test("WETH on Base → OK (verified, no red flags)", async () => {
       const result = await analyze(
@@ -49,7 +49,7 @@ describe("analyzer", () => {
       expect(result.findings.some(f => f.code === "HIDDEN_MINT")).toBe(true);
       expect(result.findings.some(f => f.code === "BLACKLIST")).toBe(true);
       expect(result.findings.some(f => f.code === "OWNER_DRAIN")).toBe(true);
-    });
+    }, 120000);
   });
 
   describe("unverified contracts", () => {
@@ -77,7 +77,7 @@ describe("analyzer", () => {
       expect(result.contract.implementation).toBeDefined();
       expect(result.recommendation).toBe("caution");
       expect(result.findings.some(f => f.code === "UPGRADEABLE")).toBe(true);
-    });
+    }, 120000);
 
     test("USDC (Base) → CAUTION (upgradeable proxy)", async () => {
       const result = await analyze(
@@ -134,7 +134,7 @@ describe("analyzer", () => {
           return;
         }
       }
-    });
+    }, 120000);
   });
 
   describe("non-contracts", () => {

@@ -1,7 +1,9 @@
+import type { Abi } from "viem";
 import { getChainConfig } from "../chains";
 import type { Chain, VerificationResult } from "../types";
 
 const SOURCIFY_API = "https://sourcify.dev/server";
+const SOURCIFY_CACHE = new Map<string, Promise<SourcifyResult> | SourcifyResult>();
 
 interface SourcifyFile {
 	name: string;
@@ -14,14 +16,47 @@ interface SourcifyAnyResponse {
 	files: SourcifyFile[];
 }
 
+interface SourcifyResult extends VerificationResult {
+	abi?: Abi;
+}
+
 export async function checkVerification(
 	address: string,
 	chain: Chain,
 ): Promise<VerificationResult> {
-	const chainConfig = getChainConfig(chain);
-	const chainId = chainConfig.sourcifyChainId;
+	const result = await getSourcifyResult(address, chain);
+	return {
+		verified: result.verified,
+		name: result.name,
+		source: result.source,
+		abi: result.abi,
+	};
+}
 
-	// Use the /files/any/ endpoint which returns full or partial match
+export async function getABI(address: string, chain: Chain): Promise<Abi | null> {
+	const result = await getSourcifyResult(address, chain);
+	if (!result.verified || !result.abi) return null;
+	return result.abi;
+}
+
+async function getSourcifyResult(address: string, chain: Chain): Promise<SourcifyResult> {
+	const chainId = getChainConfig(chain).sourcifyChainId;
+	const key = `${chainId}:${address.toLowerCase()}`;
+	const cached = SOURCIFY_CACHE.get(key);
+	if (cached) {
+		if (cached instanceof Promise) {
+			return cached;
+		}
+		return cached;
+	}
+	const fetchPromise = fetchSourcifyResult(address, chainId);
+	SOURCIFY_CACHE.set(key, fetchPromise);
+	const resolved = await fetchPromise;
+	SOURCIFY_CACHE.set(key, resolved);
+	return resolved;
+}
+
+async function fetchSourcifyResult(address: string, chainId: number): Promise<SourcifyResult> {
 	const url = `${SOURCIFY_API}/files/any/${chainId}/${address}`;
 
 	try {
@@ -38,35 +73,86 @@ export async function checkVerification(
 			return { verified: false };
 		}
 
-		// Find metadata.json for contract name
 		const metadata = files.find((f) => f.name === "metadata.json");
-		let name: string | undefined;
+		const parsedMetadata = metadata ? parseMetadata(metadata.content) : undefined;
 
-		if (metadata) {
-			try {
-				const meta = JSON.parse(metadata.content);
-				const output = meta.output?.devdoc?.title || meta.settings?.compilationTarget;
-				if (typeof output === "object") {
-					name = Object.values(output)[0] as string;
-				} else if (typeof output === "string") {
-					name = output;
-				}
-			} catch {
-				// Ignore parse errors
-			}
-		}
-
-		// Find main source file
 		const sourceFile = files.find(
 			(f) => f.name.endsWith(".sol") && !f.path.includes("node_modules"),
 		);
 
 		return {
 			verified: true,
-			name,
+			name: parsedMetadata?.name,
 			source: sourceFile?.content,
+			abi: parsedMetadata?.abi,
 		};
 	} catch {
 		return { verified: false };
 	}
+}
+
+function parseMetadata(content: string): { name?: string; abi?: Abi } | undefined {
+	try {
+		const parsed = JSON.parse(content);
+		const name = extractContractName(parsed);
+		const abi = extractAbi(parsed);
+		return { name, abi };
+	} catch {
+		return undefined;
+	}
+}
+
+function extractContractName(value: unknown): string | undefined {
+	if (!isRecord(value)) return undefined;
+	const output = value.output;
+	if (isRecord(output)) {
+		const devdoc = output.devdoc;
+		if (isRecord(devdoc)) {
+			const title = devdoc.title;
+			if (isNonEmptyString(title)) {
+				return title;
+			}
+		}
+	}
+	const settings = value.settings;
+	if (isRecord(settings)) {
+		const compilationTarget = settings.compilationTarget;
+		const targetName = extractCompilationTarget(compilationTarget);
+		if (targetName) return targetName;
+	}
+	return undefined;
+}
+
+function extractCompilationTarget(value: unknown): string | undefined {
+	if (!isRecord(value)) return undefined;
+	for (const entry of Object.values(value)) {
+		if (isNonEmptyString(entry)) return entry;
+	}
+	return undefined;
+}
+
+function extractAbi(value: unknown): Abi | undefined {
+	if (!isRecord(value)) return undefined;
+	const output = value.output;
+	if (!isRecord(output)) return undefined;
+	const abi = output.abi;
+	if (isAbi(abi)) return abi;
+	return undefined;
+}
+
+function isAbi(value: unknown): value is Abi {
+	if (!Array.isArray(value)) return false;
+	return value.every(isAbiItem);
+}
+
+function isAbiItem(value: unknown): value is { type: string } {
+	return isRecord(value) && typeof value.type === "string";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+	return typeof value === "string" && value.trim().length > 0;
 }

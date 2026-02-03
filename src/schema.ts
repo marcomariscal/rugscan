@@ -11,6 +11,38 @@ export interface ScanFinding {
 	refs?: string[];
 }
 
+export interface AssetChange {
+	assetType: "native" | "erc20" | "erc721" | "erc1155";
+	address?: string;
+	tokenId?: string;
+	amount?: string;
+	direction: "in" | "out";
+	counterparty?: string;
+	symbol?: string;
+	decimals?: number;
+}
+
+export interface ApprovalChange {
+	standard: "erc20" | "erc721";
+	token: string;
+	owner: string;
+	spender: string;
+	amount?: string;
+	tokenId?: string;
+}
+
+export interface BalanceSimulationResult {
+	success: boolean;
+	revertReason?: string;
+	gasUsed?: string;
+	effectiveGasPrice?: string;
+	nativeDiff?: string;
+	assetChanges: AssetChange[];
+	approvals: ApprovalChange[];
+	confidence: "high" | "medium" | "low";
+	notes: string[];
+}
+
 export interface ContractInfo {
 	address: string;
 	chain?: string;
@@ -25,6 +57,7 @@ export interface ContractInfo {
 
 export interface CalldataInput {
 	to: string;
+	from?: string;
 	data: string;
 	value?: string;
 	chain?: string;
@@ -37,10 +70,12 @@ export interface ScanInput {
 
 export interface ScanResult {
 	input: ScanInput;
+	intent?: string;
 	recommendation: Recommendation;
 	confidence: number;
 	findings: ScanFinding[];
 	contract?: ContractInfo;
+	simulation?: BalanceSimulationResult;
 }
 
 export interface AnalyzeResponse {
@@ -63,6 +98,7 @@ const chainSchema = z.string().min(1);
 const calldataInputSchema = z
 	.object({
 		to: addressSchema,
+		from: addressSchema.optional(),
 		data: hexDataSchema,
 		value: z.string().refine((value) => isNumericString(value), {
 			message: "Invalid value",
@@ -95,6 +131,44 @@ export const scanFindingSchema = z
 	})
 	.strict();
 
+const assetChangeSchema = z
+	.object({
+		assetType: z.enum(["native", "erc20", "erc721", "erc1155"]),
+		address: addressSchema.optional(),
+		tokenId: z.string().optional(),
+		amount: z.string().optional(),
+		direction: z.enum(["in", "out"]),
+		counterparty: addressSchema.optional(),
+		symbol: z.string().optional(),
+		decimals: z.number().int().min(0).optional(),
+	})
+	.strict();
+
+const approvalChangeSchema = z
+	.object({
+		standard: z.enum(["erc20", "erc721"]),
+		token: addressSchema,
+		owner: addressSchema,
+		spender: addressSchema,
+		amount: z.string().optional(),
+		tokenId: z.string().optional(),
+	})
+	.strict();
+
+const balanceSimulationSchema = z
+	.object({
+		success: z.boolean(),
+		revertReason: z.string().optional(),
+		gasUsed: z.string().optional(),
+		effectiveGasPrice: z.string().optional(),
+		nativeDiff: z.string().optional(),
+		assetChanges: z.array(assetChangeSchema),
+		approvals: z.array(approvalChangeSchema),
+		confidence: z.enum(["high", "medium", "low"]),
+		notes: z.array(z.string()),
+	})
+	.strict();
+
 export const contractInfoSchema = z
 	.object({
 		address: addressSchema,
@@ -112,10 +186,12 @@ export const contractInfoSchema = z
 export const scanResultSchema = z
 	.object({
 		input: scanInputSchema,
+		intent: z.string().min(1).optional(),
 		recommendation: recommendationSchema,
 		confidence: z.number().min(0).max(1),
 		findings: z.array(scanFindingSchema),
 		contract: contractInfoSchema.optional(),
+		simulation: balanceSimulationSchema.optional(),
 	})
 	.strict();
 

@@ -11,10 +11,19 @@ const CHAIN_NAMES: Record<Chain, string> = {
 	polygon: "polygon",
 };
 
-const KNOWN_PROTOCOL_ADDRESSES: Partial<Record<Chain, Record<string, ProtocolMatch>>> = {
+interface ProtocolOverride {
+	name: string;
+	slug: string;
+}
+
+const KNOWN_PROTOCOL_ADDRESSES: Partial<Record<Chain, Record<string, ProtocolOverride>>> = {
 	ethereum: {
+		// Aave V3 Pool
+		"0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2": { name: "Aave V3", slug: "aave-v3" },
 		// Uniswap V3 SwapRouter02
-		"0xe592427a0aece92de3edee1f18e0157c05861564": { name: "Uniswap" },
+		"0xe592427a0aece92de3edee1f18e0157c05861564": { name: "Uniswap V3", slug: "uniswap-v3" },
+		// Curve 3pool
+		"0xbebc44782c7db0a1a60cb6fe97d0e3d5c3c9f0fe": { name: "Curve DEX", slug: "curve-dex" },
 	},
 };
 
@@ -56,7 +65,7 @@ export async function matchProtocol(address: string, chain: Chain): Promise<Prot
 	const normalizedAddress = address.toLowerCase();
 	const manualMatch = KNOWN_PROTOCOL_ADDRESSES[chain]?.[normalizedAddress];
 	if (manualMatch) {
-		return manualMatch;
+		return resolveManualMatch(protocols, manualMatch);
 	}
 
 	// DeFiLlama doesn't have direct address mapping for most protocols
@@ -70,14 +79,89 @@ export async function matchProtocol(address: string, chain: Chain): Promise<Prot
 			continue;
 		}
 
-		// Check if address matches (if protocol has address field)
-		if (protocol.address?.toLowerCase() === normalizedAddress) {
-			return {
-				name: protocol.name,
-				tvl: protocol.tvl,
-			};
+		const addressMatches = getProtocolAddresses(protocol.address)
+			.map((rawAddress) => parseProtocolAddress(rawAddress))
+			.filter((entry): entry is ParsedAddress => entry !== null)
+			.some((entry) => matchesProtocolAddress(entry, chain, normalizedAddress));
+		if (addressMatches) {
+			return { name: protocol.name, tvl: protocol.tvl, slug: protocol.slug };
 		}
 	}
 
 	return null;
+}
+
+interface ParsedAddress {
+	chain: Chain | null;
+	address: string;
+}
+
+function resolveManualMatch(protocols: Protocol[], match: ProtocolOverride): ProtocolMatch {
+	for (const protocol of protocols) {
+		if (protocol.slug === match.slug) {
+			return { name: protocol.name, tvl: protocol.tvl, slug: protocol.slug };
+		}
+	}
+	return { name: match.name, slug: match.slug };
+}
+
+function getProtocolAddresses(raw: unknown): string[] {
+	if (typeof raw === "string") {
+		return expandAddressList(raw);
+	}
+	if (Array.isArray(raw)) {
+		const values: string[] = [];
+		for (const entry of raw) {
+			if (typeof entry === "string") {
+				values.push(...expandAddressList(entry));
+			}
+		}
+		return values;
+	}
+	return [];
+}
+
+function expandAddressList(value: string): string[] {
+	return value
+		.split(",")
+		.map((entry) => entry.trim())
+		.filter((entry) => entry.length > 0);
+}
+
+function parseProtocolAddress(value: string): ParsedAddress | null {
+	const normalized = value.trim().toLowerCase();
+	if (!normalized) return null;
+	const separatorIndex = normalized.indexOf(":");
+	if (separatorIndex === -1) {
+		return isHexAddress(normalized) ? { chain: null, address: normalized } : null;
+	}
+	const prefix = normalized.slice(0, separatorIndex);
+	const address = normalized.slice(separatorIndex + 1);
+	if (!isHexAddress(address)) return null;
+	const chain = resolveChainPrefix(prefix);
+	if (!chain) return null;
+	return { chain, address };
+}
+
+function resolveChainPrefix(prefix: string): Chain | null {
+	if (prefix === "ethereum" || prefix === "eth") return "ethereum";
+	if (prefix === "arbitrum" || prefix === "arb") return "arbitrum";
+	if (prefix === "optimism" || prefix === "op") return "optimism";
+	if (prefix === "base") return "base";
+	if (prefix === "polygon" || prefix === "matic" || prefix === "polygon-pos") return "polygon";
+	return null;
+}
+
+function matchesProtocolAddress(
+	entry: ParsedAddress,
+	chain: Chain,
+	normalizedAddress: string,
+): boolean {
+	if (entry.address !== normalizedAddress) return false;
+	if (entry.chain) return entry.chain === chain;
+	return chain === "ethereum";
+}
+
+function isHexAddress(value: string): boolean {
+	return /^0x[a-f0-9]{40}$/.test(value);
 }

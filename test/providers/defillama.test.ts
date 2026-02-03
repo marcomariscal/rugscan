@@ -4,7 +4,7 @@ import { matchProtocol } from "../../src/providers/defillama";
 describe("defillama", () => {
 	test("matchProtocol identifies Uniswap", async () => {
 		const result = await matchProtocol(
-			"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+			"0xe592427a0aece92de3edee1f18e0157c05861564",
 			"ethereum",
 		);
 
@@ -14,7 +14,7 @@ describe("defillama", () => {
 
 	test("matchProtocol identifies Aave", async () => {
 		const result = await matchProtocol(
-			"0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
+			"0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
 			"ethereum",
 		);
 
@@ -22,9 +22,19 @@ describe("defillama", () => {
 		expect(result?.name.toLowerCase()).toContain("aave");
 	});
 
+	test("matchProtocol identifies Curve", async () => {
+		const result = await matchProtocol(
+			"0xbEbc44782C7dB0a1A60Cb6fe97d0E3D5C3c9F0FE",
+			"ethereum",
+		);
+
+		expect(result).not.toBeNull();
+		expect(result?.name.toLowerCase()).toContain("curve");
+	});
+
 	test("matchProtocol returns null for unknown addresses", async () => {
 		const result = await matchProtocol(
-			"0xdAC17F958D2ee523a2206206994597C13D831ec7",
+			"0x000000000000000000000000000000000000dEaD",
 			"ethereum",
 		);
 

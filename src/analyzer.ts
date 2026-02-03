@@ -4,6 +4,7 @@ import * as goplus from "./providers/goplus";
 import * as ai from "./providers/ai";
 import * as proxy from "./providers/proxy";
 import * as sourcify from "./providers/sourcify";
+import { resolveContractName } from "./name-resolution";
 import type {
 	AnalysisResult,
 	Chain,
@@ -11,6 +12,7 @@ import type {
 	Config,
 	ContractInfo,
 	Finding,
+	ProtocolMatch,
 	Recommendation,
 	TokenSecurity,
 } from "./types";
@@ -65,6 +67,8 @@ export async function analyze(
 	let phishingLabels: string[] = [];
 	let phishingNametag: string | undefined;
 	let isPhishing = false;
+	let implementationName: string | undefined;
+	let protocolNameForFriendly: string | undefined;
 
 	report?.({ provider: "Sourcify", status: "start" });
 	const sourcifyResult = await sourcify.checkVerification(addr, chain);
@@ -137,11 +141,45 @@ export async function analyze(
 	// 5. Protocol matching
 	report?.({ provider: "DeFiLlama", status: "start" });
 	const protocolMatch = await defillama.matchProtocol(addr, chain);
+	const protocolLabel = formatProtocolLabel(protocolMatch);
 	report?.({
 		provider: "DeFiLlama",
 		status: "success",
 		message: protocolMatch ? protocolMatch.name : "no match",
 	});
+	protocolNameForFriendly = protocolMatch?.name;
+
+	// 5b. Resolve implementation metadata for proxies
+	if (proxyInfo.is_proxy && proxyInfo.implementation) {
+		report?.({ provider: "Sourcify (impl)", status: "start" });
+		const implementationResult = await sourcify.checkVerification(proxyInfo.implementation, chain);
+		report?.({
+			provider: "Sourcify (impl)",
+			status: "success",
+			message: implementationResult.verified
+				? `verified${implementationResult.name ? `: ${implementationResult.name}` : ""}`
+				: "unverified",
+		});
+		if (implementationResult.verified) {
+			implementationName = implementationResult.name;
+		}
+
+		if (!protocolNameForFriendly) {
+			report?.({ provider: "DeFiLlama (impl)", status: "start" });
+			const implementationProtocol = await defillama.matchProtocol(
+				proxyInfo.implementation,
+				chain,
+			);
+			report?.({
+				provider: "DeFiLlama (impl)",
+				status: "success",
+				message: implementationProtocol ? implementationProtocol.name : "no match",
+			});
+			if (implementationProtocol) {
+				protocolNameForFriendly = implementationProtocol.name;
+			}
+		}
+	}
 
 	// 6. Token security (if it's a token)
 	report?.({ provider: "GoPlus", status: "start" });
@@ -284,11 +322,20 @@ export async function analyze(
 
 	// Determine recommendation
 	const recommendation = determineRecommendation(findings);
+	const resolvedName = resolveContractName({
+		address: addr,
+		isProxy: proxyInfo.is_proxy,
+		proxyName: contractName,
+		implementationName,
+		protocolName: protocolNameForFriendly,
+	}).resolvedName;
 
 	const contract: ContractInfo = {
 		address: addr,
 		chain,
-		name: contractName,
+		name: resolvedName,
+		proxy_name: contractName,
+		implementation_name: implementationName,
 		verified,
 		age_days,
 		tx_count,
@@ -348,7 +395,8 @@ export async function analyze(
 
 	return {
 		contract,
-		protocol: protocolMatch?.name,
+		protocol: protocolLabel,
+		protocolMatch: protocolMatch ?? undefined,
 		findings,
 		confidence: {
 			level: confidenceLevel,
@@ -370,6 +418,19 @@ function countTokenFindings(tokenSecurity: TokenSecurity | null): number {
 	const maxTax = Math.max(tokenSecurity.buy_tax || 0, tokenSecurity.sell_tax || 0);
 	if (maxTax > 0.1) count += 1;
 	return count;
+}
+
+function formatProtocolLabel(match: ProtocolMatch | null): string | undefined {
+	if (!match) return undefined;
+	const tvl = match.tvl;
+	if (tvl === undefined || !Number.isFinite(tvl)) {
+		return match.name;
+	}
+	const formattedTvl = new Intl.NumberFormat("en-US", {
+		notation: "compact",
+		maximumFractionDigits: 2,
+	}).format(tvl);
+	return `${match.name} — $${formattedTvl} TVL`;
 }
 
 export function determineRecommendation(findings: Finding[]): Recommendation {

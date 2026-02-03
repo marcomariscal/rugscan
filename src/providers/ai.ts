@@ -172,6 +172,9 @@ export async function analyzeRisk(
 	config?: AIConfig,
 	options?: AIOptions,
 ): Promise<AIResult> {
+	if (options?.mockResult) {
+		return options.mockResult;
+	}
 	const selection = resolveProvider(config, options?.model);
 	const modelId = resolveModel(selection.provider, options?.model, config?.default_model);
 	const prompt = buildUserPrompt(input);

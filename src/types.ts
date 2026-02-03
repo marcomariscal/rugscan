@@ -1,3 +1,5 @@
+import type { Abi } from "viem";
+
 export type Chain = "ethereum" | "base" | "arbitrum" | "optimism" | "polygon";
 
 export type FindingLevel = "danger" | "warning" | "info" | "safe";
@@ -80,6 +82,8 @@ export interface ContractInfo {
 	address: string;
 	chain: Chain;
 	name?: string;
+	proxy_name?: string;
+	implementation_name?: string;
 	verified: boolean;
 	age_days?: number;
 	tx_count?: number;
@@ -96,10 +100,13 @@ export interface Confidence {
 export interface AnalysisResult {
 	contract: ContractInfo;
 	protocol?: string;
+	protocolMatch?: ProtocolMatch;
 	findings: Finding[];
 	confidence: Confidence;
 	recommendation: Recommendation;
 	ai?: AIAnalysis;
+	intent?: string;
+	simulation?: BalanceSimulationResult;
 }
 
 export interface ApprovalTx {
@@ -131,6 +138,47 @@ export interface Config {
 	rpcUrls?: Partial<Record<Chain, string>>;
 	ai?: AIConfig;
 	aiOptions?: AIOptions;
+	simulation?: SimulationConfig;
+}
+
+export interface SimulationConfig {
+	enabled?: boolean;
+	backend?: "anvil" | "heuristic";
+	anvilPath?: string;
+	forkBlock?: number;
+	rpcUrl?: string;
+}
+
+export interface AssetChange {
+	assetType: "native" | "erc20" | "erc721" | "erc1155";
+	address?: string;
+	tokenId?: bigint;
+	amount?: bigint;
+	direction: "in" | "out";
+	counterparty?: string;
+	symbol?: string;
+	decimals?: number;
+}
+
+export interface ApprovalChange {
+	standard: "erc20" | "erc721";
+	token: string;
+	owner: string;
+	spender: string;
+	amount?: bigint;
+	tokenId?: bigint;
+}
+
+export interface BalanceSimulationResult {
+	success: boolean;
+	revertReason?: string;
+	gasUsed?: bigint;
+	effectiveGasPrice?: bigint;
+	nativeDiff?: bigint;
+	assetChanges: AssetChange[];
+	approvals: ApprovalChange[];
+	confidence: ConfidenceLevel;
+	notes: string[];
 }
 
 // Provider interfaces
@@ -138,6 +186,7 @@ export interface VerificationResult {
 	verified: boolean;
 	name?: string;
 	source?: string;
+	abi?: Abi;
 }
 
 export interface EtherscanData {
@@ -152,6 +201,7 @@ export interface EtherscanData {
 export interface ProtocolMatch {
 	name: string;
 	tvl?: number;
+	slug?: string;
 }
 
 export interface TokenSecurity {
@@ -188,4 +238,9 @@ export interface AIConfig {
 export interface AIOptions {
 	enabled?: boolean;
 	model?: string;
+	mockResult?: {
+		analysis?: AIAnalysis;
+		warning?: string;
+		warnings?: string[];
+	};
 }
