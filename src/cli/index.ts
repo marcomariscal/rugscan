@@ -107,7 +107,7 @@ async function runAnalyze(args: string[]) {
 
 	try {
 		const enableAI = args.includes("--ai");
-		const modelIndex = args.findIndex((a) => a === "--model");
+		const modelIndex = args.indexOf("--model");
 		const model = modelIndex !== -1 ? args[modelIndex + 1] : undefined;
 
 		if (modelIndex !== -1 && !model) {

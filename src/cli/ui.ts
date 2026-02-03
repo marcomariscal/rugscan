@@ -18,7 +18,8 @@ const COLORS = {
 	ok: pc.green,
 	warning: pc.yellow,
 	danger: pc.red,
-	dim: pc.gray,
+	// Use ANSI "dim" (not gray) — much more readable on many terminals/themes.
+	dim: pc.dim,
 };
 
 type ProviderStatus = "start" | "success" | "error";
@@ -41,6 +42,16 @@ const NATIVE_SYMBOLS: Record<Chain, string> = {
 function stripAnsi(input: string): string {
 	// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape sequence
 	return input.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function cleanLabel(input: string): string {
+	// Fix common output issues:
+	// - carriage returns from provider responses (e.g., Sourcify names)
+	// - newlines/tabs breaking box layouts
+	return input
+		.replace(/[\r\n\t]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
 function visibleLength(input: string): number {
@@ -92,7 +103,8 @@ class Spinner {
 	private render() {
 		const frame = SPINNER_FRAMES[this.frameIndex % SPINNER_FRAMES.length];
 		this.frameIndex += 1;
-		this.writeLine(`${COLORS.dim(frame)} ${this.text}`, false);
+		// Keep spinner high-contrast; dim spinner frames are hard to see.
+		this.writeLine(`${COLORS.warning(frame)} ${this.text}`, false);
 	}
 
 	private writeLine(line: string, newline: boolean) {
@@ -111,18 +123,20 @@ class Spinner {
 export function createProgressRenderer(enabled: boolean) {
 	const spinner = new Spinner(enabled);
 	return (event: ProviderEvent) => {
+		const provider = pc.cyan(event.provider);
+		const message = typeof event.message === "string" ? cleanLabel(event.message) : undefined;
 		switch (event.status) {
 			case "start":
-				spinner.start(`${COLORS.dim("Checking")} ${event.provider}...`);
+				spinner.start(`Checking ${provider}...`);
 				break;
 			case "success": {
-				const detail = event.message ? ` ${COLORS.dim(`(${event.message})`)}` : "";
-				spinner.succeed(`${COLORS.ok("✓")} ${event.provider}${detail}`);
+				const detail = message ? ` ${COLORS.dim(`(${message})`)}` : "";
+				spinner.succeed(`${COLORS.ok("✓")} ${provider}${detail}`);
 				break;
 			}
 			case "error": {
-				const detail = event.message ? ` ${COLORS.dim(`(${event.message})`)}` : "";
-				spinner.fail(`${COLORS.danger("✗")} ${event.provider}${detail}`);
+				const detail = message ? ` ${COLORS.dim(`(${message})`)}` : "";
+				spinner.fail(`${COLORS.danger("✗")} ${provider}${detail}`);
 				break;
 			}
 		}
@@ -137,7 +151,6 @@ function recommendationStyle(recommendation: Recommendation) {
 			return { label: "WARNING", icon: "⚠️", color: COLORS.warning };
 		case "caution":
 			return { label: "CAUTION", icon: "⚡", color: COLORS.warning };
-		case "ok":
 		default:
 			return { label: "OK", icon: "✅", color: COLORS.ok };
 	}
@@ -218,7 +231,7 @@ function severityColor(severity: AIConcern["severity"]) {
 	return COLORS.danger;
 }
 
-function renderAISection(ai: AIAnalysis): string[] {
+function _renderAISection(ai: AIAnalysis): string[] {
 	const lines: string[] = [];
 	lines.push(` AI: ${ai.provider} / ${ai.model}`);
 	lines.push(` Risk score: ${ai.risk_score} (${riskLabel(ai.risk_score)})`);
@@ -238,21 +251,23 @@ function renderAISection(ai: AIAnalysis): string[] {
 }
 
 function formatProtocolDisplay(result: AnalysisResult): string {
-	if (result.protocolMatch?.name) return result.protocolMatch.name;
+	if (result.protocolMatch?.name) return cleanLabel(result.protocolMatch.name);
 	if (!result.protocol) return "Unknown";
+	const protocol = cleanLabel(result.protocol);
 	const separator = " — ";
-	const index = result.protocol.indexOf(separator);
-	return index === -1 ? result.protocol : result.protocol.slice(0, index);
+	const index = protocol.indexOf(separator);
+	return index === -1 ? protocol : protocol.slice(0, index);
 }
 
 function formatContractLabel(contract: AnalysisResult["contract"]): string {
 	if (contract.is_proxy && contract.proxy_name) {
+		const proxyName = cleanLabel(contract.proxy_name);
 		const implementationName =
-			contract.implementation_name ??
+			(contract.implementation_name ? cleanLabel(contract.implementation_name) : undefined) ??
 			(contract.implementation ? shortenAddress(contract.implementation) : "implementation");
-		return `${contract.proxy_name} → ${implementationName}`;
+		return `${proxyName} → ${implementationName}`;
 	}
-	return contract.name ?? contract.address;
+	return contract.name ? cleanLabel(contract.name) : contract.address;
 }
 
 function recommendationRiskLabel(recommendation: Recommendation): string {
