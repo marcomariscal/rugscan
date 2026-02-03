@@ -1,18 +1,18 @@
+import { type Address, createPublicClient, type Hex, hexToString, http, isAddress } from "viem";
 import { decodeKnownCalldata } from "../analyzers/calldata/decoder";
 import { isRecord, toBigInt } from "../analyzers/calldata/utils";
+import { getChainConfig } from "../chains";
 import type { CalldataInput } from "../schema";
 import type {
+	ApprovalChange,
 	AssetChange,
 	BalanceSimulationResult,
 	Chain,
-	Config,
 	ConfidenceLevel,
-	ApprovalChange,
+	Config,
 } from "../types";
-import { getChainConfig } from "../chains";
 import { getAnvilClient } from "./anvil";
-import { parseReceiptLogs, type ParsedTransfer } from "./logs";
-import { createPublicClient, hexToString, http, isAddress, type Address, type Hex } from "viem";
+import { type ParsedTransfer, parseReceiptLogs } from "./logs";
 
 const HIGH_BALANCE = 10n ** 22n;
 
@@ -150,6 +150,32 @@ async function simulateWithAnvil(
 			}
 		}
 
+		const missingTokens = new Set<Address>();
+		for (const token of tokenCandidates) {
+			if (!preBalances.has(token)) {
+				missingTokens.add(token);
+			}
+		}
+
+		if (missingTokens.size > 0) {
+			const previousBlock = receipt.blockNumber > 0n ? receipt.blockNumber - 1n : undefined;
+			if (previousBlock !== undefined) {
+				const missingBalances = await readTokenBalances(
+					client,
+					missingTokens,
+					from,
+					notes,
+					previousBlock,
+				);
+				for (const [token, balance] of missingBalances.entries()) {
+					preBalances.set(token, balance);
+				}
+			} else {
+				notes.push("Unable to read pre-transaction balances for newly discovered tokens.");
+				confidence = minConfidence(confidence, "medium");
+			}
+		}
+
 		const postBalances = await readTokenBalances(client, tokenCandidates, from, notes);
 
 		const assetChanges: AssetChange[] = [];
@@ -215,9 +241,7 @@ function simulateHeuristic(
 	chain: Chain,
 	reason: string,
 ): BalanceSimulationResult {
-	const notes: string[] = [reason, "Heuristic-only simulation (no Anvil fork)."].filter(
-		(Boolean),
-	);
+	const notes: string[] = [reason, "Heuristic-only simulation (no Anvil fork)."].filter(Boolean);
 	const assetChanges: AssetChange[] = [];
 	const approvals: ApprovalChange[] = [];
 
@@ -234,11 +258,11 @@ function simulateHeuristic(
 		const recipient = typeof decoded.args.to === "string" ? decoded.args.to : null;
 		const fromArg = typeof decoded.args.from === "string" ? decoded.args.from : null;
 
-		if (decoded.functionName === "approve" && amount !== null && spender) {
+		if (decoded.functionName === "approve" && amount !== null && spender && from) {
 			approvals.push({
 				standard: "erc20",
 				token: to,
-				owner: from ?? "0x0000000000000000000000000000000000000000",
+				owner: from,
 				spender,
 				amount,
 			});
@@ -326,11 +350,13 @@ async function readTokenBalances(
 			abi: typeof ERC20_BALANCE_ABI;
 			functionName: string;
 			args?: readonly unknown[];
+			blockNumber?: bigint;
 		}) => Promise<unknown>;
 	},
 	tokens: Set<Address>,
 	account: Address,
 	notes: string[],
+	blockNumber?: bigint,
 ): Promise<Map<Address, bigint>> {
 	const balances = new Map<Address, bigint>();
 	const entries = Array.from(tokens);
@@ -342,6 +368,7 @@ async function readTokenBalances(
 					abi: ERC20_BALANCE_ABI,
 					functionName: "balanceOf",
 					args: [account],
+					blockNumber,
 				});
 				return { token, balance };
 			} catch {
@@ -536,10 +563,7 @@ function buildNftChanges(transfers: ParsedTransfer[], owner: Address): AssetChan
 	return changes;
 }
 
-function minConfidence(
-	current: ConfidenceLevel,
-	incoming: ConfidenceLevel,
-): ConfidenceLevel {
+function minConfidence(current: ConfidenceLevel, incoming: ConfidenceLevel): ConfidenceLevel {
 	if (current === "low" || incoming === "low") return "low";
 	if (current === "medium" || incoming === "medium") return "medium";
 	return "high";
