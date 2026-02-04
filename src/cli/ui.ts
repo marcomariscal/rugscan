@@ -332,6 +332,12 @@ function orderBalanceChanges(changes: string[]): string[] {
 	return [...negative, ...positive, ...other];
 }
 
+function simulationConfidenceNote(simulation: BalanceSimulationResult | undefined): string {
+	if (!simulation) return "";
+	if (!simulation.success) return "";
+	return simulation.confidence !== "high" ? ` (${simulation.confidence} confidence)` : "";
+}
+
 function renderBalanceSection(result: AnalysisResult, hasCalldata: boolean): string[] {
 	const lines: string[] = [];
 	lines.push(" 💰 BALANCE CHANGES");
@@ -364,14 +370,14 @@ function renderBalanceSection(result: AnalysisResult, hasCalldata: boolean): str
 
 	const changes = buildBalanceChangeItems(result.simulation, result.contract.chain);
 	if (changes.length === 0) {
-		lines.push(COLORS.dim(" - No balance changes detected"));
+		const note = simulationConfidenceNote(result.simulation);
+		const line = ` - No balance changes detected${note}`;
+		lines.push(note ? COLORS.warning(line) : COLORS.dim(line));
 		return lines;
 	}
 
 	const ordered = orderBalanceChanges(changes);
-	const confidenceNote =
-		result.simulation.confidence !== "high" ? ` (${result.simulation.confidence} confidence)` : "";
-	lines.push(`${formatBalanceChangeLine(ordered)}${confidenceNote}`);
+	lines.push(`${formatBalanceChangeLine(ordered)}${simulationConfidenceNote(result.simulation)}`);
 	return lines;
 }
 
@@ -438,7 +444,9 @@ function renderApprovalsSection(result: AnalysisResult, hasCalldata: boolean): s
 		lines.push(COLORS.warning(" - Partial approvals (simulation failed):"));
 	}
 	if (approvals.length === 0) {
-		lines.push(COLORS.dim(" - None detected"));
+		const note = simulationConfidenceNote(result.simulation);
+		const line = ` - None detected${note}`;
+		lines.push(note ? COLORS.warning(line) : COLORS.dim(line));
 		return lines;
 	}
 	for (const approval of approvals) {
@@ -455,10 +463,16 @@ function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string
 	let label = result.ai
 		? riskLabel(result.ai.risk_score)
 		: recommendationRiskLabel(result.recommendation);
-	const simulationFailed = hasCalldata && (!result.simulation || !result.simulation.success);
-	if (simulationFailed && label === "SAFE") {
+
+	const simulationUncertain =
+		hasCalldata &&
+		(!result.simulation ||
+			!result.simulation.success ||
+			result.simulation.confidence !== "high");
+	if (simulationUncertain && label === "SAFE") {
 		label = "LOW";
 	}
+
 	const note = result.ai ? "" : " (AI disabled)";
 	const colored = riskColor(label)(label);
 	return [` 📊 RISK: ${colored}${note}`];

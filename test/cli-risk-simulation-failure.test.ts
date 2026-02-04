@@ -47,6 +47,7 @@ describe("cli risk label with simulation failures", () => {
 		expect(riskLine).toBeDefined();
 		expect(riskLine).not.toContain("SAFE");
 		expect(riskLine).toContain("LOW");
+		expect(output).not.toContain("- None detected");
 	});
 
 	test("AI enabled + simulation missing + calldata never shows SAFE", () => {
@@ -66,5 +67,34 @@ describe("cli risk label with simulation failures", () => {
 		expect(riskLine).toBeDefined();
 		expect(riskLine).not.toContain("SAFE");
 		expect(riskLine).toContain("LOW");
+		expect(output).not.toContain("- None detected");
+	});
+
+	test("AI enabled + simulation success (low confidence) + calldata never shows SAFE", () => {
+		const analysis: AnalysisResult = {
+			...baseAnalysis(),
+			ai: {
+				risk_score: 5,
+				summary: "No issues detected.",
+				concerns: [],
+				model: "test-model",
+				provider: "openai",
+			},
+			simulation: {
+				success: true,
+				assetChanges: [],
+				approvals: [],
+				confidence: "low",
+				notes: [],
+			},
+		};
+
+		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
+		const riskLine = output.split("\n").find((line) => line.includes("📊 RISK:"));
+		expect(riskLine).toBeDefined();
+		expect(riskLine).not.toContain("SAFE");
+		expect(riskLine).toContain("LOW");
+		expect(output).toContain("No balance changes detected (low confidence)");
+		expect(output).toContain("None detected (low confidence)");
 	});
 });
