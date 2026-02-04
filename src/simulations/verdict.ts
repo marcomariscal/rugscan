@@ -4,6 +4,7 @@ import type { ScanInput } from "../schema";
 import type { AnalysisResult, BalanceSimulationResult, Finding } from "../types";
 
 const MAX_UINT256 = (1n << 256n) - 1n;
+const MAX_UINT160 = (1n << 160n) - 1n;
 
 export function applySimulationVerdict(input: ScanInput, analysis: AnalysisResult): AnalysisResult {
 	if (!input.calldata) return analysis;
@@ -32,7 +33,12 @@ function applySimulationDrainerHeuristics(
 
 	const unlimitedApprovals = simulation.approvals.filter((approval) => {
 		if (approval.standard !== "erc20" && approval.standard !== "permit2") return false;
-		if (approval.amount !== MAX_UINT256) return false;
+		if (approval.amount === undefined) return false;
+		const isUnlimited =
+			approval.standard === "permit2"
+				? approval.amount === MAX_UINT160
+				: approval.amount === MAX_UINT256;
+		if (!isUnlimited) return false;
 		if (isKnownSpender(knownSpenders, approval.spender)) return false;
 		return true;
 	});

@@ -118,6 +118,16 @@ describe("approvals fixture e2e", () => {
 
 		const fixtureFiles: Array<{ file: string; expected: Record<string, unknown> }> = [
 			{
+				file: "permit2-approve-usdc-unlimited.json",
+				expected: {
+					standard: "permit2",
+					token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+					spender: "0x9999999999999999999999999999999999999999",
+					amount: "1461501637330902918203684832716283019655932542975",
+					scope: "token",
+				},
+			},
+			{
 				file: "erc20-approve-usdc-limited.json",
 				expected: {
 					standard: "erc20",

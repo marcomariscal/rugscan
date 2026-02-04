@@ -1,5 +1,5 @@
 import pc from "picocolors";
-import { MAX_UINT256 } from "../constants";
+import { MAX_UINT160, MAX_UINT256 } from "../constants";
 import type {
 	AIAnalysis,
 	AIConcern,
@@ -601,7 +601,10 @@ function formatSimulationApproval(approval: BalanceSimulationResult["approvals"]
 		};
 	}
 
-	const isUnlimited = approval.amount === MAX_UINT256;
+	const isUnlimited =
+		approval.standard === "permit2"
+			? approval.amount === MAX_UINT160
+			: approval.amount === MAX_UINT256;
 	const amountLabel =
 		isUnlimited || approval.amount === undefined
 			? "UNLIMITED"

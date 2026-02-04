@@ -4,6 +4,7 @@ import { applySimulationVerdict } from "../src/simulations/verdict";
 import type { AnalysisResult, BalanceSimulationResult } from "../src/types";
 
 const MAX_UINT256 = (1n << 256n) - 1n;
+const MAX_UINT160 = (1n << 160n) - 1n;
 
 function baseAnalysis(): AnalysisResult {
 	return {
@@ -55,6 +56,30 @@ describe("simulation-driven drainer heuristics", () => {
 					owner: "0x3333333333333333333333333333333333333333",
 					spender: "0x9999999999999999999999999999999999999999",
 					amount: MAX_UINT256,
+				},
+			],
+			confidence: "high",
+			notes: [],
+		});
+
+		const result = applySimulationVerdict(calldataInput(), analysis);
+		expect(result.findings.some((f) => f.code === "SIM_UNLIMITED_APPROVAL_UNKNOWN_SPENDER")).toBe(
+			true,
+		);
+		expect(result.recommendation).not.toBe("ok");
+	});
+
+	test("bumps risk for unlimited Permit2 approval to an unknown spender", () => {
+		const analysis = withSimulation(baseAnalysis(), {
+			success: true,
+			assetChanges: [],
+			approvals: [
+				{
+					standard: "permit2",
+					token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+					owner: "0x3333333333333333333333333333333333333333",
+					spender: "0x9999999999999999999999999999999999999999",
+					amount: MAX_UINT160,
 				},
 			],
 			confidence: "high",
