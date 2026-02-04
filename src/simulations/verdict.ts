@@ -1,15 +1,118 @@
+import { determineRecommendation } from "../analyzer";
+import { KNOWN_SPENDERS } from "../approvals/known-spenders";
 import type { ScanInput } from "../schema";
-import type { AnalysisResult, BalanceSimulationResult } from "../types";
+import type { AnalysisResult, BalanceSimulationResult, Finding } from "../types";
+
+const MAX_UINT256 = (1n << 256n) - 1n;
 
 export function applySimulationVerdict(input: ScanInput, analysis: AnalysisResult): AnalysisResult {
 	if (!input.calldata) return analysis;
 	const simulation = analysis.simulation;
-	if (simulation?.success) return analysis;
+	if (simulation?.success) {
+		return applySimulationDrainerHeuristics(input, analysis, simulation);
+	}
 	const recommendation = ensureCaution(analysis.recommendation);
 	return {
 		...analysis,
 		recommendation,
 	};
+}
+
+function applySimulationDrainerHeuristics(
+	input: ScanInput,
+	analysis: AnalysisResult,
+	simulation: BalanceSimulationResult,
+): AnalysisResult {
+	const chain = analysis.contract.chain;
+	const knownSpenders = new Set(
+		(KNOWN_SPENDERS[chain] ?? []).map((spender) => spender.address.toLowerCase()),
+	);
+	const findings: Finding[] = [...analysis.findings];
+	const originalCount = findings.length;
+
+	const unlimitedApprovals = simulation.approvals.filter((approval) => {
+		if (approval.standard !== "erc20") return false;
+		if (approval.amount !== MAX_UINT256) return false;
+		if (isKnownSpender(knownSpenders, approval.spender)) return false;
+		return true;
+	});
+
+	if (unlimitedApprovals.length > 0) {
+		findings.push({
+			level: "warning",
+			code: "SIM_UNLIMITED_APPROVAL_UNKNOWN_SPENDER",
+			message: "Simulation shows an unlimited ERC-20 approval to an unknown spender",
+			details: {
+				spenders: uniqueLowercased(unlimitedApprovals.map((a) => a.spender)),
+				tokens: uniqueLowercased(unlimitedApprovals.map((a) => a.token)),
+			},
+		});
+	}
+
+	const approvalForAll = simulation.approvals.filter((approval) => {
+		if (approval.standard !== "erc721" && approval.standard !== "erc1155") return false;
+		if (approval.scope !== "all") return false;
+		if (approval.approved !== true) return false;
+		if (isKnownSpender(knownSpenders, approval.spender)) return false;
+		return true;
+	});
+
+	if (approvalForAll.length > 0) {
+		findings.push({
+			level: "danger",
+			code: "SIM_APPROVAL_FOR_ALL_UNKNOWN_OPERATOR",
+			message: "Simulation shows an ApprovalForAll granted to an unknown operator",
+			details: {
+				operators: uniqueLowercased(approvalForAll.map((a) => a.spender)),
+				tokens: uniqueLowercased(approvalForAll.map((a) => a.token)),
+			},
+		});
+	}
+
+	const outgoingChanges = simulation.assetChanges.filter((change) => change.direction === "out");
+	const outgoingCounterparties = uniqueLowercased(
+		outgoingChanges
+			.map((change) => change.counterparty)
+			.filter((value): value is string => typeof value === "string" && value.length > 0),
+	);
+	const unknownOutgoingCounterparties = outgoingCounterparties.filter((counterparty) => {
+		if (isKnownSpender(knownSpenders, counterparty)) return false;
+		const calldataTo = input.calldata?.to;
+		if (calldataTo && counterparty === calldataTo.toLowerCase()) return false;
+		return true;
+	});
+
+	if (unknownOutgoingCounterparties.length >= 2 || outgoingChanges.length >= 3) {
+		findings.push({
+			level: unknownOutgoingCounterparties.length >= 2 ? "danger" : "warning",
+			code: "SIM_MULTIPLE_OUTBOUND_TRANSFERS",
+			message: "Simulation shows multiple outbound asset transfers",
+			details: {
+				outboundChanges: outgoingChanges.length,
+				counterparties: outgoingCounterparties,
+				unknownCounterparties: unknownOutgoingCounterparties,
+			},
+		});
+	}
+
+	if (findings.length === originalCount) return analysis;
+	return {
+		...analysis,
+		findings,
+		recommendation: determineRecommendation(findings),
+	};
+}
+
+function isKnownSpender(knownSpenders: Set<string>, spender: string): boolean {
+	return knownSpenders.has(spender.toLowerCase());
+}
+
+function uniqueLowercased(values: string[]): string[] {
+	const set = new Set<string>();
+	for (const value of values) {
+		set.add(value.toLowerCase());
+	}
+	return [...set];
 }
 
 export function buildSimulationNotRun(input: ScanInput["calldata"]): BalanceSimulationResult {
