@@ -1,0 +1,6 @@
+{
+	"simulation": {
+		"enabled": true,
+		"forkBlock": 24379939
+	}
+}

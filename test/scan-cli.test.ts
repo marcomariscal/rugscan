@@ -89,6 +89,8 @@ describe("cli scan", () => {
 		const parsed = JSON.parse(result.stdout);
 		expect(parsed.scan?.input?.calldata?.to).toBe("0x66a9893cc07d91d95644aedd05d03f95e1dba8af");
 		expect(parsed.scan?.input?.calldata?.chain).toBe("1");
+		const tags = Array.isArray(parsed.scan?.contract?.tags) ? parsed.scan.contract.tags : [];
+		expect(tags.join(" ")).toContain("Uniswap");
 	}, 120000);
 
 	test("--calldata accepts JSON-RPC request objects (params[0])", async () => {
