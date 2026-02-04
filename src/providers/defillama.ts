@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "../http";
 import type { Chain, ProtocolMatch } from "../types";
 
 const DEFILLAMA_API = "https://api.llama.fi";
@@ -64,7 +65,7 @@ async function getProtocols(): Promise<Protocol[]> {
 	}
 
 	try {
-		const response = await fetch(`${DEFILLAMA_API}/protocols`);
+		const response = await fetchWithTimeout(`${DEFILLAMA_API}/protocols`);
 		if (!response.ok) {
 			return protocolCache || [];
 		}
@@ -78,13 +79,15 @@ async function getProtocols(): Promise<Protocol[]> {
 }
 
 export async function matchProtocol(address: string, chain: Chain): Promise<ProtocolMatch | null> {
-	const protocols = await getProtocols();
 	const chainName = CHAIN_NAMES[chain];
 	const normalizedAddress = address.toLowerCase();
 	const manualMatch = KNOWN_PROTOCOL_ADDRESSES[chain]?.[normalizedAddress];
 	if (manualMatch) {
-		return resolveManualMatch(protocols, manualMatch);
+		// Avoid network dependency for known addresses.
+		return { name: manualMatch.name, slug: manualMatch.slug };
 	}
+
+	const protocols = await getProtocols();
 
 	// DeFiLlama doesn't have direct address mapping for most protocols
 	// This is a best-effort match based on known addresses
@@ -114,7 +117,7 @@ interface ParsedAddress {
 	address: string;
 }
 
-function resolveManualMatch(protocols: Protocol[], match: ProtocolOverride): ProtocolMatch {
+function _resolveManualMatch(protocols: Protocol[], match: ProtocolOverride): ProtocolMatch {
 	for (const protocol of protocols) {
 		if (protocol.slug === match.slug) {
 			return { name: protocol.name, tvl: protocol.tvl, slug: protocol.slug };

@@ -1,5 +1,6 @@
 import type { Abi } from "viem";
 import { getChainConfig } from "../chains";
+import { fetchWithTimeout } from "../http";
 import type { Chain, VerificationResult } from "../types";
 
 const SOURCIFY_API = "https://sourcify.dev/server";
@@ -60,7 +61,7 @@ async function fetchSourcifyResult(address: string, chainId: number): Promise<So
 	const url = `${SOURCIFY_API}/files/any/${chainId}/${address}`;
 
 	try {
-		const response = await fetch(url);
+		const response = await fetchWithTimeout(url);
 
 		if (!response.ok) {
 			return { verified: false };

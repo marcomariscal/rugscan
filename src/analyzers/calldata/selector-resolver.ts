@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "../../http";
 import { isRecord } from "./utils";
 
 const FOURBYTE_API = "https://www.4byte.directory/api/v1/signatures/";
@@ -25,7 +26,7 @@ export async function resolveSelector(selector: string): Promise<SelectorLookupR
 	}
 
 	try {
-		const response = await fetch(`${FOURBYTE_API}?hex_signature=${normalized}`);
+		const response = await fetchWithTimeout(`${FOURBYTE_API}?hex_signature=${normalized}`);
 		if (!response.ok) {
 			return cachedResult(normalized, cached);
 		}

@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { fetchWithTimeout } from "../http";
 import type { Chain, ProviderResult, TokenSecurity } from "../types";
 
 const GOPLUS_API = "https://api.gopluslabs.io/api/v1";
@@ -69,7 +70,7 @@ async function fetchTokenSecurity(
 	const attempts = 3;
 	for (let attempt = 0; attempt < attempts; attempt += 1) {
 		try {
-			const response = await fetch(url);
+			const response = await fetchWithTimeout(url);
 			if (!response.ok) {
 				const retryable = response.status === 429 || response.status >= 500;
 				if (retryable && attempt < attempts - 1) {

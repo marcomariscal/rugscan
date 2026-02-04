@@ -1,4 +1,5 @@
 import { getChainConfig } from "../chains";
+import { fetchWithTimeout } from "../http";
 import type { Chain, EtherscanData } from "../types";
 
 export async function getContractData(
@@ -16,7 +17,7 @@ export async function getContractData(
 	try {
 		// Get source code (includes verification status and name)
 		const sourceUrl = `${baseUrl}?module=contract&action=getsourcecode&address=${address}&apikey=${apiKey}`;
-		const sourceRes = await fetch(sourceUrl);
+		const sourceRes = await fetchWithTimeout(sourceUrl);
 		const sourceData = await sourceRes.json();
 
 		if (sourceData.status !== "1" || !sourceData.result?.[0]) {
@@ -28,7 +29,7 @@ export async function getContractData(
 
 		// Get transaction count
 		const txCountUrl = `${baseUrl}?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=1&sort=asc&apikey=${apiKey}`;
-		const txCountRes = await fetch(txCountUrl);
+		const txCountRes = await fetchWithTimeout(txCountUrl);
 		const txCountData = await txCountRes.json();
 
 		// Get creation info (first transaction is usually contract creation)
@@ -44,7 +45,7 @@ export async function getContractData(
 
 		// Get total tx count
 		const txListUrl = `${baseUrl}?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=10000&apikey=${apiKey}`;
-		const txListRes = await fetch(txListUrl);
+		const txListRes = await fetchWithTimeout(txListUrl);
 		const txListData = await txListRes.json();
 		const tx_count = txListData.status === "1" ? txListData.result?.length : undefined;
 
@@ -79,7 +80,7 @@ export async function getAddressLabels(
 	const url = `${rootUrl}/api/v2/nametag?address=${address}&chainid=${chainId}${apiKeyParam}`;
 
 	try {
-		const response = await fetch(url);
+		const response = await fetchWithTimeout(url);
 		if (!response.ok) {
 			return await getPhishHackLabel(address, chainId);
 		}
@@ -174,13 +175,13 @@ async function getPhishHackAddresses(chainId: number): Promise<Set<string> | nul
 async function fetchPhishHackAddresses(chainId: number): Promise<Set<string> | null> {
 	try {
 		const exportUrl = `https://api-metadata.etherscan.io/v2/api?chainid=${chainId}&module=nametag&action=exportaddresstags&label=phish-hack&format=csv`;
-		const exportResponse = await fetch(exportUrl);
+		const exportResponse = await fetchWithTimeout(exportUrl);
 		if (!exportResponse.ok) return null;
 		const exportData = await exportResponse.json();
 		const csvLink = parseExportLink(exportData);
 		if (!csvLink) return null;
 
-		const csvResponse = await fetch(csvLink);
+		const csvResponse = await fetchWithTimeout(csvLink);
 		if (!csvResponse.ok) return null;
 		const csv = await csvResponse.text();
 		const addresses = new Set<string>();
