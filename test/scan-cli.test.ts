@@ -84,7 +84,15 @@ describe("cli scan", () => {
 			nonce: "0x1",
 		});
 
-		const result = await runCli(["scan", "--no-sim", "--calldata", tx, "--format", "json", "--quiet"]);
+		const result = await runCli([
+			"scan",
+			"--no-sim",
+			"--calldata",
+			tx,
+			"--format",
+			"json",
+			"--quiet",
+		]);
 		expect(result.exitCode).toBe(0);
 		const parsed = JSON.parse(result.stdout);
 		expect(parsed.scan?.input?.calldata?.to).toBe("0x66a9893cc07d91d95644aedd05d03f95e1dba8af");

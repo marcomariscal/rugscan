@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { applySimulationVerdict } from "../src/simulations/verdict";
 import type { ScanInput } from "../src/schema";
+import { applySimulationVerdict } from "../src/simulations/verdict";
 import type { AnalysisResult } from "../src/types";
 
 function baseAnalysis(): AnalysisResult {

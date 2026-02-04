@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { encodeAbiParameters, encodeEventTopics, type AbiEvent, type Log } from "viem";
+import { type AbiEvent, encodeAbiParameters, encodeEventTopics, type Log } from "viem";
 import { parseReceiptLogs } from "../src/simulations/logs";
 
 const APPROVAL_FOR_ALL_EVENT: AbiEvent = {

@@ -466,9 +466,7 @@ function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string
 
 	const simulationUncertain =
 		hasCalldata &&
-		(!result.simulation ||
-			!result.simulation.success ||
-			result.simulation.confidence !== "high");
+		(!result.simulation || !result.simulation.success || result.simulation.confidence !== "high");
 	if (simulationUncertain && label === "SAFE") {
 		label = "LOW";
 	}

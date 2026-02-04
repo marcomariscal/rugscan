@@ -1,10 +1,7 @@
 import type { ScanInput } from "../schema";
 import type { AnalysisResult, BalanceSimulationResult } from "../types";
 
-export function applySimulationVerdict(
-	input: ScanInput,
-	analysis: AnalysisResult,
-): AnalysisResult {
+export function applySimulationVerdict(input: ScanInput, analysis: AnalysisResult): AnalysisResult {
 	if (!input.calldata) return analysis;
 	const simulation = analysis.simulation;
 	if (simulation && simulation.success) return analysis;
@@ -15,9 +12,7 @@ export function applySimulationVerdict(
 	};
 }
 
-export function buildSimulationNotRun(
-	input: ScanInput["calldata"],
-): BalanceSimulationResult {
+export function buildSimulationNotRun(input: ScanInput["calldata"]): BalanceSimulationResult {
 	if (!input) {
 		return {
 			success: false,

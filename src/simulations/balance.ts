@@ -84,10 +84,20 @@ export async function simulateBalance(
 		return simulateHeuristic(tx, chain, "Simulation backend set to heuristic.", hints);
 	}
 	if (!tx.from || !isAddress(tx.from)) {
-		return simulateHeuristic(tx, chain, "Missing sender address; falling back to heuristic.", hints);
+		return simulateHeuristic(
+			tx,
+			chain,
+			"Missing sender address; falling back to heuristic.",
+			hints,
+		);
 	}
 	if (!isAddress(tx.to)) {
-		return simulateHeuristic(tx, chain, "Invalid target address; falling back to heuristic.", hints);
+		return simulateHeuristic(
+			tx,
+			chain,
+			"Invalid target address; falling back to heuristic.",
+			hints,
+		);
 	}
 	if (!isHexString(tx.data)) {
 		return simulateHeuristic(tx, chain, "Invalid calldata; falling back to heuristic.", hints);
@@ -293,11 +303,9 @@ function simulateHeuristic(
 	reason: string,
 	hints: string[] = [],
 ): BalanceSimulationResult {
-	const notes: string[] = [
-		reason,
-		"Heuristic-only simulation (no Anvil fork).",
-		...hints,
-	].filter(Boolean);
+	const notes: string[] = [reason, "Heuristic-only simulation (no Anvil fork).", ...hints].filter(
+		Boolean,
+	);
 	const assetChanges: AssetChange[] = [];
 	const approvals: ApprovalChange[] = [];
 
