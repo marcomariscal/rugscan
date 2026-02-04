@@ -13,7 +13,7 @@ export const CHAINS: Record<Chain, ChainConfig> = {
 	ethereum: {
 		chainId: 1,
 		name: "Ethereum",
-		rpcUrl: "https://eth.drpc.org",
+		rpcUrl: "https://ethereum.publicnode.com", // default mainnet RPC (used for fork URL + eth_call/logs)
 		etherscanApiUrl: "https://api.etherscan.io/api",
 		etherscanUrl: "https://etherscan.io",
 		sourcifyChainId: 1,

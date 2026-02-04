@@ -192,6 +192,7 @@ export async function parseReceiptLogs(
 				owner,
 				spender,
 				amount: value,
+				scope: "token",
 				logIndex: log.logIndex,
 			});
 			continue;
