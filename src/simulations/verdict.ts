@@ -4,7 +4,7 @@ import type { AnalysisResult, BalanceSimulationResult } from "../types";
 export function applySimulationVerdict(input: ScanInput, analysis: AnalysisResult): AnalysisResult {
 	if (!input.calldata) return analysis;
 	const simulation = analysis.simulation;
-	if (simulation && simulation.success) return analysis;
+	if (simulation?.success) return analysis;
 	const recommendation = ensureCaution(analysis.recommendation);
 	return {
 		...analysis,

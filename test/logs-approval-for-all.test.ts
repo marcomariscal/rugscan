@@ -34,9 +34,9 @@ describe("parseReceiptLogs", () => {
 			topics,
 			data,
 			blockNumber: 1n,
-			transactionHash: "0x" + "11".repeat(32),
+			transactionHash: `0x${"11".repeat(32)}`,
 			transactionIndex: 0,
-			blockHash: "0x" + "22".repeat(32),
+			blockHash: `0x${"22".repeat(32)}`,
 			logIndex: 0,
 			removed: false,
 		} satisfies Log;
