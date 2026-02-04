@@ -151,7 +151,7 @@ const assetChangeSchema = z
 
 const approvalChangeSchema = z
 	.object({
-		standard: z.enum(["erc20", "erc721", "erc1155"]),
+		standard: z.enum(["erc20", "erc721", "erc1155", "permit2"]),
 		token: addressSchema,
 		owner: addressSchema,
 		spender: addressSchema,

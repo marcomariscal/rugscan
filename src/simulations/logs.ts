@@ -9,6 +9,11 @@ import {
 	isAddress,
 } from "viem";
 import { toBigInt } from "../analyzers/calldata/utils";
+import {
+	PERMIT2_APPROVAL_EVENT,
+	PERMIT2_CANONICAL_ADDRESS,
+	PERMIT2_PERMIT_EVENT,
+} from "../permit2";
 import type { ConfidenceLevel } from "../types";
 
 export interface ParsedTransfer {
@@ -23,7 +28,7 @@ export interface ParsedTransfer {
 }
 
 export interface ParsedApproval {
-	standard: "erc20" | "erc721" | "erc1155";
+	standard: "erc20" | "erc721" | "erc1155" | "permit2";
 	token: Address;
 	owner: Address;
 	spender: Address;
@@ -139,6 +144,8 @@ const APPROVAL_ERC721_ABI: Abi = [APPROVAL_EVENT_ERC721];
 const APPROVAL_FOR_ALL_ABI: Abi = [APPROVAL_FOR_ALL_EVENT];
 const TRANSFER_SINGLE_ABI: Abi = [TRANSFER_SINGLE_EVENT];
 const TRANSFER_BATCH_ABI: Abi = [TRANSFER_BATCH_EVENT];
+const PERMIT2_APPROVAL_ABI: Abi = [PERMIT2_APPROVAL_EVENT];
+const PERMIT2_PERMIT_ABI: Abi = [PERMIT2_PERMIT_EVENT];
 
 const TRANSFER_TOPIC = getEventSelector(TRANSFER_EVENT);
 const APPROVAL_ERC20_TOPIC = getEventSelector(APPROVAL_EVENT_ERC20);
@@ -146,6 +153,8 @@ const APPROVAL_ERC721_TOPIC = getEventSelector(APPROVAL_EVENT_ERC721);
 const APPROVAL_FOR_ALL_TOPIC = getEventSelector(APPROVAL_FOR_ALL_EVENT);
 const TRANSFER_SINGLE_TOPIC = getEventSelector(TRANSFER_SINGLE_EVENT);
 const TRANSFER_BATCH_TOPIC = getEventSelector(TRANSFER_BATCH_EVENT);
+const PERMIT2_APPROVAL_TOPIC = getEventSelector(PERMIT2_APPROVAL_EVENT);
+const PERMIT2_PERMIT_TOPIC = getEventSelector(PERMIT2_PERMIT_EVENT);
 
 export async function parseReceiptLogs(
 	logs: Log[],
@@ -192,6 +201,47 @@ export async function parseReceiptLogs(
 				owner,
 				spender,
 				amount: value,
+				scope: "token",
+				logIndex: log.logIndex,
+			});
+			continue;
+		}
+
+		if (
+			topic === PERMIT2_APPROVAL_TOPIC &&
+			log.address.toLowerCase() === PERMIT2_CANONICAL_ADDRESS
+		) {
+			const decoded = decodeLog(PERMIT2_APPROVAL_ABI, log, "Approval");
+			const owner = getAddressArg(decoded?.args, "owner");
+			const token = getAddressArg(decoded?.args, "token");
+			const spender = getAddressArg(decoded?.args, "spender");
+			const amount = getBigIntArg(decoded?.args, "amount");
+			if (!owner || !token || !spender || amount === null) continue;
+			approvals.push({
+				standard: "permit2",
+				token,
+				owner,
+				spender,
+				amount,
+				scope: "token",
+				logIndex: log.logIndex,
+			});
+			continue;
+		}
+
+		if (topic === PERMIT2_PERMIT_TOPIC && log.address.toLowerCase() === PERMIT2_CANONICAL_ADDRESS) {
+			const decoded = decodeLog(PERMIT2_PERMIT_ABI, log, "Permit");
+			const owner = getAddressArg(decoded?.args, "owner");
+			const token = getAddressArg(decoded?.args, "token");
+			const spender = getAddressArg(decoded?.args, "spender");
+			const amount = getBigIntArg(decoded?.args, "amount");
+			if (!owner || !token || !spender || amount === null) continue;
+			approvals.push({
+				standard: "permit2",
+				token,
+				owner,
+				spender,
+				amount,
 				scope: "token",
 				logIndex: log.logIndex,
 			});

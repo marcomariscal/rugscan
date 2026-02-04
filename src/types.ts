@@ -164,7 +164,7 @@ export interface AssetChange {
 }
 
 export interface ApprovalChange {
-	standard: "erc20" | "erc721" | "erc1155";
+	standard: "erc20" | "erc721" | "erc1155" | "permit2";
 	token: string;
 	owner: string;
 	spender: string;

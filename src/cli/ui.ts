@@ -577,20 +577,25 @@ function formatSimulationApproval(approval: BalanceSimulationResult["approvals"]
 } {
 	const tokenLabel = shortenAddress(approval.token);
 	const spenderLabel = shortenAddress(approval.spender);
+	const prefix = approval.standard === "permit2" ? "PERMIT2 " : "";
 
 	if (approval.scope === "all") {
 		const approved = approval.approved !== false;
 		const label = approved ? "ALL" : "REVOKE ALL";
 		return {
-			text: `${tokenLabel}: ${label} to ${spenderLabel}`,
+			text: `${prefix}${tokenLabel}: ${label} to ${spenderLabel}`,
 			isUnlimited: approved,
 			key: `${tokenLabel}|${spenderLabel}|all`,
 		};
 	}
 
-	if (approval.tokenId !== undefined && approval.standard !== "erc20") {
+	if (
+		approval.tokenId !== undefined &&
+		approval.standard !== "erc20" &&
+		approval.standard !== "permit2"
+	) {
 		return {
-			text: `${tokenLabel} #${approval.tokenId.toString()}: APPROVE to ${spenderLabel}`,
+			text: `${prefix}${tokenLabel} #${approval.tokenId.toString()}: APPROVE to ${spenderLabel}`,
 			isUnlimited: false,
 			key: `${tokenLabel}|${spenderLabel}|${approval.tokenId.toString()}`,
 		};
@@ -602,7 +607,7 @@ function formatSimulationApproval(approval: BalanceSimulationResult["approvals"]
 			? "UNLIMITED"
 			: formatApprovalAmount(approval.amount, 18);
 	return {
-		text: `${tokenLabel}: ${amountLabel} to ${spenderLabel}`,
+		text: `${prefix}${tokenLabel}: ${amountLabel} to ${spenderLabel}`,
 		isUnlimited,
 		key: `${tokenLabel}|${spenderLabel}|amount`,
 	};

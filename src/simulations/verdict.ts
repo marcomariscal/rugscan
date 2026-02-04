@@ -31,7 +31,7 @@ function applySimulationDrainerHeuristics(
 	const originalCount = findings.length;
 
 	const unlimitedApprovals = simulation.approvals.filter((approval) => {
-		if (approval.standard !== "erc20") return false;
+		if (approval.standard !== "erc20" && approval.standard !== "permit2") return false;
 		if (approval.amount !== MAX_UINT256) return false;
 		if (isKnownSpender(knownSpenders, approval.spender)) return false;
 		return true;
