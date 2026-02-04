@@ -64,7 +64,15 @@ describe("cli scan", () => {
 			data: "0x",
 			chain: "1",
 		});
-		const result = await runCli(["scan", "--calldata", calldata, "--format", "json", "--quiet"]);
+		const result = await runCli([
+			"scan",
+			"--no-sim",
+			"--calldata",
+			calldata,
+			"--format",
+			"json",
+			"--quiet",
+		]);
 
 		expect(result.exitCode).toBe(0);
 		const parsed = JSON.parse(result.stdout);
@@ -135,6 +143,7 @@ describe("cli scan", () => {
 	test("--calldata accepts raw hex calldata when --to is provided", async () => {
 		const result = await runCli([
 			"scan",
+			"--no-sim",
 			"--calldata",
 			"0x3593564c",
 			"--to",
