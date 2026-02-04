@@ -23,6 +23,9 @@ const anvilPath =
 
 const fixtureFiles = readdirSync(fixturesDir)
 	.filter((file) => file.endsWith(".json"))
+	// This suite only targets router swap fixtures. Approval/lend-borrow fixtures live in the same directory
+	// but have a different shape and are covered by their own e2e tests.
+	.filter((file) => file.startsWith("uniswap-v4-universalrouter-eth-swap-"))
 	.sort();
 
 async function loadFixture(fileName: string): Promise<TxFixture> {
