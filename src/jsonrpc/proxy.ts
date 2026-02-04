@@ -313,13 +313,19 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				if (!isJsonRpcRequest(entry)) {
 					return jsonRpcError(null, -32600, "Invalid Request");
 				}
-				const id: JsonRpcId = "id" in entry ? (entry.id ?? null) : null;
+				const idPresent = "id" in entry;
+				const id: JsonRpcId = idPresent ? (entry.id ?? null) : null;
+				const isNotification = !idPresent;
 
 				if (entry.method !== "eth_sendTransaction") {
 					const upstreamResponse = await forwardToUpstream(
 						options.upstreamUrl,
 						JSON.stringify(entry),
 					);
+					if (isNotification) {
+						// JSON-RPC notifications must not receive a response.
+						return null;
+					}
 					const upstreamJson: unknown = await upstreamResponse.json().catch(() => null);
 					if (!isJsonRpcResponse(upstreamJson)) {
 						return jsonRpcError(id, -32000, "Upstream returned invalid JSON");
@@ -329,7 +335,9 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 
 				const calldata = extractSendTransactionCalldata(entry);
 				if (!calldata) {
-					return jsonRpcError(id, -32602, "Invalid params for eth_sendTransaction");
+					return isNotification
+						? null
+						: jsonRpcError(id, -32602, "Invalid params for eth_sendTransaction");
 				}
 
 				if (upstreamChainId === null) {
@@ -342,7 +350,7 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					calldataChain: calldata.chain,
 				});
 				if (!chain) {
-					return jsonRpcError(id, -32602, "Unable to resolve chain");
+					return isNotification ? null : jsonRpcError(id, -32602, "Unable to resolve chain");
 				}
 
 				const config = await configPromise;
@@ -351,7 +359,7 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				};
 				const validated = scanInputSchema.safeParse(input);
 				if (!validated.success) {
-					return jsonRpcError(id, -32602, "Invalid transaction fields");
+					return isNotification ? null : jsonRpcError(id, -32602, "Invalid transaction fields");
 				}
 
 				let outcome: ProxyScanOutcome;
@@ -382,27 +390,45 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				});
 
 				if (action === "prompt") {
-					const ok = await promptYesNo(
-						`Forward transaction anyway? (recommendation=${outcome.recommendation}, simulation=${
-							outcome.simulationSuccess ? "ok" : "failed"
-						}) [y/N] `,
-					);
-					if (!ok) {
-						return jsonRpcError(id, 4001, "Transaction blocked by rugscan", {
-							recommendation: outcome.recommendation,
-							simulationSuccess: outcome.simulationSuccess,
-						});
+					if (isNotification) {
+						// No response channel. Default to blocking unless the user explicitly forwards.
+						const ok = await promptYesNo(
+							`Forward transaction anyway? (recommendation=${outcome.recommendation}, simulation=${
+								outcome.simulationSuccess ? "ok" : "failed"
+							}) [y/N] `,
+						);
+						if (!ok) return null;
+					} else {
+						const ok = await promptYesNo(
+							`Forward transaction anyway? (recommendation=${outcome.recommendation}, simulation=${
+								outcome.simulationSuccess ? "ok" : "failed"
+							}) [y/N] `,
+						);
+						if (!ok) {
+							return jsonRpcError(id, 4001, "Transaction blocked by rugscan", {
+								recommendation: outcome.recommendation,
+								simulationSuccess: outcome.simulationSuccess,
+							});
+						}
 					}
 				}
 
 				if (action === "block") {
-					return jsonRpcError(id, 4001, "Transaction blocked by rugscan", {
-						recommendation: outcome.recommendation,
-						simulationSuccess: outcome.simulationSuccess,
-					});
+					return isNotification
+						? null
+						: jsonRpcError(id, 4001, "Transaction blocked by rugscan", {
+								recommendation: outcome.recommendation,
+								simulationSuccess: outcome.simulationSuccess,
+							});
 				}
 
-				const upstreamResponse = await forwardToUpstream(options.upstreamUrl, rawBody);
+				const upstreamResponse = await forwardToUpstream(
+					options.upstreamUrl,
+					JSON.stringify(entry),
+				);
+				if (isNotification) {
+					return null;
+				}
 				const upstreamJson: unknown = await upstreamResponse.json().catch(() => null);
 				if (!isJsonRpcResponse(upstreamJson)) {
 					return jsonRpcError(id, -32000, "Upstream returned invalid JSON");
@@ -416,14 +442,18 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				for (const entry of body) {
 					const res = await handleSingle(entry);
 					if (!res) continue;
-					// Notifications (no id) should be ignored per JSON-RPC.
-					if (res.id === undefined) continue;
 					responses.push(res);
+				}
+				if (responses.length === 0) {
+					return new Response(null, { status: 204 });
 				}
 				responsePayload = responses;
 			} else {
 				const res = await handleSingle(body);
-				responsePayload = res ?? jsonRpcError(null, -32600, "Invalid Request");
+				if (!res) {
+					return new Response(null, { status: 204 });
+				}
+				responsePayload = res;
 			}
 
 			handled += 1;
