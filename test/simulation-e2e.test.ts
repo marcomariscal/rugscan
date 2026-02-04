@@ -27,6 +27,8 @@ const emptyConfigPath = fileURLToPath(new URL("./fixtures/empty-config.json", im
 const anvilPath =
 	process.env.RUGSCAN_ANVIL_PATH ?? path.join(os.homedir(), ".foundry", "bin", "anvil");
 const anvilDir = path.dirname(anvilPath);
+const foundryDefaultAnvilPath = path.join(os.homedir(), ".foundry", "bin", "anvil");
+const bunDir = path.dirname(process.execPath);
 
 const calldata = JSON.stringify({
 	to: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
@@ -41,6 +43,14 @@ function baseEnv(config: string) {
 		RUGSCAN_CONFIG: config,
 		NO_COLOR: "1",
 		PATH: `${anvilDir}:${process.env.PATH ?? ""}`,
+	};
+}
+
+function envWithoutAnvilOnPath(config: string) {
+	return {
+		RUGSCAN_CONFIG: config,
+		NO_COLOR: "1",
+		PATH: bunDir,
 	};
 }
 
@@ -97,6 +107,23 @@ describe("simulation e2e", () => {
 		const result = await runCli(
 			["scan", "--calldata", calldata, "--format", "json", "--quiet"],
 			baseEnv(emptyConfigPath),
+		);
+
+		expect(result.exitCode).toBe(0);
+		const parsed = JSON.parse(result.stdout);
+		const simulation = parsed?.scan?.simulation;
+		expect(simulation).toBeDefined();
+		expect(simulation?.success).toBe(true);
+	}, 180000);
+
+	test("scan --calldata runs anvil simulation even if anvil is not on PATH (Foundry default)", async () => {
+		if (!existsSync(foundryDefaultAnvilPath)) {
+			return;
+		}
+
+		const result = await runCli(
+			["scan", "--calldata", calldata, "--format", "json", "--quiet"],
+			envWithoutAnvilOnPath(emptyConfigPath),
 		);
 
 		expect(result.exitCode).toBe(0);

@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createServer } from "node:net";
+import os from "node:os";
+import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createTestClient, http, publicActions } from "viem";
 import { arbitrum, base, mainnet, optimism, polygon } from "viem/chains";
@@ -37,7 +40,11 @@ const instances = new Map<string, Promise<AnvilInstance>>();
 export async function getAnvilClient(chain: Chain, config?: Config): Promise<AnvilInstance> {
 	const forkUrl = resolveRpcUrl(chain, config);
 	const forkBlock = config?.simulation?.forkBlock;
-	const anvilPath = config?.simulation?.anvilPath ?? "anvil";
+	const resolved = resolveAnvilExecutable(config);
+	if (resolved.kind === "missing") {
+		throw new AnvilUnavailableError(buildAnvilNotFoundMessage(resolved.searched));
+	}
+	const anvilPath = resolved.anvilPath;
 	const key = `${chain}:${forkUrl}:${forkBlock ?? "latest"}`;
 	const existing = instances.get(key);
 	if (existing) return existing;
@@ -170,4 +177,111 @@ async function stopProcess(child: ReturnType<typeof spawn>): Promise<void> {
 		child.once("exit", () => resolve());
 		child.kill();
 	});
+}
+
+type ResolvedAnvilExecutable =
+	| { kind: "explicit"; anvilPath: string }
+	| { kind: "auto"; anvilPath: string }
+	| { kind: "missing"; searched: AnvilSearchInfo };
+
+interface AnvilSearchInfo {
+	searchedOnPath: boolean;
+	checkedPaths: string[];
+}
+
+function resolveAnvilExecutable(config?: Config): ResolvedAnvilExecutable {
+	const explicit = config?.simulation?.anvilPath;
+	if (explicit) {
+		return { kind: "explicit", anvilPath: explicit };
+	}
+
+	const searchedOnPath = Boolean(process.env.PATH);
+	const fromPath = findExecutableOnPath("anvil");
+	if (fromPath) {
+		return { kind: "auto", anvilPath: fromPath };
+	}
+
+	const checkedPaths = buildDefaultAnvilCandidates(resolveHomeDir());
+	for (const candidate of checkedPaths) {
+		if (existsSync(candidate)) {
+			return { kind: "auto", anvilPath: candidate };
+		}
+	}
+
+	return {
+		kind: "missing",
+		searched: {
+			searchedOnPath,
+			checkedPaths,
+		},
+	};
+}
+
+function resolveHomeDir(): string {
+	const home = process.env.HOME;
+	if (home && home.trim().length > 0) {
+		return home;
+	}
+	const userProfile = process.env.USERPROFILE;
+	if (userProfile && userProfile.trim().length > 0) {
+		return userProfile;
+	}
+	return os.homedir();
+}
+
+function buildDefaultAnvilCandidates(homeDir: string): string[] {
+	if (!homeDir) return [];
+	return [path.join(homeDir, ".foundry", "bin", "anvil")];
+}
+
+function buildAnvilNotFoundMessage(search: AnvilSearchInfo): string {
+	const parts: string[] = [];
+	if (search.searchedOnPath) {
+		parts.push('searched for "anvil" on PATH');
+	}
+	if (search.checkedPaths.length > 0) {
+		parts.push(`checked: ${search.checkedPaths.join(", ")}`);
+	}
+	const suffix = parts.length > 0 ? ` (${parts.join("; ")})` : "";
+	return `Anvil not found${suffix}`;
+}
+
+function findExecutableOnPath(command: string): string | null {
+	const pathValue = process.env.PATH;
+	if (!pathValue) return null;
+	const dirs = splitPathList(pathValue);
+	if (dirs.length === 0) return null;
+
+	const extensions = executableExtensions();
+	for (const dir of dirs) {
+		for (const ext of extensions) {
+			const candidate = path.join(dir, `${command}${ext}`);
+			if (existsSync(candidate)) {
+				return candidate;
+			}
+		}
+	}
+	return null;
+}
+
+function splitPathList(value: string): string[] {
+	return value
+		.split(path.delimiter)
+		.map((entry) => entry.trim())
+		.filter((entry) => entry.length > 0);
+}
+
+function executableExtensions(): string[] {
+	if (process.platform !== "win32") return [""];
+	const pathext = process.env.PATHEXT;
+	if (pathext) {
+		const entries = pathext
+			.split(";")
+			.map((entry) => entry.trim())
+			.filter((entry) => entry.length > 0);
+		if (entries.length > 0) {
+			return entries;
+		}
+	}
+	return [".EXE", ".CMD", ".BAT", ".COM"];
 }
