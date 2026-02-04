@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { privateKeyToAccount } from "viem/accounts";
 import {
 	decideRiskAction,
+	extractSendRawTransactionCalldata,
 	extractSendTransactionCalldata,
 	type ProxyPolicy,
 } from "../src/jsonrpc/proxy";
@@ -36,6 +38,36 @@ describe("jsonrpc proxy - unit", () => {
 		expect(calldata.from).toBe("0x24274566a1ad6a9b056e8e2618549ebd2f5141a7");
 		expect(calldata.data).toBe("0x");
 		expect(calldata.value).toBe("0");
+		expect(calldata.chain).toBe("1");
+	});
+
+	test("extractSendRawTransactionCalldata parses eth_sendRawTransaction signed tx", async () => {
+		const account = privateKeyToAccount(`0x${"11".repeat(32)}`);
+		const signed = await account.signTransaction({
+			chainId: 1,
+			type: "eip1559",
+			to: "0x66a9893cc07d91d95644aedd05d03f95e1dba8af",
+			value: 123n,
+			data: "0x1234",
+			nonce: 0,
+			gas: 21000n,
+			maxFeePerGas: 1n,
+			maxPriorityFeePerGas: 1n,
+		});
+
+		const calldata = await extractSendRawTransactionCalldata({
+			jsonrpc: "2.0",
+			id: 1,
+			method: "eth_sendRawTransaction",
+			params: [signed],
+		});
+
+		expect(calldata).not.toBeNull();
+		if (!calldata) return;
+		expect(calldata.to).toBe("0x66a9893cc07d91d95644aedd05d03f95e1dba8af");
+		expect(calldata.from?.toLowerCase()).toBe(account.address.toLowerCase());
+		expect(calldata.data).toBe("0x1234");
+		expect(calldata.value).toBe("123");
 		expect(calldata.chain).toBe("1");
 	});
 

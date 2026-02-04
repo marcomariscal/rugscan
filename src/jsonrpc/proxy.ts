@@ -1,4 +1,5 @@
 import readline from "node:readline";
+import { parseTransaction, recoverTransactionAddress } from "viem";
 import { renderHeading, renderResultBox } from "../cli/ui";
 import { loadConfig } from "../config";
 import { fetchWithTimeout } from "../http";
@@ -167,6 +168,13 @@ function parseHexDataField(value: unknown): string {
 	return value.length > 0 ? value : "0x";
 }
 
+function isHexString(value: unknown): value is string {
+	if (typeof value !== "string") return false;
+	if (!/^0x[0-9a-fA-F]*$/.test(value)) return false;
+	// Must be even length (each byte = 2 hex chars)
+	return (value.length - 2) % 2 === 0;
+}
+
 export function extractSendTransactionCalldata(request: JsonRpcRequest): CalldataInput | null {
 	if (request.method !== "eth_sendTransaction") return null;
 	const params = request.params;
@@ -190,6 +198,36 @@ export function extractSendTransactionCalldata(request: JsonRpcRequest): Calldat
 		value: value === null ? undefined : value.toString(),
 		chain: chainId === null ? undefined : chainId.toString(),
 	};
+}
+
+export async function extractSendRawTransactionCalldata(
+	request: JsonRpcRequest,
+): Promise<CalldataInput | null> {
+	if (request.method !== "eth_sendRawTransaction") return null;
+	const params = request.params;
+	if (!Array.isArray(params) || params.length < 1) return null;
+	const raw = params[0];
+	if (!isHexString(raw) || raw === "0x") return null;
+
+	try {
+		const parsed = parseTransaction(raw);
+		const to = typeof parsed.to === "string" ? parsed.to : undefined;
+		if (!to) return null;
+		const from = await recoverTransactionAddress({ serializedTransaction: raw });
+		const value = parsed.value ?? 0n;
+		const data = typeof parsed.data === "string" ? parsed.data : "0x";
+		const chainId = parsed.chainId;
+
+		return {
+			to,
+			from,
+			data,
+			value: value.toString(),
+			chain: chainId === undefined ? undefined : chainId.toString(),
+		};
+	} catch {
+		return null;
+	}
 }
 
 async function getUpstreamChainId(upstreamUrl: string): Promise<string | null> {
@@ -317,7 +355,9 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				const id: JsonRpcId = idPresent ? (entry.id ?? null) : null;
 				const isNotification = !idPresent;
 
-				if (entry.method !== "eth_sendTransaction") {
+				const isInterceptable =
+					entry.method === "eth_sendTransaction" || entry.method === "eth_sendRawTransaction";
+				if (!isInterceptable) {
 					const upstreamResponse = await forwardToUpstream(
 						options.upstreamUrl,
 						JSON.stringify(entry),
@@ -333,11 +373,17 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					return upstreamJson;
 				}
 
-				const calldata = extractSendTransactionCalldata(entry);
+				const calldata =
+					entry.method === "eth_sendTransaction"
+						? extractSendTransactionCalldata(entry)
+						: await extractSendRawTransactionCalldata(entry);
 				if (!calldata) {
-					return isNotification
-						? null
-						: jsonRpcError(id, -32602, "Invalid params for eth_sendTransaction");
+					if (isNotification) return null;
+					const message =
+						entry.method === "eth_sendRawTransaction"
+							? "Invalid params for eth_sendRawTransaction"
+							: "Invalid params for eth_sendTransaction";
+					return jsonRpcError(id, -32602, message);
 				}
 
 				if (upstreamChainId === null) {

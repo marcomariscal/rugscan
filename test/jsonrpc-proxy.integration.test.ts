@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { privateKeyToAccount } from "viem/accounts";
 import { createJsonRpcProxyServer } from "../src/jsonrpc/proxy";
 import type { ScanInput } from "../src/schema";
 import type { Chain, Config, Recommendation } from "../src/types";
@@ -247,6 +248,87 @@ describe("jsonrpc proxy - integration", () => {
 			expect(
 				upstreamSeen.some((entry) => isRecord(entry) && entry.method === "eth_sendTransaction"),
 			).toBe(true);
+		} finally {
+			proxy.stop(true);
+			upstream.stop(true);
+		}
+	}, 20_000);
+
+	test("intercepts eth_sendRawTransaction and forwards when ok+simulation success", async () => {
+		const upstreamSeen: unknown[] = [];
+		const upstream = Bun.serve({
+			port: 0,
+			fetch: async (request) => {
+				const body: unknown = await request.json();
+				upstreamSeen.push(body);
+				if (isRecord(body) && body.method === "eth_chainId") {
+					return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id ?? 1, result: "0x1" }), {
+						headers: { "content-type": "application/json" },
+					});
+				}
+				return new Response(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id: isRecord(body) ? (body.id ?? 1) : 1,
+						result: "0xRAW_OK",
+					}),
+					{ headers: { "content-type": "application/json" } },
+				);
+			},
+		});
+
+		const seenInputs: ScanInput[] = [];
+		const scanFn = async (
+			input: ScanInput,
+			_ctx: { chain: Chain; config: Config },
+		): Promise<{ recommendation: Recommendation; simulationSuccess: boolean }> => {
+			seenInputs.push(input);
+			return { recommendation: "ok", simulationSuccess: true };
+		};
+
+		const proxy = createJsonRpcProxyServer({
+			upstreamUrl: `http://127.0.0.1:${upstream.port}`,
+			port: 0,
+			chain: "ethereum",
+			quiet: true,
+			policy: { threshold: "caution", onRisk: "block" },
+			scanFn,
+		});
+
+		try {
+			const account = privateKeyToAccount(`0x${"11".repeat(32)}`);
+			const signed = await account.signTransaction({
+				chainId: 1,
+				type: "eip1559",
+				to: "0x66a9893cc07d91d95644aedd05d03f95e1dba8af",
+				value: 123n,
+				data: "0x1234",
+				nonce: 0,
+				gas: 21000n,
+				maxFeePerGas: 1n,
+				maxPriorityFeePerGas: 1n,
+			});
+			const payload = { jsonrpc: "2.0", id: 9, method: "eth_sendRawTransaction", params: [signed] };
+
+			const res = await fetch(`http://127.0.0.1:${proxy.port}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			expect(res.status).toBe(200);
+			const parsed: unknown = await res.json();
+			expect(isRecord(parsed)).toBe(true);
+			if (!isRecord(parsed)) return;
+			expect(parsed.result).toBe("0xRAW_OK");
+			expect(
+				upstreamSeen.some((entry) => isRecord(entry) && entry.method === "eth_sendRawTransaction"),
+			).toBe(true);
+			expect(seenInputs.length).toBe(1);
+			const input = seenInputs[0];
+			expect(isRecord(input.calldata)).toBe(true);
+			if (!isRecord(input.calldata)) return;
+			expect(input.calldata.to).toBe("0x66a9893cc07d91d95644aedd05d03f95e1dba8af");
+			expect(input.calldata.chain).toBe("1");
 		} finally {
 			proxy.stop(true);
 			upstream.stop(true);
