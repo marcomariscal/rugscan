@@ -3,6 +3,7 @@ import { analyze } from "../analyzer";
 import { analyzeApproval } from "../approval";
 import { loadConfig } from "../config";
 import { MAX_UINT256 } from "../constants";
+import { createJsonRpcProxyServer } from "../jsonrpc/proxy";
 import { resolveProvider } from "../providers/ai";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
 import type { CalldataInput, ScanInput } from "../schema";
@@ -27,6 +28,7 @@ Usage:
   rugscan analyze <address> [--chain <chain>] [--ai] [--model <model>]
   rugscan scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>]
   rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
+  rugscan proxy --upstream <rpc-url> [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--once]
 
 Options:
   --chain, -c    Chain to analyze on (default: ethereum)
@@ -41,6 +43,15 @@ Options:
   --fail-on      Exit non-zero on recommendation >= threshold (default: warning)
   --output       Output file path or - for stdout (default: -)
   --quiet        Suppress non-essential logs
+
+  Proxy:
+  --upstream     Upstream JSON-RPC HTTP URL to forward requests to
+  --hostname     Hostname to bind the proxy server (default: 127.0.0.1)
+  --port         Port to bind the proxy server (default: 8545)
+  --threshold    Treat recommendation >= threshold as risky (default: caution)
+  --on-risk      What to do when risky (block|prompt; default: prompt if TTY else block)
+  --once         Handle one request then exit (useful for tests)
+
   --ai           Enable AI risk analysis (requires API key)
   --model        Override AI model or provider:model (ex: openai:gpt-4o)
   --token        Token address for approval analysis
@@ -96,6 +107,10 @@ async function main() {
 	}
 	if (command === "approval") {
 		await runApproval(args.slice(1));
+		return;
+	}
+	if (command === "proxy") {
+		await runProxy(args.slice(1));
 		return;
 	}
 
@@ -329,6 +344,51 @@ async function runApproval(args: string[]) {
 	}
 }
 
+async function runProxy(args: string[]) {
+	const upstreamUrl = getFlagValue(args, ["--upstream"]);
+	if (!upstreamUrl) {
+		console.error(renderError("Error: --upstream is required"));
+		process.exit(1);
+	}
+
+	const hostname = getFlagValue(args, ["--hostname"]) ?? "127.0.0.1";
+	const port = parsePort(getFlagValue(args, ["--port"]) ?? "8545");
+	const chain = getFlagValue(args, ["--chain", "-c"]);
+	const threshold = parseProxyThreshold(getFlagValue(args, ["--threshold"]));
+	const onRisk = parseOnRisk(getFlagValue(args, ["--on-risk"]));
+	const once = args.includes("--once");
+	const quiet = args.includes("--quiet");
+
+	const config = await loadConfig();
+
+	const defaultOnRisk = process.stdin.isTTY && process.stdout.isTTY ? "prompt" : "block";
+	const server = createJsonRpcProxyServer({
+		upstreamUrl,
+		hostname,
+		port,
+		chain,
+		once,
+		quiet,
+		config,
+		policy: {
+			threshold,
+			onRisk: onRisk ?? defaultOnRisk,
+		},
+	});
+
+	if (!quiet) {
+		console.log(renderHeading(`JSON-RPC proxy listening on http://${hostname}:${server.port}`));
+		console.log(`Upstream: ${upstreamUrl}`);
+		console.log(`Threshold: ${threshold}`);
+		console.log(`On risk: ${onRisk ?? defaultOnRisk}`);
+		console.log("");
+		console.log("Configure your wallet's RPC URL to point at this proxy.");
+	}
+
+	// Keep process alive.
+	await new Promise(() => {});
+}
+
 function parseChain(args: string[]): Chain {
 	let chain: Chain = "ethereum";
 	const chainIndex = args.findIndex((arg) => arg === "--chain" || arg === "-c");
@@ -364,6 +424,35 @@ function parseFailOn(value: string | undefined): Recommendation {
 	process.exit(1);
 }
 
+function parseProxyThreshold(value: string | undefined): Recommendation {
+	if (!value) return "caution";
+	const normalized = value.toLowerCase();
+	if (normalized === "caution" || normalized === "warning" || normalized === "danger") {
+		return normalized;
+	}
+	console.error(renderError(`Error: Invalid --threshold value "${value}"`));
+	process.exit(1);
+}
+
+function parseOnRisk(value: string | undefined): "block" | "prompt" | undefined {
+	if (!value) return undefined;
+	const normalized = value.toLowerCase();
+	if (normalized === "block" || normalized === "prompt") {
+		return normalized;
+	}
+	console.error(renderError(`Error: Invalid --on-risk value "${value}"`));
+	process.exit(1);
+}
+
+function parsePort(value: string): number {
+	const parsed = Number.parseInt(value, 10);
+	if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+		console.error(renderError(`Error: Invalid --port value "${value}"`));
+		process.exit(1);
+	}
+	return parsed;
+}
+
 function getFlagValue(args: string[], flags: string[]): string | undefined {
 	const index = args.findIndex((arg) => flags.includes(arg));
 	if (index === -1) return undefined;
@@ -383,6 +472,11 @@ function getPositionalArgs(args: string[]): string[] {
 		"--address",
 		"--fail-on",
 		"--output",
+		"--upstream",
+		"--hostname",
+		"--port",
+		"--threshold",
+		"--on-risk",
 	]);
 	const positional: string[] = [];
 	for (let i = 0; i < args.length; i += 1) {
