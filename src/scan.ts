@@ -83,7 +83,12 @@ export async function scanWithAnalysis(
 
 	const analysis = await analyze(targetAddress, chain, options?.config, options?.progress);
 	const mergedAnalysis = await mergeCalldataAnalysis(normalizedInput, analysis);
-	const simulation = await runBalanceSimulation(normalizedInput, chain, options?.config);
+	const simulation = await runBalanceSimulation(
+		normalizedInput,
+		chain,
+		options?.config,
+		options?.progress,
+	);
 	const withSimulation = simulation ? { ...mergedAnalysis, simulation } : mergedAnalysis;
 	const finalAnalysis = applySimulationVerdict(normalizedInput, withSimulation);
 	const response = buildAnalyzeResponse(normalizedInput, finalAnalysis, options?.requestId);
@@ -199,13 +204,25 @@ function buildContractInfo(analysis: AnalysisResult): ContractInfo {
 async function runBalanceSimulation(
 	input: ScanInput,
 	chain: Chain,
-	config?: Config,
+	config: Config | undefined,
+	progress: ScanProgress | undefined,
 ): Promise<BalanceSimulationResult | undefined> {
 	if (!input.calldata) return undefined;
+
+	progress?.({ provider: "Simulation", status: "start" });
+
 	if (!shouldRunSimulation(config)) {
+		progress?.({ provider: "Simulation", status: "success", message: "disabled" });
 		return buildSimulationNotRun(input.calldata);
 	}
-	return await simulateBalance(input.calldata, chain, config);
+
+	const result = await simulateBalance(input.calldata, chain, config);
+	progress?.({
+		provider: "Simulation",
+		status: result.success ? "success" : "error",
+		message: result.success ? "ok" : (result.revertReason ?? "failed"),
+	});
+	return result;
 }
 
 function shouldRunSimulation(config?: Config): boolean {
