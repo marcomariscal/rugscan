@@ -1,3 +1,5 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import readline from "node:readline";
 import { parseTransaction, recoverTransactionAddress } from "viem";
 import { renderHeading, renderResultBox } from "../cli/ui";
@@ -25,6 +27,7 @@ export interface ProxyOptions {
 	config?: Config;
 	once?: boolean;
 	quiet?: boolean;
+	recordDir?: string;
 	scanFn?: (
 		input: ScanInput,
 		options: { chain: Chain; config: Config },
@@ -308,6 +311,68 @@ function defaultPolicy(options?: Partial<ProxyPolicy>): ProxyPolicy {
 	};
 }
 
+function sanitizeFilenamePart(value: string): string {
+	return value
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+/, "")
+		.replace(/-+$/, "")
+		.slice(0, 80);
+}
+
+function isoStampForFilename(date: Date): string {
+	return date.toISOString().replace(/[:.]/g, "-");
+}
+
+async function writeRecording(options: {
+	recordDir: string;
+	chain: Chain;
+	method: string;
+	calldata: CalldataInput;
+	rpcRequest: JsonRpcRequest;
+	outcome: ProxyScanOutcome;
+	action: RiskAction;
+}): Promise<void> {
+	const now = new Date();
+	const base = [
+		isoStampForFilename(now),
+		sanitizeFilenamePart(options.method),
+		sanitizeFilenamePart(options.chain),
+		sanitizeFilenamePart(options.calldata.to),
+		sanitizeFilenamePart(options.calldata.from ?? "unknown"),
+		crypto.randomUUID().slice(0, 8),
+	]
+		.filter(Boolean)
+		.join("__");
+
+	const dir = path.join(options.recordDir, base);
+	await mkdir(dir, { recursive: true });
+
+	const meta = {
+		createdAt: now.toISOString(),
+		chain: options.chain,
+		method: options.method,
+		calldata: options.calldata,
+		action: options.action,
+		recommendation: options.outcome.recommendation,
+		simulationSuccess: options.outcome.simulationSuccess,
+	};
+
+	await Bun.write(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
+	await Bun.write(path.join(dir, "rpc.json"), JSON.stringify(options.rpcRequest, null, 2));
+	await Bun.write(path.join(dir, "calldata.json"), JSON.stringify(options.calldata, null, 2));
+
+	if (options.outcome.response) {
+		await Bun.write(
+			path.join(dir, "analyzeResponse.json"),
+			JSON.stringify(options.outcome.response, null, 2),
+		);
+	}
+	if (options.outcome.renderedText) {
+		await Bun.write(path.join(dir, "rendered.txt"), options.outcome.renderedText);
+	}
+}
+
 async function defaultScanFn(
 	input: ScanInput,
 	options: { chain: Chain; config: Config; quiet: boolean },
@@ -333,6 +398,10 @@ async function defaultScanFn(
 export function createJsonRpcProxyServer(options: ProxyOptions) {
 	const policy = defaultPolicy(options.policy);
 	const quiet = options.quiet ?? false;
+	const recordDir =
+		typeof options.recordDir === "string" && options.recordDir.trim().length > 0
+			? options.recordDir.trim()
+			: null;
 	const configPromise = options.config ? Promise.resolve(options.config) : loadConfig();
 	let upstreamChainId: string | null = null;
 	let handled = 0;
@@ -449,6 +518,23 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					policy,
 					isInteractive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
 				});
+
+				if (recordDir) {
+					const recording = writeRecording({
+						recordDir,
+						chain,
+						method: entry.method,
+						calldata,
+						rpcRequest: entry,
+						outcome,
+						action,
+					});
+					if (options.once) {
+						await recording;
+					} else {
+						recording.catch(() => undefined);
+					}
+				}
 
 				if (action === "prompt") {
 					if (isNotification) {
