@@ -72,6 +72,7 @@ describe("jsonrpc proxy - recording", () => {
 			chain: "ethereum",
 			quiet: true,
 			recordDir,
+			once: true,
 			policy: { threshold: "danger", onRisk: "block" },
 			scanFn: scanFn as never,
 		});

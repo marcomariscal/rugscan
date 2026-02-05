@@ -277,6 +277,9 @@ export async function analyze(
 				message: etherscanData ? "metadata fetched" : "no data",
 			});
 			if (etherscanData) {
+				// Etherscan returned an explicit verification status.
+				verificationKnown = true;
+
 				// Use Etherscan verification if Sourcify didn't have it
 				if (!verified && etherscanData.verified) {
 					verified = true;
