@@ -8,6 +8,8 @@ import { fetchWithTimeout } from "../http";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
 import type { AnalyzeResponse, CalldataInput, ScanInput } from "../schema";
 import { scanInputSchema } from "../schema";
+import { getAnvilClient } from "../simulations/anvil";
+import { nowMs, TimingStore } from "../timing";
 import type { Chain, Config, Recommendation } from "../types";
 
 export type RiskAction = "forward" | "block" | "prompt";
@@ -30,7 +32,7 @@ export interface ProxyOptions {
 	recordDir?: string;
 	scanFn?: (
 		input: ScanInput,
-		options: { chain: Chain; config: Config },
+		options: { chain: Chain; config: Config; quiet?: boolean; timings?: TimingStore },
 	) => Promise<ProxyScanOutcome>;
 }
 
@@ -311,6 +313,32 @@ function defaultPolicy(options?: Partial<ProxyPolicy>): ProxyPolicy {
 	};
 }
 
+function applyUpstreamRpcOverrides(options: {
+	config: Config;
+	chain: Chain;
+	upstreamUrl: string;
+}): Config {
+	const upstreamUrl = options.upstreamUrl;
+	const rpcUrls: Partial<Record<Chain, string>> = {
+		...(options.config.rpcUrls ?? {}),
+		[options.chain]: options.config.rpcUrls?.[options.chain] ?? upstreamUrl,
+	};
+
+	const baseSimulation = options.config.simulation;
+	const simulation = baseSimulation
+		? {
+				...baseSimulation,
+				rpcUrl: baseSimulation.rpcUrl ?? upstreamUrl,
+			}
+		: { rpcUrl: upstreamUrl };
+
+	return {
+		...options.config,
+		rpcUrls,
+		simulation,
+	};
+}
+
 function sanitizeFilenamePart(value: string): string {
 	return value
 		.toLowerCase()
@@ -375,23 +403,48 @@ async function writeRecording(options: {
 
 async function defaultScanFn(
 	input: ScanInput,
-	options: { chain: Chain; config: Config; quiet: boolean },
+	options: { chain: Chain; config: Config; quiet: boolean; timings: TimingStore },
 ): Promise<ProxyScanOutcome> {
-	const progress = options.quiet
+	const providerStarts = new Map<string, number>();
+	const baseProgress = options.quiet
 		? undefined
 		: createProgressRenderer(Boolean(process.stdout.isTTY));
 
+	const progress = (event: {
+		provider: string;
+		status: "start" | "success" | "error";
+		message?: string;
+	}) => {
+		if (event.status === "start") {
+			providerStarts.set(event.provider, nowMs());
+		} else {
+			const started = providerStarts.get(event.provider);
+			if (started !== undefined) {
+				options.timings.add(`provider.${event.provider}`, nowMs() - started);
+				providerStarts.delete(event.provider);
+			}
+		}
+		baseProgress?.(event);
+	};
+
+	const scanStarted = nowMs();
 	const { analysis, response } = await scanWithAnalysis(input, {
 		chain: options.chain,
 		config: options.config,
 		progress,
+		timings: options.timings,
 	});
-	const renderedText = options.quiet
-		? undefined
-		: `${renderHeading(`Tx scan on ${options.chain}`)}\n\n${renderResultBox(analysis, {
-				hasCalldata: Boolean(input.calldata),
-				sender: input.calldata?.from,
-			})}\n`;
+	options.timings.add("proxy.scan", nowMs() - scanStarted);
+
+	let renderedText: string | undefined;
+	if (!options.quiet) {
+		const renderStarted = nowMs();
+		renderedText = `${renderHeading(`Tx scan on ${options.chain}`)}\n\n${renderResultBox(analysis, {
+			hasCalldata: Boolean(input.calldata),
+			sender: input.calldata?.from,
+		})}\n`;
+		options.timings.add("proxy.render", nowMs() - renderStarted);
+	}
 
 	return {
 		recommendation: normalizeRecommendation(response.scan.recommendation),
@@ -410,8 +463,36 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 			: null;
 	const configPromise = options.config ? Promise.resolve(options.config) : loadConfig();
 	let upstreamChainId: string | null = null;
+	let upstreamChainIdPromise: Promise<string | null> | null = null;
 	let handled = 0;
 	let scanQueue: Promise<void> = Promise.resolve();
+
+	if (!options.scanFn) {
+		void (async () => {
+			const config = await configPromise;
+			const detectedChainId = await getUpstreamChainId(options.upstreamUrl);
+			if (upstreamChainId === null) {
+				upstreamChainId = detectedChainId;
+			}
+
+			const chain = resolveChainFromInputs({
+				upstreamChainId,
+				requestedChain: options.chain,
+				calldataChain: undefined,
+			});
+			if (!chain) return;
+
+			const scanConfig = applyUpstreamRpcOverrides({
+				config,
+				chain,
+				upstreamUrl: options.upstreamUrl,
+			});
+			const instance = await getAnvilClient(chain, scanConfig);
+			await instance.runExclusive(async () => {
+				await instance.resetFork();
+			});
+		})().catch(() => undefined);
+	}
 
 	const server = Bun.serve({
 		hostname: options.hostname ?? "127.0.0.1",
@@ -427,6 +508,7 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				return jsonResponse(jsonRpcError(null, -32601, "Method not allowed"), 405);
 			}
 
+			const parseStarted = nowMs();
 			let rawBody: string;
 			let body: unknown;
 			try {
@@ -435,6 +517,7 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 			} catch {
 				return jsonResponse(jsonRpcError(null, -32700, "Parse error"), 400);
 			}
+			const httpParseMs = nowMs() - parseStarted;
 
 			const handleSingle = async (
 				entry: unknown,
@@ -464,6 +547,8 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					return upstreamJson;
 				}
 
+				const entryStarted = nowMs();
+
 				const calldata =
 					entry.method === "eth_sendTransaction"
 						? extractSendTransactionCalldata(entry)
@@ -478,7 +563,10 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				}
 
 				if (upstreamChainId === null) {
-					upstreamChainId = await getUpstreamChainId(options.upstreamUrl);
+					if (!upstreamChainIdPromise) {
+						upstreamChainIdPromise = getUpstreamChainId(options.upstreamUrl);
+					}
+					upstreamChainId = await upstreamChainIdPromise;
 				}
 
 				const chain = resolveChainFromInputs({
@@ -491,6 +579,15 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				}
 
 				const config = await configPromise;
+				const scanConfig = applyUpstreamRpcOverrides({
+					config,
+					chain,
+					upstreamUrl: options.upstreamUrl,
+				});
+
+				const timings = new TimingStore();
+				timings.add("proxy.httpParse", httpParseMs);
+
 				const input: ScanInput = {
 					calldata: { ...calldata, chain: calldata.chain ?? upstreamChainId ?? undefined },
 				};
@@ -503,11 +600,20 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				try {
 					const scanFn = options.scanFn
 						? options.scanFn
-						: async (scanInput: ScanInput, ctx: { chain: Chain; config: Config }) =>
-								await defaultScanFn(scanInput, { ...ctx, quiet });
+						: async (
+								scanInput: ScanInput,
+								ctx: { chain: Chain; config: Config; quiet?: boolean; timings?: TimingStore },
+							) =>
+								await defaultScanFn(scanInput, {
+									...ctx,
+									quiet: ctx.quiet ?? quiet,
+									timings: ctx.timings ?? timings,
+								});
 
+					const queuedAt = nowMs();
 					const queued = scanQueue.then(async () => {
-						return await scanFn(validated.data, { chain, config });
+						timings.add("proxy.queueWait", nowMs() - queuedAt);
+						return await scanFn(validated.data, { chain, config: scanConfig, quiet, timings });
 					});
 					scanQueue = queued.then(
 						() => undefined,
@@ -524,8 +630,13 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					};
 				}
 
+				timings.add("proxy.total", nowMs() - entryStarted);
+
 				if (!quiet && outcome.renderedText) {
 					process.stdout.write(`${outcome.renderedText}\n`);
+				}
+				if (!quiet) {
+					process.stdout.write(`${timings.toLogLine(`timing ${entry.method}`)}\n`);
 				}
 
 				const action = decideRiskAction({
