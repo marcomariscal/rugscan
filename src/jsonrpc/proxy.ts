@@ -1,6 +1,6 @@
 import readline from "node:readline";
 import { parseTransaction, recoverTransactionAddress } from "viem";
-import { renderHeading, renderResultBox } from "../cli/ui";
+import { createProgressRenderer, renderHeading, renderResultBox } from "../cli/ui";
 import { loadConfig } from "../config";
 import { fetchWithTimeout } from "../http";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
@@ -312,9 +312,14 @@ async function defaultScanFn(
 	input: ScanInput,
 	options: { chain: Chain; config: Config; quiet: boolean },
 ): Promise<ProxyScanOutcome> {
+	const progress = options.quiet
+		? undefined
+		: createProgressRenderer(Boolean(process.stdout.isTTY));
+
 	const { analysis, response } = await scanWithAnalysis(input, {
 		chain: options.chain,
 		config: options.config,
+		progress,
 	});
 	const renderedText = options.quiet
 		? undefined
@@ -336,6 +341,7 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 	const configPromise = options.config ? Promise.resolve(options.config) : loadConfig();
 	let upstreamChainId: string | null = null;
 	let handled = 0;
+	let scanQueue: Promise<void> = Promise.resolve();
 
 	const server = Bun.serve({
 		hostname: options.hostname ?? "127.0.0.1",
@@ -429,7 +435,16 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 						? options.scanFn
 						: async (scanInput: ScanInput, ctx: { chain: Chain; config: Config }) =>
 								await defaultScanFn(scanInput, { ...ctx, quiet });
-					outcome = await scanFn(validated.data, { chain, config });
+
+					const queued = scanQueue.then(async () => {
+						return await scanFn(validated.data, { chain, config });
+					});
+					scanQueue = queued.then(
+						() => undefined,
+						() => undefined,
+					);
+
+					outcome = await queued;
 				} catch (error) {
 					const message = error instanceof Error ? error.message : "scan failed";
 					outcome = {
