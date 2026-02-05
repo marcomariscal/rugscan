@@ -67,9 +67,15 @@ async function getSourcifyResult(
 	}
 	const fetchPromise = fetchSourcifyResult(address, chainId, options);
 	SOURCIFY_CACHE.set(key, fetchPromise);
-	const resolved = await fetchPromise;
-	SOURCIFY_CACHE.set(key, resolved);
-	return resolved;
+	try {
+		const resolved = await fetchPromise;
+		SOURCIFY_CACHE.set(key, resolved);
+		return resolved;
+	} catch (error) {
+		// Don't poison the cache with transient failures.
+		SOURCIFY_CACHE.delete(key);
+		throw error;
+	}
 }
 
 async function fetchSourcifyResult(
@@ -83,6 +89,14 @@ async function fetchSourcifyResult(
 		const response = await fetchWithTimeout(url, { signal: options?.signal }, options?.timeoutMs);
 
 		if (!response.ok) {
+			// 404 means the contract is not verified on Sourcify.
+			if (response.status === 404) {
+				return { verified: false };
+			}
+			// For timeboxed/analyzer calls, treat non-404 failures as "unknown" by throwing.
+			if (options?.signal || options?.timeoutMs) {
+				throw new Error(`sourcify http ${response.status}`);
+			}
 			return { verified: false };
 		}
 
@@ -106,7 +120,12 @@ async function fetchSourcifyResult(
 			source: sourceFile?.content,
 			abi: parsedMetadata?.abi,
 		};
-	} catch {
+	} catch (error) {
+		// When the analyzer passes request options, treat network/timeout errors as unknown.
+		// This prevents transient failures from being interpreted as an "unverified" contract.
+		if (options?.signal || options?.timeoutMs) {
+			throw error;
+		}
 		return { verified: false };
 	}
 }
