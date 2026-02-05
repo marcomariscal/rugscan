@@ -69,8 +69,8 @@ describe("simulation e2e", () => {
 		expect(output).toContain("Action:");
 		expect(output).toContain("Contract:");
 		expect(output).toContain("💰 BALANCE CHANGES");
-		expect(output).toContain("- 1 ETH");
-		expect(output).toContain("+ 1 WETH");
+		expect(output).toContain("You sent 1 ETH");
+		expect(output).toContain("You received 1 WETH");
 		expect(output).toContain("🔐 APPROVALS");
 		expect(output).toContain("📊 RISK:");
 		expect(output).not.toContain("Simulation pending");

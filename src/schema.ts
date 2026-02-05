@@ -159,6 +159,8 @@ const approvalChangeSchema = z
 		tokenId: z.string().optional(),
 		scope: z.enum(["token", "all"]).optional(),
 		approved: z.boolean().optional(),
+		symbol: z.string().optional(),
+		decimals: z.number().int().min(0).optional(),
 	})
 	.strict();
 

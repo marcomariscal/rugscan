@@ -260,6 +260,8 @@ function mapSimulation(simulation: BalanceSimulationResult): ScanBalanceSimulati
 			tokenId: approval.tokenId?.toString(),
 			scope: approval.scope,
 			approved: approval.approved,
+			symbol: approval.symbol,
+			decimals: approval.decimals,
 		})),
 		confidence: simulation.confidence,
 		notes: simulation.notes,

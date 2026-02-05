@@ -258,8 +258,21 @@ async function simulateWithAnvil(
 		const nativeDelta = nativeAfter - nativeBefore;
 		const nativeDiff = nativeDelta + gasCost;
 
-		const metadata = await readTokenMetadata(client, assetChanges, notes);
+		const approvalTokenChanges: AssetChange[] = approvals
+			.filter((approval) => approval.standard === "erc20" || approval.standard === "permit2")
+			.map((approval) => ({
+				assetType: "erc20",
+				address: approval.token,
+				direction: "in",
+			}));
+
+		const metadata = await readTokenMetadata(
+			client,
+			[...assetChanges, ...approvalTokenChanges],
+			notes,
+		);
 		const enrichedChanges = applyTokenMetadata(assetChanges, metadata);
+		const enrichedApprovals = applyApprovalMetadata(approvals, metadata);
 
 		return {
 			success: receipt.status === "success",
@@ -267,7 +280,7 @@ async function simulateWithAnvil(
 			effectiveGasPrice: receipt.effectiveGasPrice,
 			nativeDiff,
 			assetChanges: enrichedChanges,
-			approvals,
+			approvals: enrichedApprovals,
 			confidence,
 			notes,
 		};
@@ -690,6 +703,24 @@ function applyTokenMetadata(
 			...change,
 			symbol: meta.symbol ?? change.symbol,
 			decimals: meta.decimals ?? change.decimals,
+		};
+	});
+}
+
+function applyApprovalMetadata(
+	approvals: ApprovalChange[],
+	metadata: Map<Address, { symbol?: string; decimals?: number }>,
+): ApprovalChange[] {
+	if (metadata.size === 0) return approvals;
+	return approvals.map((approval) => {
+		if (approval.standard !== "erc20" && approval.standard !== "permit2") return approval;
+		if (!isAddress(approval.token)) return approval;
+		const meta = metadata.get(approval.token);
+		if (!meta) return approval;
+		return {
+			...approval,
+			symbol: meta.symbol ?? approval.symbol,
+			decimals: meta.decimals ?? approval.decimals,
 		};
 	});
 }
