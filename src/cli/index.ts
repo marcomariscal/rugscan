@@ -377,7 +377,14 @@ async function runProxy(args: string[]) {
 	});
 
 	if (!quiet) {
-		console.log(renderHeading(`JSON-RPC proxy listening on http://${hostname}:${server.port}`));
+		const listenUrl = `http://${hostname}:${server.port}`;
+		const walletHost = hostname === "0.0.0.0" ? "127.0.0.1" : hostname;
+		const walletUrl = `http://${walletHost}:${server.port}`;
+
+		console.log(renderHeading(`JSON-RPC proxy listening on ${listenUrl}`));
+		// Print a plain URL line so common terminals auto-link it.
+		console.log(`Wallet RPC URL: ${walletUrl}`);
+		console.log(`Health check: ${walletUrl}`);
 		console.log(`Upstream: ${upstreamUrl}`);
 		console.log(`Threshold: ${threshold}`);
 		console.log(`On risk: ${onRisk ?? defaultOnRisk}`);
