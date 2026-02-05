@@ -141,6 +141,170 @@ function recommendationAtLeast(actual: Recommendation, threshold: Recommendation
 	return actualIndex >= thresholdIndex;
 }
 
+function ensureRecommendationAtLeast(
+	actual: Recommendation,
+	minimum: Recommendation,
+): Recommendation {
+	return recommendationAtLeast(actual, minimum) ? actual : minimum;
+}
+
+type AllowlistViolationKind = "target" | "approvalSpender";
+
+interface AllowlistViolation {
+	kind: AllowlistViolationKind;
+	address: string;
+	source: "to" | "simulation" | "calldata";
+}
+
+interface AllowlistEvaluation {
+	enabled: boolean;
+	violations: AllowlistViolation[];
+	unknownApprovalSpenders: boolean;
+}
+
+function evaluateAllowlist(options: {
+	calldata: CalldataInput;
+	config: Config;
+	outcome: ProxyScanOutcome;
+}): AllowlistEvaluation {
+	const allowlist = options.config.allowlist;
+	const hasToAllowlist = Array.isArray(allowlist?.to);
+	const hasSpenderAllowlist = Array.isArray(allowlist?.spenders);
+
+	if (!hasToAllowlist && !hasSpenderAllowlist) {
+		return { enabled: false, violations: [], unknownApprovalSpenders: false };
+	}
+
+	const allowTo = hasToAllowlist ? new Set(allowlist.to.map((v) => v.toLowerCase())) : null;
+	const allowSpenders = hasSpenderAllowlist
+		? new Set(allowlist.spenders.map((v) => v.toLowerCase()))
+		: null;
+
+	const violations: AllowlistViolation[] = [];
+	const target = options.calldata.to.toLowerCase();
+	if (allowTo && !allowTo.has(target)) {
+		violations.push({ kind: "target", address: options.calldata.to, source: "to" });
+	}
+
+	const touchedSpenders = new Set<string>();
+	const spenderSource = new Map<string, AllowlistViolation["source"]>();
+	if (allowSpenders) {
+		for (const spender of extractApprovalSpendersFromResponse(options.outcome.response)) {
+			const normalized = spender.toLowerCase();
+			touchedSpenders.add(normalized);
+			spenderSource.set(normalized, "simulation");
+		}
+		for (const spender of extractApprovalSpendersFromFindings(
+			options.outcome.response?.scan.findings,
+		)) {
+			const normalized = spender.toLowerCase();
+			touchedSpenders.add(normalized);
+			if (!spenderSource.has(normalized)) {
+				spenderSource.set(normalized, "calldata");
+			}
+		}
+
+		for (const spender of touchedSpenders) {
+			if (!allowSpenders.has(spender)) {
+				violations.push({
+					kind: "approvalSpender",
+					address: spender,
+					source: spenderSource.get(spender) ?? "calldata",
+				});
+			}
+		}
+	}
+
+	const unknownApprovalSpenders = Boolean(
+		allowSpenders && !options.outcome.simulationSuccess && touchedSpenders.size === 0,
+	);
+
+	return {
+		enabled: true,
+		violations,
+		unknownApprovalSpenders,
+	};
+}
+
+function extractApprovalSpendersFromResponse(response: AnalyzeResponse | undefined): string[] {
+	const approvals = response?.scan.simulation?.approvals;
+	if (!approvals) return [];
+	const result: string[] = [];
+	for (const approval of approvals) {
+		const spender = approval.spender;
+		if (typeof spender !== "string") continue;
+		if (!isAddress(spender)) continue;
+		result.push(spender);
+	}
+	return result;
+}
+
+function extractApprovalSpendersFromFindings(
+	findings: AnalyzeResponse["scan"]["findings"] | undefined,
+): string[] {
+	if (!findings) return [];
+	const result: string[] = [];
+	for (const finding of findings) {
+		if (finding.code !== "CALLDATA_DECODED") continue;
+		const details = finding.details;
+		if (!details || !isRecord(details)) continue;
+
+		const args = details.args;
+		const argNames = details.argNames;
+
+		const spender = extractNamedArg(args, argNames, "spender");
+		if (spender) {
+			result.push(spender);
+			continue;
+		}
+
+		const operator = extractNamedArg(args, argNames, "operator");
+		if (operator) {
+			result.push(operator);
+		}
+	}
+	return result;
+}
+
+function extractNamedArg(args: unknown, argNames: unknown, name: string): string | null {
+	if (isRecord(args)) {
+		const value = args[name];
+		if (typeof value === "string" && isAddress(value)) return value;
+		return null;
+	}
+	if (Array.isArray(args) && Array.isArray(argNames)) {
+		for (let i = 0; i < argNames.length; i += 1) {
+			if (argNames[i] !== name) continue;
+			const value = args[i];
+			if (typeof value === "string" && isAddress(value)) return value;
+		}
+	}
+	return null;
+}
+
+/* unused helper removed */
+
+function isAddress(value: string): boolean {
+	return /^0x[0-9a-fA-F]{40}$/.test(value);
+}
+
+function buildProxyBlockData(
+	outcome: ProxyScanOutcome,
+	allowlist: AllowlistEvaluation,
+): Record<string, unknown> {
+	const data: Record<string, unknown> = {
+		recommendation: outcome.recommendation,
+		simulationSuccess: outcome.simulationSuccess,
+	};
+	if (allowlist.enabled) {
+		data.allowlist = {
+			violations: allowlist.violations,
+			unknownApprovalSpenders: allowlist.unknownApprovalSpenders,
+		};
+	}
+	return data;
+}
+
 export function decideRiskAction(options: {
 	recommendation: Recommendation;
 	simulationSuccess: boolean;
@@ -639,12 +803,25 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					process.stdout.write(`${timings.toLogLine(`timing ${entry.method}`)}\n`);
 				}
 
-				const action = decideRiskAction({
+				const allowlist = evaluateAllowlist({ calldata, config: scanConfig, outcome });
+				if (allowlist.violations.length > 0) {
+					outcome = {
+						...outcome,
+						recommendation: ensureRecommendationAtLeast(outcome.recommendation, "warning"),
+					};
+				}
+
+				const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+				let action = decideRiskAction({
 					recommendation: outcome.recommendation,
 					simulationSuccess: outcome.simulationSuccess,
 					policy,
-					isInteractive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+					isInteractive,
 				});
+
+				if (allowlist.violations.length > 0 && action === "forward") {
+					action = isInteractive ? policy.onRisk : "block";
+				}
 
 				if (recordDir) {
 					const recording = writeRecording({
@@ -679,10 +856,12 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 							}) [y/N] `,
 						);
 						if (!ok) {
-							return jsonRpcError(id, 4001, "Transaction blocked by rugscan", {
-								recommendation: outcome.recommendation,
-								simulationSuccess: outcome.simulationSuccess,
-							});
+							return jsonRpcError(
+								id,
+								4001,
+								"Transaction blocked by rugscan",
+								buildProxyBlockData(outcome, allowlist),
+							);
 						}
 					}
 				}
@@ -690,10 +869,12 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				if (action === "block") {
 					return isNotification
 						? null
-						: jsonRpcError(id, 4001, "Transaction blocked by rugscan", {
-								recommendation: outcome.recommendation,
-								simulationSuccess: outcome.simulationSuccess,
-							});
+						: jsonRpcError(
+								id,
+								4001,
+								"Transaction blocked by rugscan",
+								buildProxyBlockData(outcome, allowlist),
+							);
 				}
 
 				const upstreamResponse = await forwardToUpstream(

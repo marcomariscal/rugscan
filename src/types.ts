@@ -142,6 +142,18 @@ export interface Config {
 	ai?: AIConfig;
 	aiOptions?: AIOptions;
 	simulation?: SimulationConfig;
+	allowlist?: AllowlistConfig;
+}
+
+export interface AllowlistConfig {
+	/**
+	 * Allowlisted transaction targets (the `to` address).
+	 */
+	to?: string[];
+	/**
+	 * Allowlisted approval spenders/operators.
+	 */
+	spenders?: string[];
 }
 
 export interface SimulationConfig {

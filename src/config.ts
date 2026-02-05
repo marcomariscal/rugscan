@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { AIConfig, Chain, Config, SimulationConfig } from "./types";
+import type { AIConfig, AllowlistConfig, Chain, Config, SimulationConfig } from "./types";
 
 const VALID_CHAINS: Chain[] = ["ethereum", "base", "arbitrum", "optimism", "polygon"];
 
@@ -132,6 +132,10 @@ function parseConfig(value: unknown): Config {
 	if (simulation) {
 		config.simulation = simulation;
 	}
+	const allowlist = parseAllowlistConfig(value.allowlist);
+	if (allowlist) {
+		config.allowlist = allowlist;
+	}
 	return config;
 }
 
@@ -179,6 +183,7 @@ function mergeConfig(base: Config, override: Config): Config {
 		},
 		ai: mergeAIConfig(base.ai, override.ai),
 		simulation: mergeSimulationConfig(base.simulation, override.simulation),
+		allowlist: mergeAllowlistConfig(base.allowlist, override.allowlist),
 	};
 }
 
@@ -207,12 +212,55 @@ function mergeSimulationConfig(
 	};
 }
 
+function mergeAllowlistConfig(
+	base?: AllowlistConfig,
+	override?: AllowlistConfig,
+): AllowlistConfig | undefined {
+	if (!base && !override) return undefined;
+	const merged: AllowlistConfig = {
+		to: override?.to ?? base?.to,
+		spenders: override?.spenders ?? base?.spenders,
+	};
+	return merged.to !== undefined || merged.spenders !== undefined ? merged : undefined;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
 function isNonEmptyString(value: unknown): value is string {
 	return typeof value === "string" && value.trim().length > 0;
+}
+
+function parseAllowlistConfig(value: unknown): AllowlistConfig | undefined {
+	if (!isRecord(value)) return undefined;
+	const to = parseAddressArray(value.to);
+	const spenders = parseAddressArray(value.spenders);
+	const allowlist: AllowlistConfig = {};
+	if (to !== undefined) {
+		allowlist.to = to;
+	}
+	if (spenders !== undefined) {
+		allowlist.spenders = spenders;
+	}
+	return Object.keys(allowlist).length > 0 ? allowlist : undefined;
+}
+
+function parseAddressArray(value: unknown): string[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const parsed: string[] = [];
+	for (const entry of value) {
+		if (typeof entry !== "string") continue;
+		const trimmed = entry.trim();
+		if (!trimmed) continue;
+		if (!isAddress(trimmed)) continue;
+		parsed.push(trimmed.toLowerCase());
+	}
+	return parsed;
+}
+
+function isAddress(value: string): boolean {
+	return /^0x[0-9a-fA-F]{40}$/.test(value);
 }
 
 function parseSimulationConfig(value: unknown): SimulationConfig | undefined {
