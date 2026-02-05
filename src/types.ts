@@ -172,6 +172,9 @@ export interface ApprovalChange {
 	tokenId?: bigint;
 	scope?: "token" | "all";
 	approved?: boolean;
+	// Optional ERC-20 metadata (for human-readable display)
+	symbol?: string;
+	decimals?: number;
 }
 
 export interface BalanceSimulationResult {

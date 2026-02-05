@@ -1,4 +1,5 @@
 import pc from "picocolors";
+import { KNOWN_SPENDERS } from "../approvals/known-spenders";
 import { MAX_UINT160, MAX_UINT256 } from "../constants";
 import type {
 	AIAnalysis,
@@ -272,10 +273,49 @@ function formatContractLabel(contract: AnalysisResult["contract"]): string {
 }
 
 function resolveActionLabel(result: AnalysisResult): string {
-	if (result.intent) return result.intent;
-	const decoded = findDecodedSignature(result.findings);
-	if (decoded) return decoded;
-	return "Unknown action";
+	const base = result.intent ?? findDecodedSignature(result.findings) ?? "Unknown action";
+	const improvedApproval = improveApprovalIntentFromSimulation(result, base);
+	if (improvedApproval) return improvedApproval;
+
+	const improvedSwap = improveSwapIntentFromSimulation(result, base);
+	if (improvedSwap) return improvedSwap;
+
+	return base;
+}
+
+function improveApprovalIntentFromSimulation(result: AnalysisResult, base: string): string | null {
+	if (!result.simulation?.success) return null;
+	if (!base.toLowerCase().startsWith("approve")) return null;
+
+	const approval = result.simulation.approvals.find(
+		(a) => (a.standard === "erc20" || a.standard === "permit2") && a.scope !== "all",
+	);
+	if (!approval) return null;
+
+	const spenderLabel = formatSpenderLabel(approval.spender, result.contract.chain);
+	const tokenLabel = formatTokenLabel(approval.token, approval.symbol);
+	const amountLabel = formatApprovalAmountLabel(approval);
+
+	return `${approval.standard === "permit2" ? "PERMIT2 " : ""}Allow ${spenderLabel} to spend up to ${amountLabel} ${tokenLabel}`;
+}
+
+function improveSwapIntentFromSimulation(result: AnalysisResult, base: string): string | null {
+	if (!result.simulation?.success) return null;
+	// We don't try to outsmart intent labels like "Approve"; for everything else, prefer
+	// simulation-derived net in/out when it looks like a simple swap.
+	if (base.toLowerCase().startsWith("approve")) return null;
+
+	const changes = buildBalanceChangeItems(result.simulation, result.contract.chain);
+	const ordered = orderBalanceChanges(changes);
+	const negatives = ordered.filter((line) => line.trim().startsWith("-"));
+	const positives = ordered.filter((line) => line.trim().startsWith("+"));
+	if (negatives.length !== 1 || positives.length !== 1) return null;
+
+	const sent = negatives[0]?.trim().replace(/^[-+]\s*/, "") ?? "";
+	const received = positives[0]?.trim().replace(/^[-+]\s*/, "") ?? "";
+	if (!sent || !received) return null;
+
+	return `Swap ${sent} → ${received}`;
 }
 
 function findDecodedSignature(findings: Finding[]): string | null {
@@ -338,7 +378,11 @@ function simulationConfidenceNote(simulation: BalanceSimulationResult | undefine
 	return simulation.confidence !== "high" ? ` (${simulation.confidence} confidence)` : "";
 }
 
-function renderBalanceSection(result: AnalysisResult, hasCalldata: boolean): string[] {
+function renderBalanceSection(
+	result: AnalysisResult,
+	hasCalldata: boolean,
+	actorLabel: "You" | "Sender",
+): string[] {
 	const lines: string[] = [];
 	lines.push(" 💰 BALANCE CHANGES");
 
@@ -377,7 +421,24 @@ function renderBalanceSection(result: AnalysisResult, hasCalldata: boolean): str
 	}
 
 	const ordered = orderBalanceChanges(changes);
-	lines.push(`${formatBalanceChangeLine(ordered)}${simulationConfidenceNote(result.simulation)}`);
+	for (const item of ordered) {
+		const trimmed = item.trim();
+		if (trimmed.startsWith("-")) {
+			lines.push(` - ${actorLabel} sent ${trimmed.replace(/^[-]\s*/, "")}`);
+			continue;
+		}
+		if (trimmed.startsWith("+")) {
+			lines.push(` - ${actorLabel} received ${trimmed.replace(/^[+]\s*/, "")}`);
+			continue;
+		}
+		lines.push(` - ${trimmed}`);
+	}
+
+	const note = simulationConfidenceNote(result.simulation);
+	if (note) {
+		lines.push(COLORS.warning(` - Note: ${note.replace(/^\s*\(|\)\s*$/g, "")}`));
+	}
+
 	return lines;
 }
 
@@ -407,7 +468,7 @@ function buildApprovalItems(
 	// From simulation
 	if (result.simulation) {
 		for (const approval of result.simulation.approvals) {
-			const item = formatSimulationApproval(approval);
+			const item = formatSimulationApproval(approval, result.contract.chain);
 			const key = `${item.key.toLowerCase()}`;
 			items.set(key, { text: item.text, isUnlimited: item.isUnlimited, source: "simulation" });
 		}
@@ -459,6 +520,57 @@ function renderApprovalsSection(result: AnalysisResult, hasCalldata: boolean): s
 	return lines;
 }
 
+function renderChecksSection(result: AnalysisResult): string[] {
+	const lines: string[] = [];
+	lines.push(" 🧾 CHECKS");
+
+	if (result.contract.verified) {
+		lines.push(COLORS.ok(" ✓ Source verified"));
+	} else {
+		lines.push(COLORS.warning(" ⚠️ Source not verified (or unknown)"));
+	}
+
+	if (result.contract.is_proxy) {
+		lines.push(COLORS.warning(" ⚠️ Proxy / upgradeable (code can change)"));
+	}
+
+	if (result.protocolMatch?.name) {
+		lines.push(COLORS.ok(` ✓ Known protocol: ${cleanLabel(result.protocolMatch.name)}`));
+	}
+
+	const important = result.findings.filter(
+		(f) =>
+			f.level === "danger" ||
+			f.level === "warning" ||
+			(f.level === "safe" && (f.code === "VERIFIED" || f.code === "KNOWN_PROTOCOL")) ||
+			f.code === "KNOWN_PHISHING" ||
+			f.code === "UPGRADEABLE" ||
+			f.code === "UNVERIFIED",
+	);
+
+	const deduped = new Map<string, Finding>();
+	for (const finding of important) {
+		if (finding.code === "CALLDATA_DECODED") continue;
+		deduped.set(finding.code, finding);
+	}
+
+	const ordered: Finding[] = [];
+	for (const code of ["KNOWN_PHISHING", "UNVERIFIED", "UPGRADEABLE", "NEW_CONTRACT"]) {
+		const f = deduped.get(code);
+		if (f) ordered.push(f);
+	}
+	for (const finding of deduped.values()) {
+		if (ordered.some((f) => f.code === finding.code)) continue;
+		ordered.push(finding);
+	}
+
+	for (const finding of ordered.slice(0, 4)) {
+		lines.push(` ${formatFindingLine(finding)}`);
+	}
+
+	return lines;
+}
+
 function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string[] {
 	let label = result.ai
 		? riskLabel(result.ai.risk_score)
@@ -478,9 +590,10 @@ function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string
 
 export function renderResultBox(
 	result: AnalysisResult,
-	context?: { hasCalldata?: boolean },
+	context?: { hasCalldata?: boolean; sender?: string },
 ): string {
 	const hasCalldata = context?.hasCalldata ?? false;
+	const actorLabel: "You" | "Sender" = context?.sender ? "You" : "Sender";
 	const protocol = formatProtocolDisplay(result);
 	const protocolSuffix =
 		result.protocolMatch?.slug && result.protocolMatch.slug !== protocol
@@ -498,11 +611,12 @@ export function renderResultBox(
 
 	const sections = hasCalldata
 		? [
-				renderBalanceSection(result, hasCalldata),
+				renderChecksSection(result),
+				renderBalanceSection(result, hasCalldata, actorLabel),
 				renderApprovalsSection(result, hasCalldata),
 				renderRiskSection(result, hasCalldata),
 			]
-		: [renderRiskSection(result, hasCalldata)];
+		: [renderChecksSection(result), renderRiskSection(result, hasCalldata)];
 
 	return renderUnifiedBox(headerLines, sections);
 }
@@ -570,22 +684,25 @@ function aggregateErc20(
 	return results;
 }
 
-function formatSimulationApproval(approval: BalanceSimulationResult["approvals"][number]): {
+function formatSimulationApproval(
+	approval: BalanceSimulationResult["approvals"][number],
+	chain: Chain,
+): {
 	text: string;
 	isUnlimited: boolean;
 	key: string;
 } {
-	const tokenLabel = shortenAddress(approval.token);
-	const spenderLabel = shortenAddress(approval.spender);
+	const spenderLabel = formatSpenderLabel(approval.spender, chain);
+	const tokenLabel = formatTokenLabel(approval.token, approval.symbol);
 	const prefix = approval.standard === "permit2" ? "PERMIT2 " : "";
 
 	if (approval.scope === "all") {
 		const approved = approval.approved !== false;
-		const label = approved ? "ALL" : "REVOKE ALL";
+		const label = approved ? "Approve ALL" : "Revoke ALL";
 		return {
-			text: `${prefix}${tokenLabel}: ${label} to ${spenderLabel}`,
+			text: `${prefix}${label} for ${tokenLabel} → ${spenderLabel}`,
 			isUnlimited: approved,
-			key: `${tokenLabel}|${spenderLabel}|all`,
+			key: `${approval.token.toLowerCase()}|${approval.spender.toLowerCase()}|all|${approved}`,
 		};
 	}
 
@@ -595,9 +712,9 @@ function formatSimulationApproval(approval: BalanceSimulationResult["approvals"]
 		approval.standard !== "permit2"
 	) {
 		return {
-			text: `${prefix}${tokenLabel} #${approval.tokenId.toString()}: APPROVE to ${spenderLabel}`,
+			text: `${prefix}Approve ${tokenLabel} #${approval.tokenId.toString()} → ${spenderLabel}`,
 			isUnlimited: false,
-			key: `${tokenLabel}|${spenderLabel}|${approval.tokenId.toString()}`,
+			key: `${approval.token.toLowerCase()}|${approval.spender.toLowerCase()}|${approval.tokenId.toString()}`,
 		};
 	}
 
@@ -605,14 +722,12 @@ function formatSimulationApproval(approval: BalanceSimulationResult["approvals"]
 		approval.standard === "permit2"
 			? approval.amount === MAX_UINT160
 			: approval.amount === MAX_UINT256;
-	const amountLabel =
-		isUnlimited || approval.amount === undefined
-			? "UNLIMITED"
-			: formatApprovalAmount(approval.amount, 18);
+	const amountLabel = formatApprovalAmountLabel(approval);
+
 	return {
-		text: `${prefix}${tokenLabel}: ${amountLabel} to ${spenderLabel}`,
+		text: `${prefix}Allow ${spenderLabel} to spend up to ${amountLabel} ${tokenLabel}`,
 		isUnlimited,
-		key: `${tokenLabel}|${spenderLabel}|amount`,
+		key: `${approval.token.toLowerCase()}|${approval.spender.toLowerCase()}|amount|${amountLabel}`,
 	};
 }
 
@@ -670,6 +785,40 @@ function formatNumberString(value: string, maxFractionDigits?: number): string {
 		fraction = fraction.slice(0, maxFractionDigits).replace(/0+$/, "");
 	}
 	return fraction.length > 0 ? `${formattedInt}.${fraction}` : formattedInt;
+}
+
+function formatTokenLabel(token: string, symbol?: string): string {
+	const short = shortenAddress(token);
+	if (symbol && symbol.trim().length > 0) {
+		return `${cleanLabel(symbol)} (${short})`;
+	}
+	return short;
+}
+
+function formatSpenderLabel(spender: string, chain: Chain): string {
+	const short = shortenAddress(spender);
+	const known = (KNOWN_SPENDERS[chain] ?? []).find(
+		(entry) => entry.address.toLowerCase() === spender.toLowerCase(),
+	);
+	if (known) {
+		return `${known.name} (${short})`;
+	}
+	return short;
+}
+
+function formatTokenAmount(amount: bigint, decimals: number | undefined): string {
+	if (decimals === undefined) return formatNumberString(amount.toString());
+	return formatNumberString(formatFixed(amount, decimals), 6);
+}
+
+function formatApprovalAmountLabel(approval: BalanceSimulationResult["approvals"][number]): string {
+	const isUnlimited =
+		approval.standard === "permit2"
+			? approval.amount === MAX_UINT160
+			: approval.amount === MAX_UINT256;
+	if (isUnlimited) return "UNLIMITED";
+	if (approval.amount === undefined) return "UNKNOWN";
+	return formatTokenAmount(approval.amount, approval.decimals);
 }
 
 function nativeSymbol(chain: Chain): string {

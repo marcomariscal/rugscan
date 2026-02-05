@@ -27,6 +27,10 @@ export const KNOWN_SPENDERS: Record<Chain, KnownSpender[]> = {
 			name: "SushiSwap Router",
 			address: "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f",
 		},
+		{
+			name: "1inch Router",
+			address: "0x6131b5fae19ea4f9d964eac0408e4408b66337b5",
+		},
 	],
 	base: [
 		{

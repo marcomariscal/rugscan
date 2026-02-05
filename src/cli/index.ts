@@ -272,7 +272,10 @@ async function runScan(args: string[]) {
 				? JSON.stringify(response, null, 2)
 				: format === "sarif"
 					? JSON.stringify(formatSarif(response), null, 2)
-					: renderResultBox(analysis, { hasCalldata: Boolean(parsed.data.calldata) });
+					: renderResultBox(analysis, {
+							hasCalldata: Boolean(parsed.data.calldata),
+							sender: parsed.data.calldata?.from,
+						});
 
 		await writeOutput(output, outputPayload, format === "text");
 

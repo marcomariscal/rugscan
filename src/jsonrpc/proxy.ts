@@ -390,6 +390,7 @@ async function defaultScanFn(
 		? undefined
 		: `${renderHeading(`Tx scan on ${options.chain}`)}\n\n${renderResultBox(analysis, {
 				hasCalldata: Boolean(input.calldata),
+				sender: input.calldata?.from,
 			})}\n`;
 
 	return {
