@@ -51,7 +51,7 @@ Options:
   Proxy:
   --upstream     Upstream JSON-RPC HTTP URL to forward requests to
                  (default: $RUGSCAN_UPSTREAM or config rpcUrls.<chain>)
-  --save         Save --upstream to config file under rpcUrls.<chain>
+  --save         Save --upstream to config file under rpcUrls.ethereum
   --hostname     Hostname to bind the proxy server (default: 127.0.0.1)
   --port         Port to bind the proxy server (default: 8545)
   --threshold    Treat recommendation >= threshold as risky (default: caution)
@@ -391,17 +391,10 @@ async function runProxy(args: string[]) {
 	}
 
 	if (save) {
-		if (!resolved.chain) {
-			console.error(
-				renderError(
-					`Error: Unable to resolve chain for saving config (got --chain ${chain ?? ""})`,
-				),
-			);
-			process.exit(1);
-		}
-		const savedPath = await saveRpcUrl({ chain: resolved.chain, rpcUrl: resolved.upstreamUrl });
+		const savedChain: Chain = "ethereum";
+		const savedPath = await saveRpcUrl({ chain: savedChain, rpcUrl: resolved.upstreamUrl });
 		if (!quiet) {
-			console.log(`Saved rpcUrls.${resolved.chain} to ${savedPath}`);
+			console.log(`Saved rpcUrls.${savedChain} to ${savedPath}`);
 		}
 	}
 

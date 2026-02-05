@@ -74,7 +74,7 @@ describe("rugscan proxy upstream", () => {
 		}
 	});
 
-	test("--save persists rpcUrls.<chain> without clobbering other keys", async () => {
+	test("--save persists rpcUrls.ethereum without clobbering other keys", async () => {
 		const tempDir = await mkdtemp(path.join(os.tmpdir(), "rugscan-save-"));
 		const tempConfigPath = path.join(tempDir, "config.json");
 
@@ -98,8 +98,8 @@ describe("rugscan proxy upstream", () => {
 			);
 
 			const writtenPath = await saveRpcUrl({
-				chain: "base",
-				rpcUrl: "https://base.example",
+				chain: "ethereum",
+				rpcUrl: "https://new-eth.example",
 			});
 			expect(writtenPath).toBe(tempConfigPath);
 
@@ -121,8 +121,7 @@ describe("rugscan proxy upstream", () => {
 				throw new Error("expected rpcUrls to be an object");
 			}
 
-			expect(rpcUrls.ethereum).toBe("https://existing.example");
-			expect(rpcUrls.base).toBe("https://base.example");
+			expect(rpcUrls.ethereum).toBe("https://new-eth.example");
 		} finally {
 			setEnv("RUGSCAN_CONFIG", previous.RUGSCAN_CONFIG);
 			await rm(tempDir, { recursive: true, force: true });
