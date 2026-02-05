@@ -1,0 +1,56 @@
+{
+	"contract": {
+		"address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+		"chain": "ethereum",
+		"name": "USD Coin",
+		"verified": true,
+		"is_proxy": false
+	},
+	"protocol": "USDC",
+	"findings": [
+		{
+			"level": "safe",
+			"code": "VERIFIED",
+			"message": "Source code verified: USD Coin"
+		},
+		{
+			"level": "warning",
+			"code": "UNLIMITED_APPROVAL",
+			"message": "Unlimited token approval (max allowance)",
+			"details": {
+				"spender": "0x9999999999999999999999999999999999999999",
+				"method": "approve",
+				"amount": "MAX_UINT256"
+			}
+		},
+		{
+			"level": "info",
+			"code": "CALLDATA_DECODED",
+			"message": "Decoded calldata: approve(spender: 0x9999…9999, amount: MAX_UINT256)",
+			"details": {
+				"selector": "0x095ea7b3",
+				"signature": "approve(address,uint256)",
+				"functionName": "approve",
+				"source": "fixture",
+				"standard": "erc20",
+				"args": {
+					"spender": "0x9999999999999999999999999999999999999999",
+					"amount": "MAX_UINT256"
+				}
+			}
+		}
+	],
+	"confidence": {
+		"level": "high",
+		"reasons": []
+	},
+	"recommendation": "warning",
+	"intent": "Approve USDC allowance",
+	"simulation": {
+		"success": true,
+		"assetChanges": [],
+		"approvals": [],
+		"confidence": "high",
+		"notes": []
+	}
+}

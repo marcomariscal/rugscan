@@ -571,6 +571,69 @@ function renderChecksSection(result: AnalysisResult): string[] {
 	return lines;
 }
 
+function renderPolicySection(
+	result: AnalysisResult,
+	hasCalldata: boolean,
+	policy: PolicySummary,
+): string[] {
+	const lines: string[] = [];
+	lines.push(" 🛡️ POLICY / ALLOWLIST");
+
+	const allowlisted = policy.allowlisted ?? [];
+	const nonAllowlisted = policy.nonAllowlisted ?? [];
+
+	if (policy.allowedProtocol?.name) {
+		const soft = policy.allowedProtocol.soft !== false;
+		const softLabel = soft ? " (soft)" : "";
+		lines.push(
+			COLORS.ok(` ✓ Allowed protocol${softLabel}: ${cleanLabel(policy.allowedProtocol.name)}`),
+		);
+	}
+
+	for (const endpoint of allowlisted) {
+		const address = shortenAddress(endpoint.address);
+		const label = endpoint.label ? `${cleanLabel(endpoint.label)} (${address})` : address;
+		lines.push(COLORS.ok(` ✓ Allowlisted ${endpoint.role}: ${label}`));
+	}
+
+	for (const endpoint of nonAllowlisted) {
+		const address = shortenAddress(endpoint.address);
+		const label = endpoint.label ? `${cleanLabel(endpoint.label)} (${address})` : address;
+		lines.push(COLORS.warning(` ⚠️ Non-allowlisted ${endpoint.role}: ${label}`));
+	}
+
+	const simulationUncertain =
+		hasCalldata &&
+		(!result.simulation || !result.simulation.success || result.simulation.confidence !== "high");
+
+	let decision = policy.decision;
+	let decisionReason: string | null = null;
+
+	if (!decision) {
+		if (nonAllowlisted.length > 0) {
+			decision = policy.mode === "wallet" ? "BLOCK" : "PROMPT";
+		} else {
+			decision = "ALLOW";
+		}
+	}
+
+	if (simulationUncertain) {
+		decision = "BLOCK";
+		decisionReason = "INCONCLUSIVE simulation";
+	}
+
+	const decisionLine = ` Policy decision: ${decision}${decisionReason ? ` (${decisionReason})` : ""}`;
+	if (decision === "ALLOW") {
+		lines.push(COLORS.ok(decisionLine));
+	} else if (decision === "PROMPT") {
+		lines.push(COLORS.warning(decisionLine));
+	} else {
+		lines.push(COLORS.danger(decisionLine));
+	}
+
+	return lines;
+}
+
 function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string[] {
 	let label = result.ai
 		? riskLabel(result.ai.risk_score)
@@ -602,9 +665,24 @@ function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string
 	return lines;
 }
 
+type PolicyEndpointRole = "to" | "recipient" | "spender" | "operator";
+
+type PolicyDecision = "ALLOW" | "PROMPT" | "BLOCK";
+
+export interface PolicySummary {
+	mode?: "wallet" | "cli";
+	allowedProtocol?: {
+		name: string;
+		soft?: boolean;
+	};
+	allowlisted?: Array<{ role: PolicyEndpointRole; address: string; label?: string }>;
+	nonAllowlisted?: Array<{ role: PolicyEndpointRole; address: string; label?: string }>;
+	decision?: PolicyDecision;
+}
+
 export function renderResultBox(
 	result: AnalysisResult,
-	context?: { hasCalldata?: boolean; sender?: string },
+	context?: { hasCalldata?: boolean; sender?: string; policy?: PolicySummary },
 ): string {
 	const hasCalldata = context?.hasCalldata ?? false;
 	const actorLabel: "You" | "Sender" = context?.sender ? "You" : "Sender";
@@ -626,11 +704,16 @@ export function renderResultBox(
 	const sections = hasCalldata
 		? [
 				renderChecksSection(result),
+				...(context?.policy ? [renderPolicySection(result, hasCalldata, context.policy)] : []),
 				renderBalanceSection(result, hasCalldata, actorLabel),
 				renderApprovalsSection(result, hasCalldata),
 				renderRiskSection(result, hasCalldata),
 			]
-		: [renderChecksSection(result), renderRiskSection(result, hasCalldata)];
+		: [
+				renderChecksSection(result),
+				...(context?.policy ? [renderPolicySection(result, hasCalldata, context.policy)] : []),
+				renderRiskSection(result, hasCalldata),
+			];
 
 	return renderUnifiedBox(headerLines, sections);
 }

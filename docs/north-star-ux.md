@@ -47,9 +47,10 @@ Order and required/optional lines:
 Sections must appear in this order (no reordering):
 
 1. `🧾 CHECKS`
-2. `💰 BALANCE CHANGES`
-3. `🔐 APPROVALS`
-4. `📊 RISK`
+2. `🛡️ POLICY / ALLOWLIST` — OPTIONAL (only when policy is configured)
+3. `💰 BALANCE CHANGES`
+4. `🔐 APPROVALS`
+5. `📊 RISK`
 
 Each section is designed to answer one question quickly.
 
@@ -76,7 +77,36 @@ Surfacing rule (north-star):
 - **Front-and-center**: danger/warning findings and key safe signals (`VERIFIED`, `KNOWN_PROTOCOL`).
 - **Detail-only**: low-signal info findings (selector candidates, raw signature lists).
 
-### 2.2 💰 BALANCE CHANGES
+### 2.2 🛡️ POLICY / ALLOWLIST (optional)
+
+Purpose: explicit allowlist/policy gating that a wallet (or other caller) can configure to restrict **endpoints**.
+
+This section is **optional** and must only render when the caller has configured a policy/allowlist.
+
+What must show (front-and-center):
+- **Allowed endpoints** (when known), grouped by role:
+  - `to` (called contract)
+  - `recipient`
+  - `spender`
+  - `operator`
+- **Non-allowlisted endpoints** (when any): clearly marked as not allowlisted
+- **Allowed protocol (soft)** (when configured): a positive hint only; it never overrides simulation uncertainty
+- A final **policy decision**: `ALLOW | PROMPT | BLOCK`
+
+Policy behavior rules (v1):
+
+1) **Non-allowlisted endpoints**
+- If any endpoint is not allowlisted, the scan must be treated as at least **CAUTION/WARNING**.
+- Policy enforcement must be at least `PROMPT`.
+- In **wallet mode**, default is `BLOCK` for any non-allowlisted endpoint.
+
+2) **Simulation uncertainty overrides allowlists**
+- If the scan is **INCONCLUSIVE** due to simulation not run/failed/not-high-confidence, the policy decision must be `BLOCK` **even if all endpoints are allowlisted**.
+- Rationale: allowlists do not protect against intent mismatch or unseen balance changes.
+
+> Note: policy decisions are distinct from `📊 RISK` labels; policy is an explicit integration control surface.
+
+### 2.3 💰 BALANCE CHANGES
 
 Purpose: show *what you will send/receive* (or explicitly state that we cannot know).
 
@@ -110,7 +140,7 @@ Then one of the following states:
 - Optional confidence note line when confidence != high:
   - `- Note: <medium|low> confidence`
 
-### 2.3 🔐 APPROVALS
+### 2.4 🔐 APPROVALS
 
 Purpose: show *who will be allowed to spend/use your assets*.
 
@@ -139,7 +169,7 @@ Then one of the following states:
 - **Spender** (ERC-20 approve / Permit2): the address that can transfer tokens.
 - **Operator** (ERC-721 / ERC-1155 ApprovalForAll): the address that can transfer *all* NFTs in a collection.
 
-### 2.4 📊 RISK
+### 2.5 📊 RISK
 
 Purpose: the “go / slow / stop” decision line.
 

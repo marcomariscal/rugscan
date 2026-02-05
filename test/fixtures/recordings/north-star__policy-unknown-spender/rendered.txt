@@ -1,0 +1,27 @@
+Tx scan on ethereum
+
+┌───────────────────────────────────────────────────────────────────┐
+│  Chain: ethereum                                                  │
+│  Protocol: USDC                                                   │
+│  Action: Approve USDC allowance                                   │
+│  Contract: USD Coin                                               │
+├───────────────────────────────────────────────────────────────────┤
+│  🧾 CHECKS                                                        │
+│  ✓ Source verified                                                │
+│  ✓ Source code verified: USD Coin [VERIFIED]                      │
+│  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL] │
+├───────────────────────────────────────────────────────────────────┤
+│  🛡️ POLICY / ALLOWLIST                                           │
+│  ✓ Allowed protocol (soft): USDC                                  │
+│  ✓ Allowlisted to: USD Coin (0xa0b8...eb48)                       │
+│  ⚠️ Non-allowlisted spender: Unknown spender (0x9999...9999)      │
+│  Policy decision: BLOCK                                           │
+├───────────────────────────────────────────────────────────────────┤
+│  💰 BALANCE CHANGES                                               │
+│  - No balance changes detected                                    │
+├───────────────────────────────────────────────────────────────────┤
+│  🔐 APPROVALS                                                     │
+│  ⚠️ USD Coin: UNLIMITED to 0x9999...9999                          │
+├───────────────────────────────────────────────────────────────────┤
+│  📊 RISK: MEDIUM (AI disabled)                                    │
+└───────────────────────────────────────────────────────────────────┘

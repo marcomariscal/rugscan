@@ -12,6 +12,11 @@ Tx scan on ethereum
 │  ✓ Source code verified: Universal Router [VERIFIED]                              │
 │  ✓ Recognized protocol: Uniswap [KNOWN_PROTOCOL]                                  │
 ├───────────────────────────────────────────────────────────────────────────────────┤
+│  🛡️ POLICY / ALLOWLIST                                                           │
+│  ✓ Allowed protocol (soft): Uniswap                                               │
+│  ✓ Allowlisted to: Universal Router (0x66a9...a8af)                               │
+│  Policy decision: BLOCK (INCONCLUSIVE simulation)                                 │
+├───────────────────────────────────────────────────────────────────────────────────┤
 │  💰 BALANCE CHANGES                                                               │
 │  - Simulation failed (Timeout)                                                    │
 │  - wallet fast-mode enabled; simulation skipped.                                  │

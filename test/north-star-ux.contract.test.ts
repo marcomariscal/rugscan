@@ -19,9 +19,24 @@ const BUNDLES = [
 	"north-star__swap-sim-ok",
 	"north-star__swap-sim-failed",
 	"north-star__approve-unlimited-sim-not-run",
+	"north-star__policy-unknown-spender",
 ] as const;
 
-type RenderContext = { hasCalldata?: boolean; sender?: string };
+type PolicyEndpointRole = "to" | "recipient" | "spender" | "operator";
+
+type PolicyDecision = "ALLOW" | "PROMPT" | "BLOCK";
+
+type RenderContext = {
+	hasCalldata?: boolean;
+	sender?: string;
+	policy?: {
+		mode?: "wallet" | "cli";
+		allowedProtocol?: { name: string; soft?: boolean };
+		allowlisted?: Array<{ role: PolicyEndpointRole; address: string; label?: string }>;
+		nonAllowlisted?: Array<{ role: PolicyEndpointRole; address: string; label?: string }>;
+		decision?: PolicyDecision;
+	};
+};
 
 function stripAnsi(input: string): string {
 	// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape sequences
@@ -105,6 +120,65 @@ function isAnalysisResult(value: unknown): value is AnalysisResult {
 	return true;
 }
 
+function isPolicyEndpointRole(value: unknown): value is PolicyEndpointRole {
+	return value === "to" || value === "recipient" || value === "spender" || value === "operator";
+}
+
+function isPolicyDecision(value: unknown): value is PolicyDecision {
+	return value === "ALLOW" || value === "PROMPT" || value === "BLOCK";
+}
+
+function isPolicyEndpoint(value: unknown): value is {
+	role: PolicyEndpointRole;
+	address: string;
+	label?: string;
+} {
+	if (!isRecord(value)) return false;
+	if (!isPolicyEndpointRole(value.role)) return false;
+	if (typeof value.address !== "string" || value.address.length === 0) return false;
+	if ("label" in value && value.label !== undefined && typeof value.label !== "string")
+		return false;
+	return true;
+}
+
+function isPolicySummary(value: unknown): value is NonNullable<RenderContext["policy"]> {
+	if (!isRecord(value)) return false;
+	if (
+		"mode" in value &&
+		value.mode !== undefined &&
+		value.mode !== "wallet" &&
+		value.mode !== "cli"
+	) {
+		return false;
+	}
+	if ("decision" in value && value.decision !== undefined && !isPolicyDecision(value.decision)) {
+		return false;
+	}
+	if ("allowedProtocol" in value && value.allowedProtocol !== undefined) {
+		if (!isRecord(value.allowedProtocol)) return false;
+		if (typeof value.allowedProtocol.name !== "string" || value.allowedProtocol.name.length === 0) {
+			return false;
+		}
+		if (
+			"soft" in value.allowedProtocol &&
+			value.allowedProtocol.soft !== undefined &&
+			typeof value.allowedProtocol.soft !== "boolean"
+		) {
+			return false;
+		}
+	}
+	if ("allowlisted" in value && value.allowlisted !== undefined) {
+		if (!Array.isArray(value.allowlisted) || !value.allowlisted.every(isPolicyEndpoint))
+			return false;
+	}
+	if ("nonAllowlisted" in value && value.nonAllowlisted !== undefined) {
+		if (!Array.isArray(value.nonAllowlisted) || !value.nonAllowlisted.every(isPolicyEndpoint)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 function isRenderContext(value: unknown): value is RenderContext {
 	if (!isRecord(value)) return false;
 	if (
@@ -115,6 +189,9 @@ function isRenderContext(value: unknown): value is RenderContext {
 		return false;
 	}
 	if ("sender" in value && value.sender !== undefined && typeof value.sender !== "string") {
+		return false;
+	}
+	if ("policy" in value && value.policy !== undefined && !isPolicySummary(value.policy)) {
 		return false;
 	}
 	return true;
@@ -165,7 +242,18 @@ describe("north-star pre-sign UX (contract)", () => {
 				lastIndex = index;
 			}
 
-			// 3) INCONCLUSIVE semantics (simulation uncertain => explicit line)
+			// 3) Optional policy section (only when configured)
+			const checksIndex = normalizedActual.indexOf("🧾 CHECKS");
+			const balanceIndex = normalizedActual.indexOf("💰 BALANCE CHANGES");
+			const policyIndex = normalizedActual.indexOf("🛡️ POLICY / ALLOWLIST");
+			if (context.policy) {
+				expect(policyIndex).toBeGreaterThan(checksIndex);
+				expect(policyIndex).toBeLessThan(balanceIndex);
+			} else {
+				expect(policyIndex).toBe(-1);
+			}
+
+			// 4) INCONCLUSIVE semantics (simulation uncertain => explicit line)
 			const simulationUncertain =
 				Boolean(context.hasCalldata) &&
 				(!analysis.simulation ||
@@ -175,6 +263,18 @@ describe("north-star pre-sign UX (contract)", () => {
 				expect(normalizedActual).toContain("INCONCLUSIVE");
 			} else {
 				expect(normalizedActual).not.toContain("INCONCLUSIVE");
+			}
+
+			// 5) Policy decision semantics
+			if (context.policy) {
+				if (simulationUncertain) {
+					expect(normalizedActual).toContain("Policy decision: BLOCK (INCONCLUSIVE simulation)");
+				}
+				if (!simulationUncertain && (context.policy.nonAllowlisted?.length ?? 0) > 0) {
+					// Wallet-mode default is to block on non-allowlisted endpoints.
+					expect(normalizedActual).toContain("Non-allowlisted");
+					expect(normalizedActual).toContain("Policy decision: BLOCK");
+				}
 			}
 		}
 	});

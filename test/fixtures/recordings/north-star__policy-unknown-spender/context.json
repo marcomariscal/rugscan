@@ -1,0 +1,25 @@
+{
+	"hasCalldata": true,
+	"sender": "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+	"policy": {
+		"mode": "wallet",
+		"allowedProtocol": {
+			"name": "USDC",
+			"soft": true
+		},
+		"allowlisted": [
+			{
+				"role": "to",
+				"address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+				"label": "USD Coin"
+			}
+		],
+		"nonAllowlisted": [
+			{
+				"role": "spender",
+				"address": "0x9999999999999999999999999999999999999999",
+				"label": "Unknown spender"
+			}
+		]
+	}
+}

@@ -1,0 +1,14 @@
+{
+	"jsonrpc": "2.0",
+	"id": 1,
+	"method": "eth_sendTransaction",
+	"params": [
+		{
+			"chainId": "0x1",
+			"from": "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+			"to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+			"value": "0x0",
+			"data": "0x095ea7b3"
+		}
+	]
+}

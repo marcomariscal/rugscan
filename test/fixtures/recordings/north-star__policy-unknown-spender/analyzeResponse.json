@@ -1,0 +1,42 @@
+{
+	"requestId": "44444444-4444-4444-8444-444444444444",
+	"scan": {
+		"input": {
+			"calldata": {
+				"to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+				"from": "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+				"data": "0x095ea7b3",
+				"value": "0",
+				"chain": "ethereum"
+			}
+		},
+		"intent": "Approve spender",
+		"recommendation": "warning",
+		"confidence": 0.7,
+		"findings": [
+			{
+				"code": "UNLIMITED_APPROVAL",
+				"severity": "warning",
+				"message": "Unlimited token approval (max allowance)",
+				"details": {
+					"spender": "0x9999999999999999999999999999999999999999"
+				}
+			}
+		],
+		"contract": {
+			"address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+			"chain": "ethereum",
+			"isContract": true,
+			"name": "USD Coin",
+			"isProxy": false,
+			"verifiedSource": true
+		},
+		"simulation": {
+			"success": true,
+			"assetChanges": [],
+			"approvals": [],
+			"confidence": "high",
+			"notes": []
+		}
+	}
+}
