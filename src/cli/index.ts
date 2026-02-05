@@ -28,7 +28,7 @@ Usage:
   rugscan analyze <address> [--chain <chain>] [--ai] [--model <model>]
   rugscan scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>]
   rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
-  rugscan proxy --upstream <rpc-url> [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--once]
+  rugscan proxy --upstream <rpc-url> [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--once]
 
 Options:
   --chain, -c    Chain to analyze on (default: ethereum)
@@ -50,6 +50,7 @@ Options:
   --port         Port to bind the proxy server (default: 8545)
   --threshold    Treat recommendation >= threshold as risky (default: caution)
   --on-risk      What to do when risky (block|prompt; default: prompt if TTY else block)
+  --record-dir   Save intercepted tx + AnalyzeResponse + rendered output under this directory
   --once         Handle one request then exit (useful for tests)
 
   --ai           Enable AI risk analysis (requires API key)
@@ -356,6 +357,7 @@ async function runProxy(args: string[]) {
 	const chain = getFlagValue(args, ["--chain", "-c"]);
 	const threshold = parseProxyThreshold(getFlagValue(args, ["--threshold"]));
 	const onRisk = parseOnRisk(getFlagValue(args, ["--on-risk"]));
+	const recordDir = getFlagValue(args, ["--record-dir"]);
 	const once = args.includes("--once");
 	const quiet = args.includes("--quiet");
 
@@ -369,6 +371,7 @@ async function runProxy(args: string[]) {
 		chain,
 		once,
 		quiet,
+		recordDir,
 		config,
 		policy: {
 			threshold,
@@ -484,6 +487,7 @@ function getPositionalArgs(args: string[]): string[] {
 		"--port",
 		"--threshold",
 		"--on-risk",
+		"--record-dir",
 	]);
 	const positional: string[] = [];
 	for (let i = 0; i < args.length; i += 1) {
