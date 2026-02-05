@@ -1,5 +1,6 @@
 import { fetchWithTimeout } from "../http";
 import type { Chain, ProtocolMatch } from "../types";
+import type { ProviderRequestOptions } from "./request-options";
 
 const DEFILLAMA_API = "https://api.llama.fi";
 
@@ -59,14 +60,18 @@ let protocolCache: Protocol[] | null = null;
 let cacheTime = 0;
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
-async function getProtocols(): Promise<Protocol[]> {
+async function getProtocols(options?: ProviderRequestOptions): Promise<Protocol[]> {
 	const now = Date.now();
 	if (protocolCache && now - cacheTime < CACHE_TTL) {
 		return protocolCache;
 	}
 
 	try {
-		const response = await fetchWithTimeout(`${DEFILLAMA_API}/protocols`);
+		const response = await fetchWithTimeout(
+			`${DEFILLAMA_API}/protocols`,
+			{ signal: options?.signal },
+			options?.timeoutMs,
+		);
 		if (!response.ok) {
 			return protocolCache || [];
 		}
@@ -79,7 +84,18 @@ async function getProtocols(): Promise<Protocol[]> {
 	}
 }
 
-export async function matchProtocol(address: string, chain: Chain): Promise<ProtocolMatch | null> {
+export interface DeFiLlamaMatchOptions extends ProviderRequestOptions {
+	/**
+	 * When false, skips the /protocols lookup entirely (manual matches only).
+	 */
+	allowNetwork?: boolean;
+}
+
+export async function matchProtocol(
+	address: string,
+	chain: Chain,
+	options?: DeFiLlamaMatchOptions,
+): Promise<ProtocolMatch | null> {
 	const chainName = CHAIN_NAMES[chain];
 	const normalizedAddress = address.toLowerCase();
 	const manualMatch = KNOWN_PROTOCOL_ADDRESSES[chain]?.[normalizedAddress];
@@ -88,7 +104,11 @@ export async function matchProtocol(address: string, chain: Chain): Promise<Prot
 		return { name: manualMatch.name, slug: manualMatch.slug };
 	}
 
-	const protocols = await getProtocols();
+	if (options?.allowNetwork === false) {
+		return null;
+	}
+
+	const protocols = await getProtocols(options);
 
 	// DeFiLlama doesn't have direct address mapping for most protocols
 	// This is a best-effort match based on known addresses

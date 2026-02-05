@@ -1,11 +1,13 @@
 import { getChainConfig } from "../chains";
 import { fetchWithTimeout } from "../http";
 import type { Chain, EtherscanData } from "../types";
+import type { ProviderRequestOptions } from "./request-options";
 
 export async function getContractData(
 	address: string,
 	chain: Chain,
 	apiKey?: string,
+	options?: ProviderRequestOptions,
 ): Promise<EtherscanData | null> {
 	if (!apiKey) {
 		return null;
@@ -17,7 +19,11 @@ export async function getContractData(
 	try {
 		// Get source code (includes verification status and name)
 		const sourceUrl = `${baseUrl}?module=contract&action=getsourcecode&address=${address}&apikey=${apiKey}`;
-		const sourceRes = await fetchWithTimeout(sourceUrl);
+		const sourceRes = await fetchWithTimeout(
+			sourceUrl,
+			{ signal: options?.signal },
+			options?.timeoutMs,
+		);
 		const sourceData = await sourceRes.json();
 
 		if (sourceData.status !== "1" || !sourceData.result?.[0]) {
@@ -29,7 +35,11 @@ export async function getContractData(
 
 		// Get transaction count
 		const txCountUrl = `${baseUrl}?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=1&sort=asc&apikey=${apiKey}`;
-		const txCountRes = await fetchWithTimeout(txCountUrl);
+		const txCountRes = await fetchWithTimeout(
+			txCountUrl,
+			{ signal: options?.signal },
+			options?.timeoutMs,
+		);
 		const txCountData = await txCountRes.json();
 
 		// Get creation info (first transaction is usually contract creation)
@@ -45,7 +55,11 @@ export async function getContractData(
 
 		// Get total tx count
 		const txListUrl = `${baseUrl}?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=10000&apikey=${apiKey}`;
-		const txListRes = await fetchWithTimeout(txListUrl);
+		const txListRes = await fetchWithTimeout(
+			txListUrl,
+			{ signal: options?.signal },
+			options?.timeoutMs,
+		);
 		const txListData = await txListRes.json();
 		const tx_count = txListData.status === "1" ? txListData.result?.length : undefined;
 
@@ -71,6 +85,7 @@ export async function getAddressLabels(
 	address: string,
 	chain: Chain,
 	apiKey?: string,
+	options?: ProviderRequestOptions,
 ): Promise<AddressLabels | null> {
 	const chainConfig = getChainConfig(chain);
 	const baseUrl = chainConfig.etherscanApiUrl;
@@ -80,17 +95,17 @@ export async function getAddressLabels(
 	const url = `${rootUrl}/api/v2/nametag?address=${address}&chainid=${chainId}${apiKeyParam}`;
 
 	try {
-		const response = await fetchWithTimeout(url);
+		const response = await fetchWithTimeout(url, { signal: options?.signal }, options?.timeoutMs);
 		if (!response.ok) {
-			return await getPhishHackLabel(address, chainId);
+			return await getPhishHackLabel(address, chainId, options);
 		}
 
 		const data = await response.json();
 		const parsed = parseAddressLabels(data);
 		if (parsed) return parsed;
-		return await getPhishHackLabel(address, chainId);
+		return await getPhishHackLabel(address, chainId, options);
 	} catch {
-		return await getPhishHackLabel(address, chainId);
+		return await getPhishHackLabel(address, chainId, options);
 	}
 }
 
@@ -149,19 +164,26 @@ function isNonEmptyString(value: unknown): value is string {
 const PHISH_HACK_LABEL = "Phish / Hack";
 const phishHackCache = new Map<number, Promise<Set<string> | null> | Set<string>>();
 
-async function getPhishHackLabel(address: string, chainId: number): Promise<AddressLabels | null> {
-	const set = await getPhishHackAddresses(chainId);
+async function getPhishHackLabel(
+	address: string,
+	chainId: number,
+	options?: ProviderRequestOptions,
+): Promise<AddressLabels | null> {
+	const set = await getPhishHackAddresses(chainId, options);
 	if (!set) return null;
 	if (!set.has(address.toLowerCase())) return null;
 	return { labels: [PHISH_HACK_LABEL] };
 }
 
-async function getPhishHackAddresses(chainId: number): Promise<Set<string> | null> {
+async function getPhishHackAddresses(
+	chainId: number,
+	options?: ProviderRequestOptions,
+): Promise<Set<string> | null> {
 	const cached = phishHackCache.get(chainId);
 	if (cached instanceof Set) return cached;
 	if (cached) return cached;
 
-	const fetchPromise = fetchPhishHackAddresses(chainId);
+	const fetchPromise = fetchPhishHackAddresses(chainId, options);
 	phishHackCache.set(chainId, fetchPromise);
 	const resolved = await fetchPromise;
 	if (!resolved) {
@@ -172,16 +194,27 @@ async function getPhishHackAddresses(chainId: number): Promise<Set<string> | nul
 	return resolved;
 }
 
-async function fetchPhishHackAddresses(chainId: number): Promise<Set<string> | null> {
+async function fetchPhishHackAddresses(
+	chainId: number,
+	options?: ProviderRequestOptions,
+): Promise<Set<string> | null> {
 	try {
 		const exportUrl = `https://api-metadata.etherscan.io/v2/api?chainid=${chainId}&module=nametag&action=exportaddresstags&label=phish-hack&format=csv`;
-		const exportResponse = await fetchWithTimeout(exportUrl);
+		const exportResponse = await fetchWithTimeout(
+			exportUrl,
+			{ signal: options?.signal },
+			options?.timeoutMs,
+		);
 		if (!exportResponse.ok) return null;
 		const exportData = await exportResponse.json();
 		const csvLink = parseExportLink(exportData);
 		if (!csvLink) return null;
 
-		const csvResponse = await fetchWithTimeout(csvLink);
+		const csvResponse = await fetchWithTimeout(
+			csvLink,
+			{ signal: options?.signal },
+			options?.timeoutMs,
+		);
 		if (!csvResponse.ok) return null;
 		const csv = await csvResponse.text();
 		const addresses = new Set<string>();
