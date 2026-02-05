@@ -144,11 +144,14 @@ describe("lend/borrow simulation fixtures e2e", () => {
 				chain: String(parsedFixture.chain),
 			});
 
-			const result = await runCli(["scan", "--calldata", calldata, "--format", "json", "--quiet"], {
-				RUGSCAN_CONFIG: fixture.configPath,
-				NO_COLOR: "1",
-				PATH: bunDir,
-			});
+			const result = await runCli(
+				["scan", "--calldata", calldata, "--format", "json", "--fail-on", "danger", "--quiet"],
+				{
+					RUGSCAN_CONFIG: fixture.configPath,
+					NO_COLOR: "1",
+					PATH: bunDir,
+				},
+			);
 
 			expect(result.exitCode).toBe(0);
 			const parsed = JSON.parse(result.stdout);
