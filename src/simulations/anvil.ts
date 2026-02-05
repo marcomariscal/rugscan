@@ -8,6 +8,7 @@ import { createTestClient, http, publicActions } from "viem";
 import { arbitrum, base, mainnet, optimism, polygon } from "viem/chains";
 import { getChainConfig } from "../chains";
 import type { Chain, Config } from "../types";
+import { warmResetAnvilFork } from "./anvil-reset";
 
 const VIEM_CHAINS = {
 	ethereum: mainnet,
@@ -33,6 +34,8 @@ export interface AnvilInstance {
 	client: AnvilClient;
 	rpcUrl: string;
 	stop: () => Promise<void>;
+	resetFork: () => Promise<{ usedAnvilReset: boolean; ms: number }>;
+	runExclusive: <T>(task: () => Promise<T>) => Promise<T>;
 }
 
 const instances = new Map<string, Promise<AnvilInstance>>();
@@ -95,10 +98,36 @@ async function spawnAnvil(options: {
 	}
 
 	const client = createAnvilClient(rpcUrl, options.chain);
+
+	let queue: Promise<void> = Promise.resolve();
+	let baselineSnapshotId: string | null = null;
+	const fork = { forkUrl: options.forkUrl, forkBlock: options.forkBlock };
+
+	function runExclusive<T>(task: () => Promise<T>): Promise<T> {
+		const next = queue.then(task, task);
+		queue = next.then(
+			() => undefined,
+			() => undefined,
+		);
+		return next;
+	}
+
+	async function resetFork(): Promise<{ usedAnvilReset: boolean; ms: number }> {
+		const result = await warmResetAnvilFork({
+			client,
+			fork,
+			baselineSnapshotId,
+		});
+		baselineSnapshotId = result.baselineSnapshotId;
+		return { usedAnvilReset: result.usedAnvilReset, ms: result.ms };
+	}
+
 	return {
 		client,
 		rpcUrl,
 		stop: async () => stopProcess(child),
+		resetFork,
+		runExclusive,
 	};
 }
 

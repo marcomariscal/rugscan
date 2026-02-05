@@ -11,6 +11,8 @@ import { decodeKnownCalldata } from "../analyzers/calldata/decoder";
 import { isRecord, toBigInt } from "../analyzers/calldata/utils";
 import { getChainConfig } from "../chains";
 import type { CalldataInput } from "../schema";
+import type { TimingStore } from "../timing";
+import { nowMs } from "../timing";
 import type {
 	ApprovalChange,
 	AssetChange,
@@ -77,6 +79,7 @@ export async function simulateBalance(
 	tx: CalldataInput,
 	chain: Chain,
 	config?: Config,
+	timings?: TimingStore,
 ): Promise<BalanceSimulationResult> {
 	const backend = config?.simulation?.backend ?? "anvil";
 	const hints = buildFailureHints(tx);
@@ -104,7 +107,7 @@ export async function simulateBalance(
 	}
 
 	try {
-		return await simulateWithAnvil(tx, chain, config);
+		return await simulateWithAnvil(tx, chain, config, timings);
 	} catch (error) {
 		if (error instanceof AnvilUnavailableError) {
 			const notRun = buildSimulationNotRun(tx);
@@ -126,6 +129,7 @@ async function simulateWithAnvil(
 	tx: CalldataInput,
 	chain: Chain,
 	config?: Config,
+	timings?: TimingStore,
 ): Promise<BalanceSimulationResult> {
 	const instance = await getAnvilClient(chain, config);
 	const client = instance.client;
@@ -144,153 +148,164 @@ async function simulateWithAnvil(
 	const notes: string[] = [];
 	let confidence: ConfidenceLevel = "high";
 
-	const snapshotId = await client.snapshot();
-	try {
-		await client.impersonateAccount({ address: from });
-		await client.setBalance({ address: from, value: HIGH_BALANCE });
+	return await instance.runExclusive(async () => {
+		const warmResetResult = await instance.resetFork();
+		timings?.add("anvil.warmReset", warmResetResult.ms);
+		timings?.add(
+			warmResetResult.usedAnvilReset ? "anvil.warmReset.anvil_reset" : "anvil.warmReset.snapshot",
+			warmResetResult.ms,
+		);
 
-		const isContractAccount = await checkContractAccount(from, chain, config);
-		if (isContractAccount) {
-			confidence = "low";
-			notes.push("Sender is a contract account; simulation is best-effort.");
-		}
-
-		const txValue = parseValue(tx.value) ?? 0n;
-		const tokenCandidates = new Set<Address>();
-		for (const token of curatedTokens(chain)) {
-			tokenCandidates.add(token);
-		}
-
-		const decoded = decodeKnownCalldata(tx.data);
-		if (decoded?.standard === "erc20" && isAddress(tx.to)) {
-			tokenCandidates.add(tx.to);
-		}
-
-		const nativeBefore = await client.getBalance({ address: from });
-		const preBalances = await readTokenBalances(client, tokenCandidates, from, notes);
-
-		type Receipt = Awaited<ReturnType<typeof client.waitForTransactionReceipt>>;
-		let receipt: Receipt | null = null;
+		const simulationStarted = nowMs();
 		try {
-			const hash = await client.sendUnsignedTransaction({
-				from,
-				to,
-				data,
-				value: txValue,
-			});
-			receipt = await client.waitForTransactionReceipt({ hash });
-		} catch (error) {
-			const reason =
-				(await attemptRevertReason(client, { from, to, data, value: txValue })) ??
-				(error instanceof Error ? error.message : "Simulation failed");
-			return simulateFailure(reason, notes, confidence, buildFailureHints(tx));
-		}
+			await client.impersonateAccount({ address: from });
+			await client.setBalance({ address: from, value: HIGH_BALANCE });
 
-		if (!receipt || receipt.status !== "success") {
-			const reason =
-				(await attemptRevertReason(client, {
+			const isContractAccount = await checkContractAccount(from, chain, config);
+			if (isContractAccount) {
+				confidence = "low";
+				notes.push("Sender is a contract account; simulation is best-effort.");
+			}
+
+			const txValue = parseValue(tx.value) ?? 0n;
+			const tokenCandidates = new Set<Address>();
+			for (const token of curatedTokens(chain)) {
+				tokenCandidates.add(token);
+			}
+
+			const decoded = decodeKnownCalldata(tx.data);
+			if (decoded?.standard === "erc20" && isAddress(tx.to)) {
+				tokenCandidates.add(tx.to);
+			}
+
+			const nativeBefore = await client.getBalance({ address: from });
+			const preBalances = await readTokenBalances(client, tokenCandidates, from, notes);
+
+			type Receipt = Awaited<ReturnType<typeof client.waitForTransactionReceipt>>;
+			let receipt: Receipt | null = null;
+			try {
+				const hash = await client.sendUnsignedTransaction({
 					from,
 					to,
 					data,
 					value: txValue,
-					blockNumber: receipt?.blockNumber,
-				})) ?? "Transaction reverted";
-			return simulateFailure(reason, notes, confidence, buildFailureHints(tx));
-		}
-
-		const parsedLogs = await parseReceiptLogs(receipt.logs, client);
-		notes.push(...parsedLogs.notes);
-		confidence = minConfidence(confidence, parsedLogs.confidence);
-
-		for (const transfer of parsedLogs.transfers) {
-			if (transfer.standard === "erc20") {
-				tokenCandidates.add(transfer.token);
+				});
+				receipt = await client.waitForTransactionReceipt({ hash });
+			} catch (error) {
+				const reason =
+					(await attemptRevertReason(client, { from, to, data, value: txValue })) ??
+					(error instanceof Error ? error.message : "Simulation failed");
+				return simulateFailure(reason, notes, confidence, buildFailureHints(tx));
 			}
-		}
 
-		const missingTokens = new Set<Address>();
-		for (const token of tokenCandidates) {
-			if (!preBalances.has(token)) {
-				missingTokens.add(token);
+			if (!receipt || receipt.status !== "success") {
+				const reason =
+					(await attemptRevertReason(client, {
+						from,
+						to,
+						data,
+						value: txValue,
+						blockNumber: receipt?.blockNumber,
+					})) ?? "Transaction reverted";
+				return simulateFailure(reason, notes, confidence, buildFailureHints(tx));
 			}
-		}
 
-		if (missingTokens.size > 0) {
-			const previousBlock = receipt.blockNumber > 0n ? receipt.blockNumber - 1n : undefined;
-			if (previousBlock !== undefined) {
-				const missingBalances = await readTokenBalances(
-					client,
-					missingTokens,
-					from,
-					notes,
-					previousBlock,
-				);
-				for (const [token, balance] of missingBalances.entries()) {
-					preBalances.set(token, balance);
+			const parsedLogs = await parseReceiptLogs(receipt.logs, client);
+			notes.push(...parsedLogs.notes);
+			confidence = minConfidence(confidence, parsedLogs.confidence);
+
+			for (const transfer of parsedLogs.transfers) {
+				if (transfer.standard === "erc20") {
+					tokenCandidates.add(transfer.token);
 				}
-			} else {
-				notes.push("Unable to read pre-transaction balances for newly discovered tokens.");
-				confidence = minConfidence(confidence, "medium");
 			}
+
+			const missingTokens = new Set<Address>();
+			for (const token of tokenCandidates) {
+				if (!preBalances.has(token)) {
+					missingTokens.add(token);
+				}
+			}
+
+			if (missingTokens.size > 0) {
+				const previousBlock = receipt.blockNumber > 0n ? receipt.blockNumber - 1n : undefined;
+				if (previousBlock !== undefined) {
+					const missingBalances = await readTokenBalances(
+						client,
+						missingTokens,
+						from,
+						notes,
+						previousBlock,
+					);
+					for (const [token, balance] of missingBalances.entries()) {
+						preBalances.set(token, balance);
+					}
+				} else {
+					notes.push("Unable to read pre-transaction balances for newly discovered tokens.");
+					confidence = minConfidence(confidence, "medium");
+				}
+			}
+
+			const postBalances = await readTokenBalances(client, tokenCandidates, from, notes);
+
+			const assetChanges: AssetChange[] = [];
+			assetChanges.push(...buildErc20Changes(preBalances, postBalances));
+			assetChanges.push(...buildNftChanges(parsedLogs.transfers, from));
+
+			const approvals = parsedLogs.approvals
+				.filter((approval) => approval.owner.toLowerCase() === from.toLowerCase())
+				.map<ApprovalChange>((approval) => ({
+					standard: approval.standard,
+					token: approval.token,
+					owner: approval.owner,
+					spender: approval.spender,
+					amount: approval.amount,
+					tokenId: approval.tokenId,
+					scope: approval.scope,
+					approved: approval.approved,
+				}));
+
+			const gasCost = receipt.gasUsed * receipt.effectiveGasPrice;
+			const nativeAfter = await client.getBalance({ address: from });
+			const nativeDelta = nativeAfter - nativeBefore;
+			const nativeDiff = nativeDelta + gasCost;
+
+			const approvalTokenChanges: AssetChange[] = approvals
+				.filter((approval) => approval.standard === "erc20" || approval.standard === "permit2")
+				.map((approval) => ({
+					assetType: "erc20",
+					address: approval.token,
+					direction: "in",
+				}));
+
+			const metadata = await readTokenMetadata(
+				client,
+				[...assetChanges, ...approvalTokenChanges],
+				notes,
+			);
+			const enrichedChanges = applyTokenMetadata(assetChanges, metadata);
+			const enrichedApprovals = applyApprovalMetadata(approvals, metadata);
+
+			return {
+				success: receipt.status === "success",
+				gasUsed: receipt.gasUsed,
+				effectiveGasPrice: receipt.effectiveGasPrice,
+				nativeDiff,
+				assetChanges: enrichedChanges,
+				approvals: enrichedApprovals,
+				confidence,
+				notes,
+			};
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Simulation failed";
+			return simulateFailure(message, notes, confidence, buildFailureHints(tx));
+		} finally {
+			const simulationEnded = nowMs();
+			timings?.add("simulation.run", simulationEnded - simulationStarted);
+
+			await client.stopImpersonatingAccount({ address: from }).catch(() => undefined);
 		}
-
-		const postBalances = await readTokenBalances(client, tokenCandidates, from, notes);
-
-		const assetChanges: AssetChange[] = [];
-		assetChanges.push(...buildErc20Changes(preBalances, postBalances));
-		assetChanges.push(...buildNftChanges(parsedLogs.transfers, from));
-
-		const approvals = parsedLogs.approvals
-			.filter((approval) => approval.owner.toLowerCase() === from.toLowerCase())
-			.map<ApprovalChange>((approval) => ({
-				standard: approval.standard,
-				token: approval.token,
-				owner: approval.owner,
-				spender: approval.spender,
-				amount: approval.amount,
-				tokenId: approval.tokenId,
-				scope: approval.scope,
-				approved: approval.approved,
-			}));
-
-		const gasCost = receipt.gasUsed * receipt.effectiveGasPrice;
-		const nativeAfter = await client.getBalance({ address: from });
-		const nativeDelta = nativeAfter - nativeBefore;
-		const nativeDiff = nativeDelta + gasCost;
-
-		const approvalTokenChanges: AssetChange[] = approvals
-			.filter((approval) => approval.standard === "erc20" || approval.standard === "permit2")
-			.map((approval) => ({
-				assetType: "erc20",
-				address: approval.token,
-				direction: "in",
-			}));
-
-		const metadata = await readTokenMetadata(
-			client,
-			[...assetChanges, ...approvalTokenChanges],
-			notes,
-		);
-		const enrichedChanges = applyTokenMetadata(assetChanges, metadata);
-		const enrichedApprovals = applyApprovalMetadata(approvals, metadata);
-
-		return {
-			success: receipt.status === "success",
-			gasUsed: receipt.gasUsed,
-			effectiveGasPrice: receipt.effectiveGasPrice,
-			nativeDiff,
-			assetChanges: enrichedChanges,
-			approvals: enrichedApprovals,
-			confidence,
-			notes,
-		};
-	} catch (error) {
-		const message = error instanceof Error ? error.message : "Simulation failed";
-		return simulateFailure(message, notes, confidence, buildFailureHints(tx));
-	} finally {
-		await client.revert({ id: snapshotId }).catch(() => undefined);
-		await client.stopImpersonatingAccount({ address: from }).catch(() => undefined);
-	}
+	});
 }
 
 function simulateFailure(
