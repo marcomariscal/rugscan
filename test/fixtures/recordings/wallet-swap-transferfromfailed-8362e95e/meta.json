@@ -1,0 +1,15 @@
+{
+	"createdAt": "2026-02-06T00:00:00.000Z",
+	"chain": "ethereum",
+	"method": "eth_sendTransaction",
+	"calldata": {
+		"to": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+		"from": "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+		"data": "0x23b872dd",
+		"value": "0",
+		"chain": "ethereum"
+	},
+	"action": "prompt",
+	"recommendation": "caution",
+	"simulationSuccess": false
+}

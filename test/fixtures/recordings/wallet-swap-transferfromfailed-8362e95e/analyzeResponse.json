@@ -1,0 +1,40 @@
+{
+	"requestId": "00000000-0000-0000-0000-000000000000",
+	"scan": {
+		"input": {
+			"calldata": {
+				"to": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+				"from": "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+				"data": "0x23b872dd",
+				"value": "0",
+				"chain": "ethereum"
+			}
+		},
+		"intent": "transferFrom(address,address,uint256)",
+		"recommendation": "ok",
+		"confidence": 0.6,
+		"findings": [
+			{
+				"code": "VERIFIED",
+				"severity": "ok",
+				"message": "Source code verified: ExampleToken"
+			}
+		],
+		"contract": {
+			"address": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+			"chain": "ethereum",
+			"isContract": true,
+			"isProxy": false,
+			"verifiedSource": true,
+			"name": "ExampleToken"
+		},
+		"simulation": {
+			"success": false,
+			"revertReason": "execution reverted: transferFrom failed",
+			"assetChanges": [],
+			"approvals": [],
+			"confidence": "low",
+			"notes": ["Simulation attempted", "Transaction reverted"]
+		}
+	}
+}
