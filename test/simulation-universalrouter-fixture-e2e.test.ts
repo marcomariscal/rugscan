@@ -45,11 +45,14 @@ describe("simulation fixture e2e", () => {
 			chain: String(fixture.chain),
 		});
 
-		const result = await runCli(["scan", "--calldata", calldata, "--format", "json", "--quiet"], {
-			RUGSCAN_CONFIG: forkConfigPath,
-			NO_COLOR: "1",
-			PATH: bunDir,
-		});
+		const result = await runCli(
+			["scan", "--calldata", calldata, "--format", "json", "--fail-on", "danger", "--quiet"],
+			{
+				RUGSCAN_CONFIG: forkConfigPath,
+				NO_COLOR: "1",
+				PATH: bunDir,
+			},
+		);
 
 		expect(result.exitCode).toBe(0);
 		const parsed = JSON.parse(result.stdout);

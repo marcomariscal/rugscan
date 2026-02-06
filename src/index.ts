@@ -11,6 +11,13 @@ export type {
 	ScanResult,
 } from "./schema";
 export { ScanError, scan, scanAddress, scanCalldata } from "./sdk";
+export {
+	createRugscanViemTransport,
+	RugscanTransportError,
+	type RugscanTransportErrorReason,
+	type RugscanViemOnRisk,
+	type RugscanViemTransportOptions,
+} from "./sdk/viem";
 export type {
 	AIAnalysis,
 	AIConcern,

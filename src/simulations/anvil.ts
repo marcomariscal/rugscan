@@ -92,6 +92,14 @@ async function spawnAnvil(options: {
 		stdio: "ignore",
 	});
 
+	// Ensure Anvil doesn't become an orphaned background process when callers (eg CLI/tests)
+	// don't explicitly stop the instance.
+	process.once("exit", () => {
+		if (!child.killed) {
+			child.kill();
+		}
+	});
+
 	const startError = await waitForProcessStart(child, options.anvilPath, rpcUrl, options.chain);
 	if (startError) {
 		throw startError;
