@@ -505,9 +505,7 @@ function renderApprovalsSection(result: AnalysisResult, hasCalldata: boolean): s
 		lines.push(COLORS.warning(" - Partial approvals (simulation failed):"));
 	}
 	if (approvals.length === 0) {
-		const note = simulationConfidenceNote(result.simulation);
-		const line = ` - None detected${note}`;
-		lines.push(note ? COLORS.warning(line) : COLORS.dim(line));
+		lines.push(COLORS.dim(" - None detected"));
 		return lines;
 	}
 	for (const approval of approvals) {

@@ -344,9 +344,6 @@ export async function parseReceiptLogs(
 
 	for (const transfer of rawTransfers) {
 		const supports = await resolveErc721Support(client, erc721Cache, transfer.token, notes);
-		if (supports === null) {
-			confidence = "low";
-		}
 		if (supports) {
 			transfers.push({
 				standard: "erc721",

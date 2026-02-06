@@ -95,6 +95,6 @@ describe("cli risk label with simulation failures", () => {
 		expect(riskLine).not.toContain("SAFE");
 		expect(riskLine).toContain("LOW");
 		expect(output).toContain("No balance changes detected (low confidence)");
-		expect(output).toContain("None detected (low confidence)");
+		expect(output).toContain("- None detected");
 	});
 });
