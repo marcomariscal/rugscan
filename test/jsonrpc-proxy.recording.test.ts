@@ -48,6 +48,7 @@ describe("jsonrpc proxy - recording", () => {
 				recommendation: "ok",
 				simulationSuccess: true,
 				response: {
+					schemaVersion: 1,
 					requestId: crypto.randomUUID(),
 					scan: {
 						input,

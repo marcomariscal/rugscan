@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { buildAnalyzeResponse } from "../src/scan";
 import { analyzeResponseSchema, scanInputSchema } from "../src/schema";
+import type { AnalysisResult } from "../src/types";
 
 describe("schema", () => {
 	const address = "0x1111111111111111111111111111111111111111";
@@ -54,5 +56,29 @@ describe("schema", () => {
 		};
 		const result = analyzeResponseSchema.safeParse(response);
 		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.schemaVersion).toBe(1);
+		}
+	});
+
+	test("AnalyzeResponse JSON output includes schemaVersion=1", () => {
+		const requestId = "00000000-0000-4000-8000-000000000000";
+		const address = "0x1111111111111111111111111111111111111111";
+
+		const analysis: AnalysisResult = {
+			contract: {
+				address,
+				chain: "ethereum",
+				verified: true,
+				is_proxy: false,
+			},
+			findings: [],
+			confidence: { level: "high", reasons: [] },
+			recommendation: "ok",
+		};
+
+		const response = buildAnalyzeResponse({ address }, analysis, requestId);
+		const parsed = JSON.parse(JSON.stringify(response));
+		expect(parsed.schemaVersion).toBe(1);
 	});
 });

@@ -199,6 +199,7 @@ function isRenderContext(value: unknown): value is RenderContext {
 
 function isAnalyzeResponse(value: unknown): value is AnalyzeResponse {
 	if (!isRecord(value)) return false;
+	if (value.schemaVersion !== 1) return false;
 	if (typeof value.requestId !== "string") return false;
 	if (!isRecord(value.scan)) return false;
 	return true;

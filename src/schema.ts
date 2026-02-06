@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { Recommendation as BaseRecommendation } from "./types";
 
+/**
+ * Stable JSON schema version for `rugscan scan --format json` and `POST /v1/scan`.
+ */
+export const RUGSCAN_SCHEMA_VERSION: 1 = 1;
+
 export type Recommendation = BaseRecommendation;
 
 export interface ScanFinding {
@@ -76,11 +81,12 @@ export interface ScanResult {
 	recommendation: Recommendation;
 	confidence: number;
 	findings: ScanFinding[];
-	contract?: ContractInfo;
+	contract: ContractInfo;
 	simulation?: BalanceSimulationResult;
 }
 
 export interface AnalyzeResponse {
+	schemaVersion: 1;
 	requestId: string;
 	scan: ScanResult;
 }
@@ -199,13 +205,14 @@ export const scanResultSchema = z
 		recommendation: recommendationSchema,
 		confidence: z.number().min(0).max(1),
 		findings: z.array(scanFindingSchema),
-		contract: contractInfoSchema.optional(),
+		contract: contractInfoSchema,
 		simulation: balanceSimulationSchema.optional(),
 	})
 	.strict();
 
 export const analyzeResponseSchema = z
 	.object({
+		schemaVersion: z.literal(RUGSCAN_SCHEMA_VERSION).optional().default(RUGSCAN_SCHEMA_VERSION),
 		requestId: z.string().uuid(),
 		scan: scanResultSchema,
 	})

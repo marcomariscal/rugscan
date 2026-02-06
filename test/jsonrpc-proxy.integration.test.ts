@@ -301,6 +301,7 @@ describe("jsonrpc proxy - integration", () => {
 		const spender = "0x1111111111111111111111111111111111111111";
 
 		const response: AnalyzeResponse = {
+			schemaVersion: 1,
 			requestId: "00000000-0000-0000-0000-000000000000",
 			scan: {
 				input: {
@@ -315,6 +316,11 @@ describe("jsonrpc proxy - integration", () => {
 				recommendation: "ok",
 				confidence: 1,
 				findings: [],
+				contract: {
+					address: token,
+					chain: "ethereum",
+					isContract: true,
+				},
 				simulation: {
 					success: true,
 					assetChanges: [],
@@ -429,6 +435,7 @@ describe("jsonrpc proxy - integration", () => {
 		const spender = "0x3333333333333333333333333333333333333333";
 
 		const response: AnalyzeResponse = {
+			schemaVersion: 1,
 			requestId: "00000000-0000-0000-0000-000000000000",
 			scan: {
 				input: {
@@ -453,6 +460,11 @@ describe("jsonrpc proxy - integration", () => {
 						},
 					},
 				],
+				contract: {
+					address: token,
+					chain: "ethereum",
+					isContract: true,
+				},
 				simulation: {
 					success: true,
 					assetChanges: [],

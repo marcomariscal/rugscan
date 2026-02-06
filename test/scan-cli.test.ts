@@ -27,6 +27,7 @@ describe("cli scan", () => {
 
 		expect(result.exitCode).toBe(0);
 		const parsed = JSON.parse(result.stdout);
+		expect(parsed.schemaVersion).toBe(1);
 		expect(parsed.requestId).toBeDefined();
 		expect(parsed.scan?.input?.address).toBeDefined();
 		expect(parsed.scan?.recommendation).toBeDefined();

@@ -1,13 +1,14 @@
 import { type AnalyzeOptions, analyze, determineRecommendation } from "./analyzer";
 import { analyzeCalldata } from "./analyzers/calldata";
 import { buildIntent } from "./intent";
-import type {
-	AnalyzeResponse,
-	ContractInfo,
-	BalanceSimulationResult as ScanBalanceSimulationResult,
-	ScanFinding,
-	ScanInput,
-	ScanResult,
+import {
+	type AnalyzeResponse,
+	type ContractInfo,
+	RUGSCAN_SCHEMA_VERSION,
+	type BalanceSimulationResult as ScanBalanceSimulationResult,
+	type ScanFinding,
+	type ScanInput,
+	type ScanResult,
 } from "./schema";
 import { simulateBalance } from "./simulations/balance";
 import { applySimulationVerdict, buildSimulationNotRun } from "./simulations/verdict";
@@ -139,6 +140,7 @@ export function buildAnalyzeResponse(
 	requestId?: string,
 ): AnalyzeResponse {
 	return {
+		schemaVersion: RUGSCAN_SCHEMA_VERSION,
 		requestId: requestId ?? crypto.randomUUID(),
 		scan: buildScanResult(input, analysis),
 	};
