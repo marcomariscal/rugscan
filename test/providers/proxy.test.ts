@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { test as bunTest, describe, expect } from "bun:test";
 import { detectProxy } from "../../src/providers/proxy";
+
+const test = process.env.RUGSCAN_LIVE_TESTS === "1" ? bunTest : bunTest.skip;
 
 describe("proxy detection", () => {
 	test("detectProxy identifies EIP-1967 proxies (USDC)", async () => {

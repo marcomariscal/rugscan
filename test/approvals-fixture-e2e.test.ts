@@ -1,7 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { test as bunTest, describe, expect } from "bun:test";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+const test = process.env.RUGSCAN_FORK_E2E === "1" ? bunTest : bunTest.skip;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;

@@ -1,0 +1,33 @@
+name: CI (comprehensive)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * *"
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      RUGSCAN_LIVE_TESTS: "1"
+      RUGSCAN_FORK_E2E: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+          cache: true
+
+      - name: Install Foundry (anvil)
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun test

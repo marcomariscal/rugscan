@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { test as bunTest, describe, expect } from "bun:test";
 import { checkVerification } from "../../src/providers/sourcify";
+
+const test = process.env.RUGSCAN_LIVE_TESTS === "1" ? bunTest : bunTest.skip;
 
 describe("sourcify", () => {
 	test("checkVerification returns verified contract metadata", async () => {
