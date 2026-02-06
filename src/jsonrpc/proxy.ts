@@ -659,7 +659,7 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					if (options.once) {
 						await recording;
 					} else {
-						recording.catch(() => undefined);
+						void recording.catch(() => undefined);
 					}
 				}
 

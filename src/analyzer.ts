@@ -1,9 +1,12 @@
+import { type AnalyzeMode, type AnalyzeProviderId, createAnalyzePolicy } from "./analyzer-policy";
+import { createTimeBudget, runWithTimeout } from "./budget";
 import { resolveContractName } from "./name-resolution";
 import * as ai from "./providers/ai";
 import * as defillama from "./providers/defillama";
 import * as etherscan from "./providers/etherscan";
 import * as goplus from "./providers/goplus";
 import * as proxy from "./providers/proxy";
+import type { ProviderRequestOptions } from "./providers/request-options";
 import * as sourcify from "./providers/sourcify";
 import type {
 	AIAnalysis,
@@ -14,37 +17,158 @@ import type {
 	ContractInfo,
 	Finding,
 	ProtocolMatch,
+	ProxyInfo,
 	Recommendation,
 	TokenSecurity,
 } from "./types";
+
+export interface AnalyzerDeps {
+	ai: {
+		analyzeRisk: typeof ai.analyzeRisk;
+	};
+	defillama: {
+		matchProtocol: typeof defillama.matchProtocol;
+	};
+	etherscan: {
+		getAddressLabels: typeof etherscan.getAddressLabels;
+		getContractData: typeof etherscan.getContractData;
+	};
+	goplus: {
+		getTokenSecurity: typeof goplus.getTokenSecurity;
+	};
+	proxy: {
+		isContract: typeof proxy.isContract;
+		detectProxy: typeof proxy.detectProxy;
+	};
+	sourcify: {
+		checkVerification: typeof sourcify.checkVerification;
+	};
+}
+
+const DEFAULT_DEPS: AnalyzerDeps = {
+	ai: { analyzeRisk: ai.analyzeRisk },
+	defillama: { matchProtocol: defillama.matchProtocol },
+	etherscan: {
+		getAddressLabels: etherscan.getAddressLabels,
+		getContractData: etherscan.getContractData,
+	},
+	goplus: { getTokenSecurity: goplus.getTokenSecurity },
+	proxy: { isContract: proxy.isContract, detectProxy: proxy.detectProxy },
+	sourcify: { checkVerification: sourcify.checkVerification },
+};
+
+export interface AnalyzeOptions {
+	mode?: AnalyzeMode;
+	deps?: AnalyzerDeps;
+}
+
+type ProviderProgress = (event: {
+	provider: string;
+	status: "start" | "success" | "error";
+	message?: string;
+}) => void;
 
 export async function analyze(
 	address: string,
 	chain: Chain,
 	config?: Config,
-	progress?: (event: {
-		provider: string;
-		status: "start" | "success" | "error";
-		message?: string;
-	}) => void,
+	progress?: ProviderProgress,
+	options?: AnalyzeOptions,
 ): Promise<AnalysisResult> {
 	const findings: Finding[] = [];
 	const confidenceReasons: string[] = [];
+
+	const deps = options?.deps ?? DEFAULT_DEPS;
+	const mode = options?.mode ?? "default";
+	const policy = createAnalyzePolicy(mode);
+	const budget = policy.budgetMs ? createTimeBudget(policy.budgetMs) : null;
+
+	const report = progress;
+
+	const resolveTimeoutMs = (providerId: AnalyzeProviderId): number => {
+		const providerPolicy = policy.providers[providerId];
+		const remaining = budget ? budget.remainingMs() : providerPolicy.timeoutMs;
+		return Math.max(0, Math.min(providerPolicy.timeoutMs, remaining));
+	};
+
+	const runProvider = async <T>(args: {
+		id: AnalyzeProviderId;
+		label: string;
+		skipMessage: string;
+		fn: (req: ProviderRequestOptions) => Promise<T>;
+	}): Promise<
+		| { status: "skipped"; message: string }
+		| { status: "ok"; value: T }
+		| { status: "timeout" }
+		| { status: "error"; error: unknown }
+	> => {
+		const providerPolicy = policy.providers[args.id];
+		report?.({ provider: args.label, status: "start" });
+
+		const timeoutMs = resolveTimeoutMs(args.id);
+		if (!providerPolicy.enabled) {
+			report?.({ provider: args.label, status: "success", message: args.skipMessage });
+			return { status: "skipped", message: args.skipMessage };
+		}
+		if (timeoutMs <= 0) {
+			report?.({
+				provider: args.label,
+				status: "success",
+				message: "skipped (budget exhausted)",
+			});
+			return { status: "skipped", message: "skipped (budget exhausted)" };
+		}
+
+		const outcome = await runWithTimeout({ timeoutMs }, async (signal) => {
+			return await args.fn({
+				signal,
+				timeoutMs,
+				cache: mode !== "wallet",
+			});
+		});
+
+		if (outcome.ok) {
+			return { status: "ok", value: outcome.value };
+		}
+		if (outcome.reason === "timeout") {
+			report?.({ provider: args.label, status: "error", message: "timeout" });
+			return { status: "timeout" };
+		}
+
+		const message =
+			outcome.error instanceof Error
+				? outcome.error.message
+				: outcome.reason === "aborted"
+					? "aborted"
+					: "error";
+		report?.({ provider: args.label, status: "error", message });
+		return { status: "error", error: outcome.error };
+	};
 
 	// Normalize address
 	const addr = address.toLowerCase();
 	const etherscanKey = config?.etherscanKeys?.[chain];
 	const rpcUrl = config?.rpcUrls?.[chain];
-	const report = progress;
 
 	// 1. Check if it's actually a contract
-	report?.({ provider: "RPC", status: "start", message: "checking contract" });
-	const isContractAddress = await proxy.isContract(addr, chain, rpcUrl);
-	report?.({
-		provider: "RPC",
-		status: "success",
-		message: isContractAddress ? "contract detected" : "not a contract",
+	let isContractAddress = true;
+	const rpcResult = await runProvider({
+		id: "rpc",
+		label: "RPC",
+		skipMessage: "skipped (--wallet)",
+		fn: async () => {
+			return await deps.proxy.isContract(addr, chain, rpcUrl);
+		},
 	});
+	if (rpcResult.status === "ok") {
+		isContractAddress = rpcResult.value;
+		report?.({
+			provider: "RPC",
+			status: "success",
+			message: isContractAddress ? "contract detected" : "not a contract",
+		});
+	}
+
 	if (!isContractAddress) {
 		return {
 			contract: {
@@ -67,6 +191,7 @@ export async function analyze(
 
 	// 2. Check verification - Sourcify first (free), then Etherscan
 	let verified = false;
+	let verificationKnown = false;
 	let contractName: string | undefined;
 	let source: string | undefined;
 	let phishingLabels: string[] = [];
@@ -75,37 +200,60 @@ export async function analyze(
 	let implementationName: string | undefined;
 	let protocolNameForFriendly: string | undefined;
 
-	report?.({ provider: "Sourcify", status: "start" });
-	const sourcifyResult = await sourcify.checkVerification(addr, chain);
-	report?.({
-		provider: "Sourcify",
-		status: "success",
-		message: sourcifyResult.verified
-			? `verified${sourcifyResult.name ? `: ${sourcifyResult.name}` : ""}`
-			: "unverified",
+	const sourcifyStep = await runProvider({
+		id: "sourcify",
+		label: "Sourcify",
+		skipMessage: "skipped (--wallet)",
+		fn: async (req) => {
+			return await deps.sourcify.checkVerification(addr, chain, req);
+		},
 	});
-	if (sourcifyResult.verified) {
-		verified = true;
-		contractName = sourcifyResult.name;
-		source = sourcifyResult.source;
+	if (sourcifyStep.status === "ok") {
+		const sourcifyResult = sourcifyStep.value;
+		verificationKnown = true;
+		report?.({
+			provider: "Sourcify",
+			status: "success",
+			message: sourcifyResult.verified
+				? `verified${sourcifyResult.name ? `: ${sourcifyResult.name}` : ""}`
+				: "unverified",
+		});
+		if (sourcifyResult.verified) {
+			verified = true;
+			contractName = sourcifyResult.name;
+			source = sourcifyResult.source;
+		}
 	}
 
 	// 2b. Check address labels for phishing/scam
-	report?.({ provider: "Etherscan Labels", status: "start" });
-	const addressLabels = await etherscan.getAddressLabels(addr, chain, etherscanKey);
-	if (addressLabels) {
-		phishingLabels = addressLabels.labels;
-		phishingNametag = addressLabels.nametag;
-		isPhishing =
-			(phishingNametag ? containsPhishingKeyword(phishingNametag) : false) ||
-			phishingLabels.some(containsPhishingKeyword);
-		report?.({
-			provider: "Etherscan Labels",
-			status: "success",
-			message: isPhishing ? "phishing label" : "labels checked",
-		});
-	} else {
-		report?.({ provider: "Etherscan Labels", status: "success", message: "no labels" });
+	const labelsStep = await runProvider({
+		id: "etherscanLabels",
+		label: "Etherscan Labels",
+		skipMessage: "skipped (--wallet)",
+		fn: async (req) => {
+			return await deps.etherscan.getAddressLabels(addr, chain, etherscanKey, req);
+		},
+	});
+	if (labelsStep.status === "ok") {
+		const addressLabels = labelsStep.value;
+		if (addressLabels) {
+			phishingLabels = addressLabels.labels;
+			phishingNametag = addressLabels.nametag;
+			isPhishing =
+				(phishingNametag ? containsPhishingKeyword(phishingNametag) : false) ||
+				phishingLabels.some(containsPhishingKeyword);
+			report?.({
+				provider: "Etherscan Labels",
+				status: "success",
+				message: isPhishing ? "phishing label" : "labels checked",
+			});
+		} else {
+			report?.({
+				provider: "Etherscan Labels",
+				status: "success",
+				message: "no labels",
+			});
+		}
 	}
 
 	// 3. Get Etherscan data (if key available)
@@ -113,99 +261,172 @@ export async function analyze(
 	let tx_count: number | undefined;
 
 	if (etherscanKey) {
-		report?.({ provider: "Etherscan", status: "start" });
-		const etherscanData = await etherscan.getContractData(addr, chain, etherscanKey);
-		report?.({
-			provider: "Etherscan",
-			status: "success",
-			message: etherscanData ? "metadata fetched" : "no data",
+		const etherscanStep = await runProvider({
+			id: "etherscan",
+			label: "Etherscan",
+			skipMessage: "skipped (--wallet)",
+			fn: async (req) => {
+				return await deps.etherscan.getContractData(addr, chain, etherscanKey, req);
+			},
 		});
-		if (etherscanData) {
-			// Use Etherscan verification if Sourcify didn't have it
-			if (!verified && etherscanData.verified) {
-				verified = true;
-				contractName = contractName || etherscanData.name;
-				source = source || etherscanData.source;
+		if (etherscanStep.status === "ok") {
+			const etherscanData = etherscanStep.value;
+			report?.({
+				provider: "Etherscan",
+				status: "success",
+				message: etherscanData ? "metadata fetched" : "no data",
+			});
+			if (etherscanData) {
+				// Etherscan returned an explicit verification status.
+				verificationKnown = true;
+
+				// Use Etherscan verification if Sourcify didn't have it
+				if (!verified && etherscanData.verified) {
+					verified = true;
+					contractName = contractName || etherscanData.name;
+					source = source || etherscanData.source;
+				}
+				age_days = etherscanData.age_days;
+				tx_count = etherscanData.tx_count;
 			}
-			age_days = etherscanData.age_days;
-			tx_count = etherscanData.tx_count;
 		}
 	} else {
 		confidenceReasons.push("no etherscan key - limited data");
 	}
 
 	// 4. Proxy detection
-	report?.({ provider: "Proxy", status: "start" });
-	const proxyInfo = await proxy.detectProxy(addr, chain, rpcUrl);
-	report?.({
-		provider: "Proxy",
-		status: "success",
-		message: proxyInfo.is_proxy ? `proxy: ${proxyInfo.proxy_type ?? "unknown"}` : "no proxy",
+	let proxyInfo: ProxyInfo = { is_proxy: false };
+	const proxyStep = await runProvider({
+		id: "proxy",
+		label: "Proxy",
+		skipMessage: "skipped (--wallet)",
+		fn: async () => {
+			return await deps.proxy.detectProxy(addr, chain, rpcUrl);
+		},
 	});
+	if (proxyStep.status === "ok") {
+		proxyInfo = proxyStep.value;
+		report?.({
+			provider: "Proxy",
+			status: "success",
+			message: proxyInfo.is_proxy ? `proxy: ${proxyInfo.proxy_type ?? "unknown"}` : "no proxy",
+		});
+	}
 
 	// 5. Protocol matching
-	report?.({ provider: "DeFiLlama", status: "start" });
-	const protocolMatch = await defillama.matchProtocol(addr, chain);
-	const protocolLabel = formatProtocolLabel(protocolMatch);
-	report?.({
-		provider: "DeFiLlama",
-		status: "success",
-		message: protocolMatch ? protocolMatch.name : "no match",
+	const defillamaStep = await runProvider({
+		id: "defillama",
+		label: "DeFiLlama",
+		skipMessage: "skipped (--wallet)",
+		fn: async (req) => {
+			return await deps.defillama.matchProtocol(addr, chain, {
+				...req,
+				allowNetwork: mode !== "wallet",
+			});
+		},
 	});
-	protocolNameForFriendly = protocolMatch?.name;
+	let protocolMatch: ProtocolMatch | null = null;
+	let protocolLabel: string | undefined;
+	if (defillamaStep.status === "ok") {
+		protocolMatch = defillamaStep.value;
+		protocolLabel = formatProtocolLabel(protocolMatch);
+		report?.({
+			provider: "DeFiLlama",
+			status: "success",
+			message: protocolMatch?.name ?? (mode === "wallet" ? "manual only" : "no match"),
+		});
+		protocolNameForFriendly = protocolMatch?.name;
+	}
 
 	// 5b. Resolve implementation metadata for proxies
 	if (proxyInfo.is_proxy && proxyInfo.implementation) {
-		report?.({ provider: "Sourcify (impl)", status: "start" });
-		const implementationResult = await sourcify.checkVerification(proxyInfo.implementation, chain);
-		report?.({
-			provider: "Sourcify (impl)",
-			status: "success",
-			message: implementationResult.verified
-				? `verified${implementationResult.name ? `: ${implementationResult.name}` : ""}`
-				: "unverified",
+		const sourcifyImplStep = await runProvider({
+			id: "sourcifyImpl",
+			label: "Sourcify (impl)",
+			skipMessage: "skipped (--wallet)",
+			fn: async (req) => {
+				return await deps.sourcify.checkVerification(proxyInfo.implementation, chain, req);
+			},
 		});
-		if (implementationResult.verified) {
-			implementationName = implementationResult.name;
+		if (sourcifyImplStep.status === "ok") {
+			const implementationResult = sourcifyImplStep.value;
+			report?.({
+				provider: "Sourcify (impl)",
+				status: "success",
+				message: implementationResult.verified
+					? `verified${implementationResult.name ? `: ${implementationResult.name}` : ""}`
+					: "unverified",
+			});
+			if (implementationResult.verified) {
+				implementationName = implementationResult.name;
+			}
 		}
 
 		if (!protocolNameForFriendly) {
-			report?.({ provider: "DeFiLlama (impl)", status: "start" });
-			const implementationProtocol = await defillama.matchProtocol(proxyInfo.implementation, chain);
-			report?.({
-				provider: "DeFiLlama (impl)",
-				status: "success",
-				message: implementationProtocol ? implementationProtocol.name : "no match",
+			const defillamaImplStep = await runProvider({
+				id: "defillamaImpl",
+				label: "DeFiLlama (impl)",
+				skipMessage: "skipped (--wallet)",
+				fn: async (req) => {
+					return await deps.defillama.matchProtocol(proxyInfo.implementation, chain, {
+						...req,
+						allowNetwork: mode !== "wallet",
+					});
+				},
 			});
-			if (implementationProtocol) {
-				protocolNameForFriendly = implementationProtocol.name;
+			if (defillamaImplStep.status === "ok") {
+				const implementationProtocol = defillamaImplStep.value;
+				report?.({
+					provider: "DeFiLlama (impl)",
+					status: "success",
+					message: implementationProtocol?.name ?? (mode === "wallet" ? "manual only" : "no match"),
+				});
+				if (implementationProtocol) {
+					protocolNameForFriendly = implementationProtocol.name;
+				}
 			}
 		}
 	}
 
 	// 6. Token security (if it's a token)
-	report?.({ provider: "GoPlus", status: "start" });
-	const tokenSecurityResult = await goplus.getTokenSecurity(addr, chain);
-	const tokenSecurity = tokenSecurityResult.data;
-	const tokenFindingCount = countTokenFindings(tokenSecurity);
-	if (tokenSecurityResult.error) {
-		report?.({
-			provider: "GoPlus",
-			status: "error",
-			message: tokenSecurityResult.error,
-		});
-	} else {
-		report?.({
-			provider: "GoPlus",
-			status: "success",
-			message: tokenSecurity
-				? `${tokenFindingCount} ${tokenFindingCount === 1 ? "finding" : "findings"}`
-				: "no data",
-		});
+	let tokenSecurity: TokenSecurity | null = null;
+	const goplusStep = await runProvider({
+		id: "goplus",
+		label: "GoPlus",
+		skipMessage: "skipped (--wallet)",
+		fn: async (req) => {
+			return await deps.goplus.getTokenSecurity(addr, chain, req);
+		},
+	});
+	if (goplusStep.status === "ok") {
+		const tokenSecurityResult = goplusStep.value;
+		tokenSecurity = tokenSecurityResult.data;
+		const tokenFindingCount = countTokenFindings(tokenSecurity);
+		if (tokenSecurityResult.error) {
+			report?.({
+				provider: "GoPlus",
+				status: "error",
+				message: tokenSecurityResult.error,
+			});
+		} else {
+			report?.({
+				provider: "GoPlus",
+				status: "success",
+				message: tokenSecurity
+					? `${tokenFindingCount} ${tokenFindingCount === 1 ? "finding" : "findings"}`
+					: "no data",
+			});
+		}
 	}
 
 	// Build findings
-	if (!verified) {
+	if (verified) {
+		findings.push({
+			level: "safe",
+			code: "VERIFIED",
+			message: `Source code verified${contractName ? `: ${contractName}` : ""}`,
+		});
+	} else if (verificationKnown) {
 		findings.push({
 			level: "danger",
 			code: "UNVERIFIED",
@@ -213,9 +434,9 @@ export async function analyze(
 		});
 	} else {
 		findings.push({
-			level: "safe",
-			code: "VERIFIED",
-			message: `Source code verified${contractName ? `: ${contractName}` : ""}`,
+			level: "info",
+			code: "UNVERIFIED",
+			message: "Unable to confirm source verification (provider skipped/timed out)",
 		});
 	}
 
@@ -316,8 +537,10 @@ export async function analyze(
 	// Determine confidence level
 	let confidenceLevel: Confidence["level"] = "high";
 	if (!verified) {
-		confidenceLevel = "low";
-		confidenceReasons.push("source not verified");
+		confidenceLevel = verificationKnown ? "low" : "medium";
+		confidenceReasons.push(
+			verificationKnown ? "source not verified" : "source verification unknown",
+		);
 	} else if (!etherscanKey) {
 		confidenceLevel = "medium";
 	}
@@ -348,20 +571,28 @@ export async function analyze(
 
 	let aiAnalysis: AIAnalysis | undefined;
 	if (config?.aiOptions?.enabled) {
-		report?.({ provider: "AI", status: "start" });
-		try {
-			const aiResult = await ai.analyzeRisk(
-				{
-					contract,
-					findings,
-					proxy: proxyInfo,
-					tokenSecurity,
-					protocol: protocolMatch?.name,
-					source,
-				},
-				config.ai,
-				config.aiOptions,
-			);
+		const aiStep = await runProvider({
+			id: "ai",
+			label: "AI",
+			skipMessage: "skipped (--wallet)",
+			fn: async () => {
+				return await deps.ai.analyzeRisk(
+					{
+						contract,
+						findings,
+						proxy: proxyInfo,
+						tokenSecurity,
+						protocol: protocolMatch?.name,
+						source,
+					},
+					config.ai,
+					config.aiOptions,
+				);
+			},
+		});
+
+		if (aiStep.status === "ok") {
+			const aiResult = aiStep.value;
 			if (aiResult.warning) {
 				findings.push({
 					level: "info",
@@ -388,10 +619,10 @@ export async function analyze(
 			} else {
 				report?.({ provider: "AI", status: "success", message: "no output" });
 			}
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "AI analysis failed";
-			report?.({ provider: "AI", status: "error", message });
-			throw error;
+		}
+
+		if (aiStep.status === "error") {
+			throw aiStep.error;
 		}
 	}
 

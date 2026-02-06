@@ -1,4 +1,4 @@
-import { analyze, determineRecommendation } from "./analyzer";
+import { type AnalyzeOptions, analyze, determineRecommendation } from "./analyzer";
 import { analyzeCalldata } from "./analyzers/calldata";
 import { buildIntent } from "./intent";
 import type {
@@ -33,6 +33,10 @@ export interface ScanOptions {
 	config?: Config;
 	requestId?: string;
 	progress?: ScanProgress;
+	/**
+	 * Advanced analyzer options (ex: provider budgets, wallet fast mode).
+	 */
+	analyzeOptions?: AnalyzeOptions;
 	timings?: TimingStore;
 }
 
@@ -83,7 +87,13 @@ export async function scanWithAnalysis(
 		throw new Error("Missing scan input");
 	}
 
-	const analysis = await analyze(targetAddress, chain, options?.config, options?.progress);
+	const analysis = await analyze(
+		targetAddress,
+		chain,
+		options?.config,
+		options?.progress,
+		options?.analyzeOptions,
+	);
 	const mergedAnalysis = await mergeCalldataAnalysis(normalizedInput, analysis);
 	const simulation = await runBalanceSimulation(
 		normalizedInput,

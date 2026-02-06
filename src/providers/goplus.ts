@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { fetchWithTimeout } from "../http";
 import type { Chain, ProviderResult, TokenSecurity } from "../types";
+import type { ProviderRequestOptions } from "./request-options";
 
 const GOPLUS_API = "https://api.gopluslabs.io/api/v1";
 
@@ -49,13 +50,19 @@ function toNumber(val: string | undefined): number | undefined {
 export async function getTokenSecurity(
 	address: string,
 	chain: Chain,
+	options?: ProviderRequestOptions,
 ): Promise<ProviderResult<TokenSecurity>> {
 	const normalized = address.toLowerCase();
+
+	if (options?.cache === false) {
+		return await fetchTokenSecurity(normalized, chain, options);
+	}
+
 	const cacheKey = `${chain}:${normalized}`;
 	const cached = tokenSecurityCache.get(cacheKey);
 	if (cached) return await cached;
 
-	const promise = fetchTokenSecurity(normalized, chain);
+	const promise = fetchTokenSecurity(normalized, chain, options);
 	tokenSecurityCache.set(cacheKey, promise);
 	return await promise;
 }
@@ -63,18 +70,28 @@ export async function getTokenSecurity(
 async function fetchTokenSecurity(
 	normalizedAddress: string,
 	chain: Chain,
+	options?: ProviderRequestOptions,
 ): Promise<ProviderResult<TokenSecurity>> {
 	const chainId = CHAIN_IDS[chain];
 
 	const url = `${GOPLUS_API}/token_security/${chainId}?contract_addresses=${normalizedAddress}`;
 	const attempts = 3;
 	for (let attempt = 0; attempt < attempts; attempt += 1) {
+		if (options?.signal?.aborted) {
+			return { data: null, error: "aborted" };
+		}
 		try {
-			const response = await fetchWithTimeout(url);
+			const response = await fetchWithTimeout(url, { signal: options?.signal }, options?.timeoutMs);
 			if (!response.ok) {
 				const retryable = response.status === 429 || response.status >= 500;
 				if (retryable && attempt < attempts - 1) {
+					if (options?.signal?.aborted) {
+						return { data: null, error: "aborted" };
+					}
 					await delay(250 * (attempt + 1));
+					if (options?.signal?.aborted) {
+						return { data: null, error: "aborted" };
+					}
 					continue;
 				}
 				return { data: null, error: `goplus http ${response.status}` };
@@ -106,7 +123,13 @@ async function fetchTokenSecurity(
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "goplus request failed";
 			if (attempt < attempts - 1) {
+				if (options?.signal?.aborted) {
+					return { data: null, error: "aborted" };
+				}
 				await delay(250 * (attempt + 1));
+				if (options?.signal?.aborted) {
+					return { data: null, error: "aborted" };
+				}
 				continue;
 			}
 			return { data: null, error: message };

@@ -32,7 +32,7 @@ Usage:
   rugscan analyze <address> [--chain <chain>] [--ai] [--model <model>]
   rugscan scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>]
   rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
-  rugscan proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--once]
+  rugscan proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--wallet] [--once]
 
 Options:
   --chain, -c    Chain to analyze on (default: ethereum)
@@ -57,6 +57,7 @@ Options:
   --threshold    Treat recommendation >= threshold as risky (default: caution)
   --on-risk      What to do when risky (block|prompt; default: prompt if TTY else block)
   --record-dir   Save intercepted tx + AnalyzeResponse + rendered output under this directory
+  --wallet       Wallet fast mode (skips slow providers; keeps simulation)
   --once         Handle one request then exit (useful for tests)
 
   --ai           Enable AI risk analysis (requires API key)
@@ -375,6 +376,7 @@ async function runProxy(args: string[]) {
 	const threshold = parseProxyThreshold(getFlagValue(args, ["--threshold"]));
 	const onRisk = parseOnRisk(getFlagValue(args, ["--on-risk"]));
 	const recordDir = getFlagValue(args, ["--record-dir"]);
+	const wallet = args.includes("--wallet");
 	const once = args.includes("--once");
 	const quiet = args.includes("--quiet");
 
@@ -413,6 +415,37 @@ async function runProxy(args: string[]) {
 			threshold,
 			onRisk: onRisk ?? defaultOnRisk,
 		},
+		scanFn: wallet
+			? async (input, ctx) => {
+					const progress = quiet
+						? undefined
+						: createProgressRenderer(Boolean(process.stdout.isTTY));
+
+					const { analysis, response } = await scanWithAnalysis(input, {
+						chain: ctx.chain,
+						config: ctx.config,
+						progress,
+						analyzeOptions: { mode: "wallet" },
+					});
+
+					const renderedText = quiet
+						? undefined
+						: `${renderHeading(`Tx scan on ${ctx.chain} (wallet mode)`)}\n\n${renderResultBox(
+								analysis,
+								{
+									hasCalldata: Boolean(input.calldata),
+									sender: input.calldata?.from,
+								},
+							)}\n`;
+
+					return {
+						recommendation: response.scan.recommendation,
+						simulationSuccess: Boolean(analysis.simulation?.success),
+						response,
+						renderedText,
+					};
+				}
+			: undefined,
 	});
 
 	if (!quiet) {
@@ -425,6 +458,7 @@ async function runProxy(args: string[]) {
 		console.log(`Wallet RPC URL: ${walletUrl}`);
 		console.log(`Health check: ${walletUrl}`);
 		console.log(`Upstream: ${upstreamUrl}`);
+		console.log(`Mode: ${wallet ? "wallet" : "default"}`);
 		console.log(`Threshold: ${threshold}`);
 		console.log(`On risk: ${onRisk ?? defaultOnRisk}`);
 		console.log("");
