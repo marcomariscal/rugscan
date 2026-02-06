@@ -1,4 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { test as bunTest, describe, expect } from "bun:test";
+
+const test = process.env.RUGSCAN_LIVE_TESTS === "1" ? bunTest : bunTest.skip;
 
 async function runCli(args: string[], envOverrides: Record<string, string | undefined> = {}) {
 	const env = { ...process.env, ...envOverrides };

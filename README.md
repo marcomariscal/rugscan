@@ -271,12 +271,25 @@ When `--ai` is enabled, rugscan sends contract data to an LLM for deeper analysi
 
 ## Development
 
+GitHub Actions runs two tiers of CI:
+- **Tier 1 (PR gating)**: default `bun test` (skips live-network + fork/anvil e2e suites)
+- **Tier 2 (comprehensive)**: enables live-network + fork/anvil e2e suites
+
 ```bash
 # Install deps
 bun install
 
-# Run tests
+# Tier 1 (default): fast + deterministic (no live-network or fork e2e tests)
 bun test
+
+# Tier 2 (optional): run tests that hit live provider APIs (Sourcify/GoPlus/DeFiLlama/etc)
+RUGSCAN_LIVE_TESTS=1 bun test
+
+# Tier 2 (optional): run fork/anvil e2e suites (requires Foundry's `anvil`)
+RUGSCAN_FORK_E2E=1 bun test
+
+# Run everything
+RUGSCAN_LIVE_TESTS=1 RUGSCAN_FORK_E2E=1 bun test
 
 # Build
 bun run build

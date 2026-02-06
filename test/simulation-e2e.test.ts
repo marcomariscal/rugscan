@@ -1,8 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { test as bunTest, describe, expect } from "bun:test";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const test = process.env.RUGSCAN_FORK_E2E === "1" ? bunTest : bunTest.skip;
 
 async function runCli(args: string[], envOverrides: Record<string, string | undefined> = {}) {
 	const env = { ...process.env, ...envOverrides };
