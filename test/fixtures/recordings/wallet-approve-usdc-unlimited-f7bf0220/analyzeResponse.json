@@ -1,0 +1,107 @@
+{
+	"schemaVersion": 1,
+	"requestId": "b1a66807-c3c4-4a7e-a7ff-3a4eadf8c97b",
+	"scan": {
+		"input": {
+			"calldata": {
+				"to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+				"from": "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+				"data": "0x095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+				"value": "0",
+				"chain": "1"
+			}
+		},
+		"intent": "Approve 0x000000000022d473030f116ddee9f6b43ac78ba3 to spend 115792089237316195423570985008687907853269984665640564039457584007913129639935 Circle USDC FiatToken V2.2",
+		"recommendation": "caution",
+		"confidence": 0.5499999999999999,
+		"findings": [
+			{
+				"code": "VERIFIED",
+				"severity": "ok",
+				"message": "Source code verified: FiatTokenProxy\r"
+			},
+			{
+				"code": "KNOWN_PROTOCOL",
+				"severity": "ok",
+				"message": "Recognized protocol: Circle USDC"
+			},
+			{
+				"code": "PROXY",
+				"severity": "caution",
+				"message": "Proxy detected (eip1967)"
+			},
+			{
+				"code": "UPGRADEABLE",
+				"severity": "warning",
+				"message": "Upgradeable proxy (eip1967) - code can change"
+			},
+			{
+				"code": "CALLDATA_DECODED",
+				"severity": "caution",
+				"message": "Decoded calldata: approve(spender: 0x000000000022d473030f116ddee9f6b43ac78ba3, amount: 115792089237316195423570985008687907853269984665640564039457584007913129639935)",
+				"details": {
+					"selector": "0x095ea7b3",
+					"signature": "approve(address,uint256)",
+					"functionName": "approve",
+					"source": "known-abi",
+					"args": {
+						"spender": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+						"amount": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+					},
+					"argNames": ["spender", "amount"],
+					"standard": "erc20"
+				}
+			},
+			{
+				"code": "UNLIMITED_APPROVAL",
+				"severity": "warning",
+				"message": "Unlimited token approval (max allowance)",
+				"details": {
+					"method": "approve",
+					"spender": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+					"amount": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+				}
+			},
+			{
+				"code": "SIM_UNLIMITED_APPROVAL_UNKNOWN_SPENDER",
+				"severity": "warning",
+				"message": "Simulation shows an unlimited ERC-20 approval to an unknown spender",
+				"details": {
+					"spenders": ["0x000000000022d473030f116ddee9f6b43ac78ba3"],
+					"tokens": ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
+				}
+			}
+		],
+		"contract": {
+			"address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+			"chain": "ethereum",
+			"isContract": true,
+			"name": "Circle USDC FiatToken V2.2",
+			"isProxy": true,
+			"implementation": "0x43506849d7c04f9138d1a2050bbf3a0c054402dd",
+			"verifiedSource": true,
+			"tags": ["Circle USDC"]
+		},
+		"simulation": {
+			"success": true,
+			"gasUsed": "55846",
+			"effectiveGasPrice": "354906181",
+			"nativeDiff": "0",
+			"assetChanges": [],
+			"approvals": [
+				{
+					"standard": "erc20",
+					"token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+					"owner": "0x24274566a1aD6A9b056e8E2618549ebD2F5141a7",
+					"spender": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+					"amount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+					"scope": "token",
+					"symbol": "USDC",
+					"decimals": 6
+				}
+			],
+			"confidence": "low",
+			"notes": ["Sender is a contract account; simulation is best-effort."]
+		}
+	}
+}

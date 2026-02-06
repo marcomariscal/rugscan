@@ -1,0 +1,27 @@
+[37mTx scan on ethereum (wallet mode)[39m
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  Chain: ethereum                                                                │
+│  Protocol: Circle USDC[37m (circle)[39m                                                 │
+│  Action: Allow 0x0000...8BA3 to spend up to UNLIMITED USDC (0xa0b8...eb48)      │
+│  Contract: FiatTokenProxy → FiatToken V2.2                                      │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  🧾 CHECKS                                                                      │
+│ [32m ✓ Source verified[39m                                                              │
+│ [33m ⚠️ Proxy / upgradeable (code can change)[39m                                       │
+│ [32m ✓ Known protocol: Circle USDC[39m                                                  │
+│  [33m⚠️ Upgradeable proxy (eip1967) - code can change[39m [37m[UPGRADEABLE][39m                 │
+│  [32m✓ Source code verified: FiatTokenProxy[39m [37m[VERIFIED][39m                             │
+│  [32m✓ Recognized protocol: Circle USDC[39m [37m[KNOWN_PROTOCOL][39m                            │
+│  [33m⚠️ Unlimited token approval (max allowance)[39m [37m[UNLIMITED_APPROVAL][39m               │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  💰 BALANCE CHANGES                                                             │
+│ [33m - No balance changes detected (low confidence)[39m                                 │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  🔐 APPROVALS                                                                   │
+│  [33m⚠️ Circle USDC FiatToken V2.2: UNLIMITED to 0x0000...8ba3[39m                      │
+│  [33m⚠️ Allow 0x0000...8BA3 to spend up to UNLIMITED USDC (0xa0b8...eb48)[39m           │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  📊 RISK: [33mLOW[39m (AI disabled)                                                     │
+│ [33m ⚠️ INCONCLUSIVE: simulation low confidence — balances/approvals may be unknown[39m │
+└─────────────────────────────────────────────────────────────────────────────────┘

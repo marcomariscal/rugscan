@@ -1,0 +1,25 @@
+[37mTx scan on ethereum (wallet mode)[39m
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  Chain: ethereum                                                                │
+│  Protocol: Uniswap[37m (uniswap)[39m                                                    │
+│  Action: Swap 1 RLP → 0.0005 ETH                                                │
+│  Contract: UniversalRouter                                                      │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  🧾 CHECKS                                                                      │
+│ [32m ✓ Source verified[39m                                                              │
+│ [32m ✓ Known protocol: Uniswap[39m                                                      │
+│  [32m✓ Source code verified: UniversalRouter[39m [37m[VERIFIED][39m                             │
+│  [32m✓ Recognized protocol: Uniswap[39m [37m[KNOWN_PROTOCOL][39m                                │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  💰 BALANCE CHANGES                                                             │
+│  - You sent 1 RLP                                                               │
+│  - You received 0.0005 ETH                                                      │
+│ [33m - Note: low confidence[39m                                                         │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  🔐 APPROVALS                                                                   │
+│ [33m - None detected (low confidence)[39m                                               │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│  📊 RISK: [33mLOW[39m (AI disabled)                                                     │
+│ [33m ⚠️ INCONCLUSIVE: simulation low confidence — balances/approvals may be unknown[39m │
+└─────────────────────────────────────────────────────────────────────────────────┘
