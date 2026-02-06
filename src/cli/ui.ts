@@ -122,6 +122,13 @@ class Spinner {
 	}
 }
 
+function isSkippedProgressMessage(message: string | undefined): boolean {
+	if (!message) return false;
+	// Providers sometimes report a "success" status even when a check was skipped due to flags,
+	// missing inputs, or unsupported chains. Make those visually distinct from true successes.
+	return message.toLowerCase().includes("skipped");
+}
+
 export function createProgressRenderer(enabled: boolean) {
 	const spinner = new Spinner(enabled);
 	return (event: ProviderEvent) => {
@@ -133,6 +140,10 @@ export function createProgressRenderer(enabled: boolean) {
 				break;
 			case "success": {
 				const detail = message ? ` ${COLORS.dim(`(${message})`)}` : "";
+				if (isSkippedProgressMessage(message)) {
+					spinner.succeed(`${COLORS.warning("⏭")} ${provider}${detail}`);
+					break;
+				}
 				spinner.succeed(`${COLORS.ok("✓")} ${provider}${detail}`);
 				break;
 			}
