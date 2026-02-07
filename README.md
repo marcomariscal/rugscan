@@ -56,6 +56,7 @@ rugscan analyze <address> [options]
 rugscan scan [address] [options]
 rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
 rugscan proxy [options]
+rugscan mcp
 ```
 
 ### `rugscan scan`
@@ -109,6 +110,18 @@ Notes:
 - `--ai` Enable AI risk analysis (requires API key)
 - `--model` Override AI model or force provider (e.g. `openai:gpt-4o`)
 - `--token/--spender/--amount/--expected` Approval analysis inputs
+
+### MCP
+
+Run an MCP server over stdio:
+
+```bash
+rugscan mcp
+```
+
+Tools exposed:
+- `rugscan.analyzeTransaction`
+- `rugscan.analyzeAddress`
 
 ## Output
 

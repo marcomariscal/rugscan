@@ -4,6 +4,7 @@ import { analyzeApproval } from "../approval";
 import { loadConfig, saveRpcUrl } from "../config";
 import { MAX_UINT256 } from "../constants";
 import { createJsonRpcProxyServer } from "../jsonrpc/proxy";
+import { runMcpServer } from "../mcp/server";
 import { resolveProvider } from "../providers/ai";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
 import { type CalldataInput, type ScanInput, scanInputSchema } from "../schema";
@@ -33,6 +34,7 @@ Usage:
   rugscan scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>]
   rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
   rugscan proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--wallet] [--once]
+  rugscan mcp
 
 Options:
   --chain, -c    Chain to analyze on (default: ethereum)
@@ -120,6 +122,10 @@ async function main() {
 	}
 	if (command === "proxy") {
 		await runProxy(args.slice(1));
+		return;
+	}
+	if (command === "mcp") {
+		await runMcp(args.slice(1));
 		return;
 	}
 
@@ -467,6 +473,17 @@ async function runProxy(args: string[]) {
 
 	// Keep process alive.
 	await new Promise(() => {});
+}
+
+async function runMcp(args: string[]) {
+	if (args.includes("--help") || args.includes("-h")) {
+		console.log(
+			"rugscan mcp - MCP server over stdio (Model Context Protocol)\n\nUsage:\n  rugscan mcp\n\nNotes:\n  - Communicates over stdin/stdout using JSON-RPC framing (Content-Length).\n  - Exposes Rugscan analysis as MCP tools.\n",
+		);
+		process.exit(0);
+	}
+
+	await runMcpServer();
 }
 
 function parseChain(args: string[]): Chain {
