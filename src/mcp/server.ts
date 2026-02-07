@@ -204,8 +204,14 @@ export async function runMcpServer(): Promise<void> {
 		onMessage: async (message) => {
 			if (!isJsonRpcRequest(message)) return;
 
+			const isNotification = !("id" in message);
 			const id = "id" in message ? (message.id ?? null) : null;
 			const method = message.method;
+
+			const send = (payload: JsonRpcSuccess | JsonRpcFailure) => {
+				if (isNotification) return;
+				process.stdout.write(encodeStdioMessage(payload));
+			};
 
 			try {
 				if (method === "initialize") {
@@ -214,30 +220,28 @@ export async function runMcpServer(): Promise<void> {
 						capabilities: { tools: {} },
 						serverInfo: { name: "rugscan", version: "0.1.0" },
 					};
-					process.stdout.write(encodeStdioMessage(jsonRpcResult(id, result)));
+					send(jsonRpcResult(id, result));
 					return;
 				}
 
 				if (method === "tools/list") {
-					process.stdout.write(
-						encodeStdioMessage(
-							jsonRpcResult(id, {
-								tools: toolList(),
-							}),
-						),
+					send(
+						jsonRpcResult(id, {
+							tools: toolList(),
+						}),
 					);
 					return;
 				}
 
 				if (method === "tools/call") {
 					if (!isRecord(message.params)) {
-						process.stdout.write(encodeStdioMessage(jsonRpcError(id, -32602, "Invalid params")));
+						send(jsonRpcError(id, -32602, "Invalid params"));
 						return;
 					}
 
 					const name = message.params.name;
 					if (typeof name !== "string") {
-						process.stdout.write(encodeStdioMessage(jsonRpcError(id, -32602, "Missing tool name")));
+						send(jsonRpcError(id, -32602, "Missing tool name"));
 						return;
 					}
 
@@ -246,8 +250,12 @@ export async function runMcpServer(): Promise<void> {
 					if (name === "rugscan.analyzeTransaction") {
 						const parsed = analyzeTransactionArgsSchema.safeParse(args);
 						if (!parsed.success) {
-							process.stdout.write(
-								encodeStdioMessage(jsonRpcError(id, -32602, "Invalid tool arguments")),
+							send(
+								jsonRpcError(id, -32602, "Invalid tool arguments", {
+									tool: name,
+									issues: parsed.error.issues,
+									flattened: parsed.error.flatten(),
+								}),
 							);
 							return;
 						}
@@ -264,9 +272,7 @@ export async function runMcpServer(): Promise<void> {
 						};
 						const validated = scanInputSchema.safeParse(input);
 						if (!validated.success || !validated.data.calldata) {
-							process.stdout.write(
-								encodeStdioMessage(jsonRpcError(id, -32602, "Invalid transaction input")),
-							);
+							send(jsonRpcError(id, -32602, "Invalid transaction input"));
 							return;
 						}
 
@@ -291,15 +297,13 @@ export async function runMcpServer(): Promise<void> {
 							sender: response.scan.input.calldata?.from,
 						});
 
-						process.stdout.write(
-							encodeStdioMessage(
-								jsonRpcResult(id, {
-									content: [
-										{ type: "text", text: renderedText },
-										{ type: "text", text: JSON.stringify(response, null, 2) },
-									],
-								}),
-							),
+						send(
+							jsonRpcResult(id, {
+								content: [
+									{ type: "text", text: renderedText },
+									{ type: "text", text: JSON.stringify(response, null, 2) },
+								],
+							}),
 						);
 						return;
 					}
@@ -307,8 +311,12 @@ export async function runMcpServer(): Promise<void> {
 					if (name === "rugscan.analyzeAddress") {
 						const parsed = analyzeAddressArgsSchema.safeParse(args);
 						if (!parsed.success) {
-							process.stdout.write(
-								encodeStdioMessage(jsonRpcError(id, -32602, "Invalid tool arguments")),
+							send(
+								jsonRpcError(id, -32602, "Invalid tool arguments", {
+									tool: name,
+									issues: parsed.error.issues,
+									flattened: parsed.error.flatten(),
+								}),
 							);
 							return;
 						}
@@ -317,9 +325,7 @@ export async function runMcpServer(): Promise<void> {
 						const input = { address: parsed.data.address };
 						const validated = scanInputSchema.safeParse(input);
 						if (!validated.success || !validated.data.address) {
-							process.stdout.write(
-								encodeStdioMessage(jsonRpcError(id, -32602, "Invalid address input")),
-							);
+							send(jsonRpcError(id, -32602, "Invalid address input"));
 							return;
 						}
 
@@ -337,30 +343,24 @@ export async function runMcpServer(): Promise<void> {
 								};
 
 						const { response } = await scanWithAnalysis(validated.data, options);
-						process.stdout.write(
-							encodeStdioMessage(
-								jsonRpcResult(id, {
-									content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
-								}),
-							),
+						send(
+							jsonRpcResult(id, {
+								content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+							}),
 						);
 						return;
 					}
 
-					process.stdout.write(
-						encodeStdioMessage(jsonRpcError(id, -32601, `Unknown tool: ${name}`)),
-					);
+					send(jsonRpcError(id, -32601, `Unknown tool: ${name}`));
 					return;
 				}
 
 				if (id !== null) {
-					process.stdout.write(
-						encodeStdioMessage(jsonRpcError(id, -32601, `Method not found: ${method}`)),
-					);
+					send(jsonRpcError(id, -32601, `Method not found: ${method}`));
 				}
 			} catch (error) {
 				const message = error instanceof Error ? error.message : "Internal error";
-				process.stdout.write(encodeStdioMessage(jsonRpcError(id, -32000, message)));
+				send(jsonRpcError(id, -32000, message));
 			}
 		},
 		onParseError: (error) => {

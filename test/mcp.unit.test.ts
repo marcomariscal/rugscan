@@ -170,4 +170,174 @@ describe("mcp server (unit)", () => {
 		proc.kill();
 		await proc.exited;
 	}, 30_000);
+
+	test("does not respond to notifications (requests without id)", async () => {
+		const proc = Bun.spawn(["bun", "run", "src/cli/index.ts", "mcp"], {
+			stdin: "pipe",
+			stdout: "pipe",
+			stderr: "pipe",
+			env: {
+				...process.env,
+				RUGSCAN_MCP_STUB_DEPS: "1",
+				RUGSCAN_CONFIG: "test/fixtures/empty-config.json",
+			},
+		});
+
+		const reader = proc.stdout.getReader();
+		const stdin = proc.stdin;
+		if (!stdin) {
+			proc.kill();
+			throw new Error("Failed to open stdin pipe");
+		}
+
+		type NodeLikeStdin = {
+			write: (chunk: Uint8Array) => unknown;
+			end?: () => unknown;
+		};
+
+		type WebLikeStdin = {
+			getWriter: () => WritableStreamDefaultWriter<Uint8Array>;
+		};
+
+		const hasWrite = (value: unknown): value is NodeLikeStdin => {
+			return isRecord(value) && typeof value.write === "function";
+		};
+
+		const hasGetWriter = (value: unknown): value is WebLikeStdin => {
+			return isRecord(value) && typeof value.getWriter === "function";
+		};
+
+		const writeStdin = async (data: Uint8Array) => {
+			if (hasWrite(stdin)) {
+				stdin.write(data);
+				await Bun.sleep(0);
+				return;
+			}
+
+			if (hasGetWriter(stdin)) {
+				const writer = stdin.getWriter();
+				await writer.write(data);
+				return;
+			}
+
+			throw new Error("Unsupported stdin pipe type");
+		};
+
+		// Notification: omit id, expect no response.
+		await writeStdin(
+			encodeMessage({
+				jsonrpc: "2.0",
+				method: "initialize",
+				params: {
+					protocolVersion: "2024-11-05",
+					clientInfo: { name: "rugscan-test", version: "0" },
+					capabilities: {},
+				},
+			}),
+		);
+
+		// Request: should be the first message we receive.
+		await writeStdin(
+			encodeMessage({
+				jsonrpc: "2.0",
+				id: 1,
+				method: "initialize",
+				params: {
+					protocolVersion: "2024-11-05",
+					clientInfo: { name: "rugscan-test", version: "0" },
+					capabilities: {},
+				},
+			}),
+		);
+
+		const init = await readMessage(reader);
+		if (!isRecord(init)) throw new Error("Expected MCP response to be an object");
+		expect(init.id).toBe(1);
+		expect(init).toHaveProperty("result");
+
+		proc.kill();
+		await proc.exited;
+	}, 10_000);
+
+	test("includes zod error details in -32602 for invalid tool arguments", async () => {
+		const proc = Bun.spawn(["bun", "run", "src/cli/index.ts", "mcp"], {
+			stdin: "pipe",
+			stdout: "pipe",
+			stderr: "pipe",
+			env: {
+				...process.env,
+				RUGSCAN_MCP_STUB_DEPS: "1",
+				RUGSCAN_CONFIG: "test/fixtures/empty-config.json",
+			},
+		});
+
+		const reader = proc.stdout.getReader();
+		const stdin = proc.stdin;
+		if (!stdin) {
+			proc.kill();
+			throw new Error("Failed to open stdin pipe");
+		}
+
+		type NodeLikeStdin = {
+			write: (chunk: Uint8Array) => unknown;
+			end?: () => unknown;
+		};
+
+		type WebLikeStdin = {
+			getWriter: () => WritableStreamDefaultWriter<Uint8Array>;
+		};
+
+		const hasWrite = (value: unknown): value is NodeLikeStdin => {
+			return isRecord(value) && typeof value.write === "function";
+		};
+
+		const hasGetWriter = (value: unknown): value is WebLikeStdin => {
+			return isRecord(value) && typeof value.getWriter === "function";
+		};
+
+		const writeStdin = async (data: Uint8Array) => {
+			if (hasWrite(stdin)) {
+				stdin.write(data);
+				await Bun.sleep(0);
+				return;
+			}
+
+			if (hasGetWriter(stdin)) {
+				const writer = stdin.getWriter();
+				await writer.write(data);
+				return;
+			}
+
+			throw new Error("Unsupported stdin pipe type");
+		};
+
+		await writeStdin(
+			encodeMessage({
+				jsonrpc: "2.0",
+				id: 1,
+				method: "tools/call",
+				params: {
+					name: "rugscan.analyzeTransaction",
+					arguments: {
+						chain: "ethereum",
+						// missing required fields like to/data
+					},
+				},
+			}),
+		);
+
+		const response = await readMessage(reader);
+		if (!isRecord(response)) throw new Error("Expected MCP response to be an object");
+		const error = response.error;
+		if (!isRecord(error)) throw new Error("Expected MCP error to be an object");
+		expect(error.code).toBe(-32602);
+		expect(error.message).toBe("Invalid tool arguments");
+		const data = error.data;
+		if (!isRecord(data)) throw new Error("Expected MCP error.data to be an object");
+		expect(data.tool).toBe("rugscan.analyzeTransaction");
+		expect(Array.isArray(data.issues)).toBe(true);
+
+		proc.kill();
+		await proc.exited;
+	}, 10_000);
 });
