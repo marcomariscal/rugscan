@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { AIConfig, AllowlistConfig, Chain, Config, SimulationConfig } from "./types";
+import type { AllowlistConfig, Chain, Config, SimulationConfig } from "./types";
 
 const VALID_CHAINS: Chain[] = ["ethereum", "base", "arbitrum", "optimism", "polygon"];
 
@@ -73,11 +73,6 @@ function loadEnvConfig(): Config {
 			optimism: process.env.OPTIMISM_API_KEY,
 			polygon: process.env.POLYGONSCAN_API_KEY,
 		},
-		ai: {
-			anthropic_api_key: process.env.ANTHROPIC_API_KEY,
-			openai_api_key: process.env.OPENAI_API_KEY,
-			openrouter_api_key: process.env.OPENROUTER_API_KEY,
-		},
 	};
 }
 
@@ -124,10 +119,6 @@ function parseConfig(value: unknown): Config {
 	if (rpcUrls) {
 		config.rpcUrls = rpcUrls;
 	}
-	const ai = parseAIConfig(value.ai);
-	if (ai) {
-		config.ai = ai;
-	}
 	const simulation = parseSimulationConfig(value.simulation);
 	if (simulation) {
 		config.simulation = simulation;
@@ -153,24 +144,6 @@ function parseChainStringMap(value: unknown): Partial<Record<Chain, string>> | u
 	return hasValue ? map : undefined;
 }
 
-function parseAIConfig(value: unknown): AIConfig | undefined {
-	if (!isRecord(value)) return undefined;
-	const aiConfig: AIConfig = {};
-	if (isNonEmptyString(value.anthropic_api_key)) {
-		aiConfig.anthropic_api_key = value.anthropic_api_key;
-	}
-	if (isNonEmptyString(value.openai_api_key)) {
-		aiConfig.openai_api_key = value.openai_api_key;
-	}
-	if (isNonEmptyString(value.openrouter_api_key)) {
-		aiConfig.openrouter_api_key = value.openrouter_api_key;
-	}
-	if (isNonEmptyString(value.default_model)) {
-		aiConfig.default_model = value.default_model;
-	}
-	return Object.keys(aiConfig).length > 0 ? aiConfig : undefined;
-}
-
 function mergeConfig(base: Config, override: Config): Config {
 	return {
 		etherscanKeys: {
@@ -181,21 +154,9 @@ function mergeConfig(base: Config, override: Config): Config {
 			...base.rpcUrls,
 			...override.rpcUrls,
 		},
-		ai: mergeAIConfig(base.ai, override.ai),
 		simulation: mergeSimulationConfig(base.simulation, override.simulation),
 		allowlist: mergeAllowlistConfig(base.allowlist, override.allowlist),
 	};
-}
-
-function mergeAIConfig(base?: AIConfig, override?: AIConfig): AIConfig | undefined {
-	if (!base && !override) return undefined;
-	const merged: AIConfig = {
-		anthropic_api_key: override?.anthropic_api_key ?? base?.anthropic_api_key,
-		openai_api_key: override?.openai_api_key ?? base?.openai_api_key,
-		openrouter_api_key: override?.openrouter_api_key ?? base?.openrouter_api_key,
-		default_model: override?.default_model ?? base?.default_model,
-	};
-	return Object.values(merged).some((value) => value !== undefined) ? merged : undefined;
 }
 
 function mergeSimulationConfig(

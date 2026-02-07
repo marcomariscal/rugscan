@@ -25,7 +25,7 @@ export async function analyzeApproval(
 	const rpcUrl = config?.rpcUrls?.[chain];
 
 	const spenderIsContract = await proxy.isContract(spender, chain, rpcUrl);
-	const spenderAnalysis = await analyze(spender, chain, disableAI(config));
+	const spenderAnalysis = await analyze(spender, chain, config);
 
 	const findings: Finding[] = [];
 	const flags = {
@@ -107,16 +107,6 @@ export async function analyzeApproval(
 		findings,
 		spenderAnalysis,
 		flags,
-	};
-}
-
-function disableAI(config?: Config): Config {
-	return {
-		...config,
-		aiOptions: {
-			...config?.aiOptions,
-			enabled: false,
-		},
 	};
 }
 

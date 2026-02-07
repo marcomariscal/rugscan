@@ -4,7 +4,6 @@ import { join } from "node:path";
 
 // TODO: Import when M6 precision detection is implemented
 // import { detectPrecisionIssues } from "../../../src/detectors/precision";
-// import { analyzeRisk } from "../../../src/providers/ai";
 
 /**
  * Balancer V2 Rounding Error Exploit Eval
@@ -50,30 +49,6 @@ describe("Balancer Rounding Exploit Eval", () => {
 			// const safeCode = vulnerableCode.split("_upscaleArraySafe")[1];
 			// const findings = detectPrecisionIssues(safeCode);
 			// expect(findings).toHaveLength(0);
-		});
-	});
-
-	describe("AI Detection", () => {
-		test.todo("should identify precision_rounding concern with high confidence", async () => {
-			// const result = await analyzeRisk({
-			//   contract: { address: "0x0", chain: "ethereum", verified: true },
-			//   findings: [],
-			//   proxy: { is_proxy: false },
-			//   tokenSecurity: null,
-			//   source: vulnerableCode
-			// }, { anthropic_api_key: process.env.ANTHROPIC_API_KEY });
-			//
-			// const precisionConcern = result.analysis?.concerns.find(
-			//   c => c.category === "precision_rounding"
-			// );
-			// expect(precisionConcern).toBeDefined();
-			// expect(precisionConcern?.severity).toBe("high");
-			// expect(precisionConcern?.confidence).toBeGreaterThanOrEqual(80);
-		});
-
-		test.todo("should mention small balance / wei-level rounding in summary", async () => {
-			// const result = await analyzeRisk(...);
-			// expect(result.analysis?.summary.toLowerCase()).toMatch(/small|wei|rounding|precision/);
 		});
 	});
 

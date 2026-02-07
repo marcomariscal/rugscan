@@ -51,7 +51,6 @@ These may be omitted depending on provider availability, configuration, or scan 
 
 ## Non-goals
 
-- AI output is optional and **not part of this stable scan JSON contract**.
 - Providers may be skipped/time out; missing best-effort fields should not be treated as an error.
 - This contract does not promise determinism for values derived from live upstream sources.
 

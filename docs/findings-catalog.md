@@ -3,7 +3,7 @@
 This doc enumerates the current `FindingCode` union in `src/types.ts`, where each code comes from, and how it should surface in the north-star pre-sign UI.
 
 Key concepts:
-- **Data source** is one of: `calldata`, `simulation`, `provider`, `ai`, or `heuristic` (derived from simulation/provider results).
+- **Data source** is one of: `calldata`, `simulation`, `provider`, or `heuristic` (derived from simulation/provider results).
 - **Surface** indicates where this finding should appear:
   - **Front-and-center**: shown in `🧾 CHECKS` (or the dedicated BALANCE/APPROVALS sections)
   - **Detail**: available in structured output, logs, or an “expanded details” UI
@@ -177,18 +177,6 @@ Today’s `renderChecksSection()` surfaces:
 - Source: provider/RPC (proxy detection)
 - Where: `src/analyzer.ts`
 - Surface: **Detail** (usually redundant if `UPGRADEABLE` is shown)
-
-#### `AI_PARSE_FAILED`
-- Trigger: AI provider returned output but parsing/validation failed (warning string)
-- Source: ai
-- Where: `src/analyzer.ts`
-- Surface: **Detail** (don’t alarm users; it’s a tooling limitation)
-
-#### `AI_WARNING`
-- Trigger: AI provider emitted warnings during analysis
-- Source: ai
-- Where: `src/analyzer.ts`
-- Surface: **Detail**
 
 #### `CALLDATA_DECODED`
 - Trigger: calldata was decoded via known ABI / Sourcify ABI / selector signatures

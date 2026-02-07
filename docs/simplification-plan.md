@@ -21,12 +21,6 @@
   - Keep a trimmed local list only (no remote protocol crawling).
 
 ## Cut (Delete Now)
-- AI deep analysis (complexity, cost, privacy).
-  - `src/providers/ai.ts`
-  - `test/ai.test.ts`
-  - `test/analyzer-ai-findings.test.ts`
-  - `docs/m5-ai-analysis-plan.md`
-  - `docs/plans/m5-ai-risk-analysis.md`
 - Balance simulation (Anvil + heuristics).
   - `src/simulations/anvil.ts`
   - `src/simulations/balance.ts`
@@ -69,7 +63,6 @@
 - Analyzer flow: keep only verification + phishing labels + GoPlus + approval analysis.
   - Remove age/tx-count heuristics from Etherscan (extra API calls, low signal).
 - Protocol safety: replace DeFiLlama with a small local allowlist (Uniswap, Aave, etc.).
-- Config: drop AI config, simulation config, and RPC overrides not required by core checks.
 - CLI commands: collapse to `check` and `approval` only.
 - Output: fixed minimal text with emoji status and 1-3 key findings.
 

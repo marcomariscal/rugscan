@@ -19,12 +19,6 @@ export {
 	type RugscanViemTransportOptions,
 } from "./sdk/viem";
 export type {
-	AIAnalysis,
-	AIConcern,
-	AIConcernCategory,
-	AIConfig,
-	AIOptions,
-	AIProvider,
 	AnalysisResult,
 	ApprovalAnalysisResult,
 	ApprovalChange,

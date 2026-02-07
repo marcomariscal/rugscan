@@ -17,7 +17,7 @@
 - **Danger findings on spender**: The new finding list doesn’t include a code for “spender has danger findings.” I plan to surface spender danger via `spenderAnalysis` and (optionally) elevate the overall recommendation. If we need a dedicated code, we should add one now.
 - **Verification + age sources**: Unverified and age (<7 days) rely on Sourcify + Etherscan. If no Etherscan key is present, age may be undefined and the “new contract” flag will be best-effort.
 - **Known addresses for typosquat**: We’ll maintain a minimal, curated list of known router/protocol spender addresses per chain. If you want this sourced from a registry or a config file, say so.
-- **AI analysis**: We will disable AI when calling `analyze()` for `spenderAnalysis` to avoid unexpected costs.
+- **Spender analysis**: `analyze()` is deterministic-only in v1; `spenderAnalysis` never uses cloud services.
 
 If any of these assumptions are wrong, please confirm before implementation.
 
@@ -83,7 +83,7 @@ Create `src/approval.ts` (or `src/approvals/analyze.ts`) to implement `analyzeAp
 High-level steps:
 1. Normalize addresses (lowercase).
 2. Detect spender EOA vs contract using `proxy.isContract`.
-3. Run `analyze(spender, chain, config)` with AI disabled to produce `spenderAnalysis`.
+3. Run `analyze(spender, chain, config)` to produce `spenderAnalysis`.
 4. Build approval findings and flags based on:
    - Mismatch logic
    - Spender suspicion (unverified, new, EOA, danger findings)

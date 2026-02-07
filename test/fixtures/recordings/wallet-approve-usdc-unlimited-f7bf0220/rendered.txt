@@ -22,6 +22,6 @@
 │  [33m⚠️ Circle USDC FiatToken V2.2: UNLIMITED to 0x0000...8ba3[39m                      │
 │  [33m⚠️ Allow 0x0000...8BA3 to spend up to UNLIMITED USDC (0xa0b8...eb48)[39m           │
 ├─────────────────────────────────────────────────────────────────────────────────┤
-│  📊 RISK: [33mLOW[39m (AI disabled)                                                     │
+│  📊 RISK: [33mLOW[39m                                                     │
 │ [33m ⚠️ INCONCLUSIVE: simulation low confidence — balances/approvals may be unknown[39m │
 └─────────────────────────────────────────────────────────────────────────────────┘

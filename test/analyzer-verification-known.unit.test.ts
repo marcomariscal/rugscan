@@ -5,11 +5,6 @@ import { analyze } from "../src/analyzer";
 describe("analyzer verificationKnown", () => {
 	test("marks verificationKnown when Etherscan returns unverified (even if Sourcify fails)", async () => {
 		const deps: AnalyzerDeps = {
-			ai: {
-				analyzeRisk: async () => {
-					throw new Error("ai disabled");
-				},
-			},
 			defillama: {
 				matchProtocol: async () => null,
 			},

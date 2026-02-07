@@ -37,7 +37,7 @@ Add new progress types in `src/types.ts` (or a new `src/progress.ts`):
 
 ```ts
 export interface AnalysisProgress {
-  phase: "validation" | "providers" | "ai";
+  phase: "validation" | "providers";
   provider?: string;
   status: "start" | "complete" | "error";
   finding?: Finding;
@@ -46,7 +46,7 @@ export interface AnalysisProgress {
 }
 
 export interface TxAnalysisProgress {
-  phase: "trace" | "contract" | "ai";
+  phase: "trace" | "contract";
   provider?: string;
   contract?: string;
   status: "start" | "complete" | "error";
@@ -75,7 +75,6 @@ analyzeTransaction(
   chain: Chain,
   config: Config,
   options?: {
-    ai?: boolean;
     onProgress?: (progress: TxAnalysisProgress) => void;
     useCache?: boolean;
     earlyExitOnCritical?: boolean;
@@ -106,7 +105,6 @@ Add `KNOWN_PHISHING` to `FindingCode` with `danger` severity. Map this consisten
 - **Phase 1 (instant)**: address normalization, chain config, input validation.
 - **Phase 2 (~500ms, parallel)**: RPC `isContract`, Sourcify verification, Proxy detection, DeFiLlama match.
 - **Phase 3 (~1s, parallel)**: GoPlus token security, Etherscan metadata/labels.
-- **Phase 4 (optional)**: AI analysis.
 
 ### 2.2 Implementation approach
 - Create a provider task table with metadata:
@@ -214,7 +212,7 @@ Create `src/transaction.ts` (or `src/analyze-transaction.ts`) to encapsulate:
   - Run `analyze` with cache + early-exit on critical.
   - Parallelize using a bounded concurrency pool (e.g. 4–8) to avoid rate limits.
 - Aggregate results:
-  - `aggregateRisk = max(analysis.ai?.risk_score ?? 0)` (or defined strategy).
+
   - `recommendation = worst(findings)`.
 
 ### 5.5 Output
@@ -229,7 +227,6 @@ Create `src/transaction.ts` (or `src/analyze-transaction.ts`) to encapsulate:
 
 ### 6.1 Add `analyze-tx`
 Update `src/cli/index.ts`:
-- New command: `rugscan analyze-tx <txHash> [--chain] [--ai]`.
 - Wire to `analyzeTransaction` with `onProgress` streaming.
 
 ### 6.2 Options

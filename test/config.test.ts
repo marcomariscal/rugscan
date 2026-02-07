@@ -13,33 +13,31 @@ function setEnv(key: string, value: string | undefined) {
 }
 
 describe("config", () => {
-	test("env overrides config file AI keys", async () => {
+	test("env overrides config file etherscan key", async () => {
 		const tempPath = path.join(os.tmpdir(), `rugscan-config-${Date.now()}.json`);
 		await writeFile(
 			tempPath,
 			JSON.stringify({
-				ai: {
-					anthropic_api_key: "file-key",
-					default_model: "file-model",
+				etherscanKeys: {
+					ethereum: "file-key",
 				},
 			}),
 		);
 
 		const previous = {
 			RUGSCAN_CONFIG: process.env.RUGSCAN_CONFIG,
-			ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+			ETHERSCAN_API_KEY: process.env.ETHERSCAN_API_KEY,
 		};
 
 		try {
 			setEnv("RUGSCAN_CONFIG", tempPath);
-			setEnv("ANTHROPIC_API_KEY", "env-key");
+			setEnv("ETHERSCAN_API_KEY", "env-key");
 
 			const config = await loadConfig();
-			expect(config.ai?.anthropic_api_key).toBe("env-key");
-			expect(config.ai?.default_model).toBe("file-model");
+			expect(config.etherscanKeys?.ethereum).toBe("env-key");
 		} finally {
 			setEnv("RUGSCAN_CONFIG", previous.RUGSCAN_CONFIG);
-			setEnv("ANTHROPIC_API_KEY", previous.ANTHROPIC_API_KEY);
+			setEnv("ETHERSCAN_API_KEY", previous.ETHERSCAN_API_KEY);
 			await rm(tempPath, { force: true });
 		}
 	});

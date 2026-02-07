@@ -20,6 +20,6 @@
 │  🔐 APPROVALS                                                                   │
 │ [33m - None detected (low confidence)[39m                                               │
 ├─────────────────────────────────────────────────────────────────────────────────┤
-│  📊 RISK: [33mLOW[39m (AI disabled)                                                     │
+│  📊 RISK: [33mLOW[39m                                                     │
 │ [33m ⚠️ INCONCLUSIVE: simulation low confidence — balances/approvals may be unknown[39m │
 └─────────────────────────────────────────────────────────────────────────────────┘

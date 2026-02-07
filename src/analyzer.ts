@@ -1,7 +1,6 @@
 import { type AnalyzeMode, type AnalyzeProviderId, createAnalyzePolicy } from "./analyzer-policy";
 import { createTimeBudget, runWithTimeout } from "./budget";
 import { resolveContractName } from "./name-resolution";
-import * as ai from "./providers/ai";
 import * as defillama from "./providers/defillama";
 import * as etherscan from "./providers/etherscan";
 import * as goplus from "./providers/goplus";
@@ -9,7 +8,6 @@ import * as proxy from "./providers/proxy";
 import type { ProviderRequestOptions } from "./providers/request-options";
 import * as sourcify from "./providers/sourcify";
 import type {
-	AIAnalysis,
 	AnalysisResult,
 	Chain,
 	Confidence,
@@ -23,9 +21,6 @@ import type {
 } from "./types";
 
 export interface AnalyzerDeps {
-	ai: {
-		analyzeRisk: typeof ai.analyzeRisk;
-	};
 	defillama: {
 		matchProtocol: typeof defillama.matchProtocol;
 	};
@@ -46,7 +41,6 @@ export interface AnalyzerDeps {
 }
 
 const DEFAULT_DEPS: AnalyzerDeps = {
-	ai: { analyzeRisk: ai.analyzeRisk },
 	defillama: { matchProtocol: defillama.matchProtocol },
 	etherscan: {
 		getAddressLabels: etherscan.getAddressLabels,
@@ -571,63 +565,6 @@ export async function analyze(
 		beacon: proxyInfo.beacon,
 	};
 
-	let aiAnalysis: AIAnalysis | undefined;
-	if (config?.aiOptions?.enabled) {
-		const aiStep = await runProvider({
-			id: "ai",
-			label: "AI",
-			skipMessage: "skipped (--wallet)",
-			fn: async () => {
-				return await deps.ai.analyzeRisk(
-					{
-						contract,
-						findings,
-						proxy: proxyInfo,
-						tokenSecurity,
-						protocol: protocolMatch?.name,
-						source,
-					},
-					config.ai,
-					config.aiOptions,
-				);
-			},
-		});
-
-		if (aiStep.status === "ok") {
-			const aiResult = aiStep.value;
-			if (aiResult.warning) {
-				findings.push({
-					level: "info",
-					code: "AI_PARSE_FAILED",
-					message: aiResult.warning,
-				});
-			}
-			if (aiResult.warnings) {
-				for (const warning of aiResult.warnings) {
-					findings.push({
-						level: "info",
-						code: "AI_WARNING",
-						message: `AI output warning: ${warning}`,
-					});
-				}
-			}
-			if (aiResult.analysis) {
-				aiAnalysis = aiResult.analysis;
-				report?.({
-					provider: "AI",
-					status: "success",
-					message: `${aiResult.analysis.provider}:${aiResult.analysis.model}`,
-				});
-			} else {
-				report?.({ provider: "AI", status: "success", message: "no output" });
-			}
-		}
-
-		if (aiStep.status === "error") {
-			throw aiStep.error;
-		}
-	}
-
 	return {
 		contract,
 		protocol: protocolLabel,
@@ -638,7 +575,6 @@ export async function analyze(
 			reasons: confidenceReasons,
 		},
 		recommendation,
-		ai: aiAnalysis,
 	};
 }
 

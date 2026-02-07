@@ -2,8 +2,6 @@ import pc from "picocolors";
 import { KNOWN_SPENDERS } from "../approvals/known-spenders";
 import { MAX_UINT160, MAX_UINT256 } from "../constants";
 import type {
-	AIAnalysis,
-	AIConcern,
 	AnalysisResult,
 	ApprovalAnalysisResult,
 	ApprovalContext,
@@ -229,38 +227,6 @@ function renderUnifiedBox(headerLines: string[], sections: string[][]): string {
 	});
 	lines.push(bottom);
 	return lines.join("\n");
-}
-
-function riskLabel(score: number): string {
-	if (score >= 85) return "CRITICAL";
-	if (score >= 70) return "HIGH";
-	if (score >= 50) return "MEDIUM";
-	if (score >= 30) return "LOW";
-	return "SAFE";
-}
-
-function severityColor(severity: AIConcern["severity"]) {
-	if (severity === "medium") return COLORS.warning;
-	return COLORS.danger;
-}
-
-function _renderAISection(ai: AIAnalysis): string[] {
-	const lines: string[] = [];
-	lines.push(` AI: ${ai.provider} / ${ai.model}`);
-	lines.push(` Risk score: ${ai.risk_score} (${riskLabel(ai.risk_score)})`);
-	lines.push(` Summary: ${ai.summary}`);
-	if (ai.concerns.length > 0) {
-		lines.push(" Concerns:");
-		for (const concern of ai.concerns) {
-			const color = severityColor(concern.severity);
-			lines.push(
-				`  ${color(concern.severity.toUpperCase())} ${concern.title} (${concern.category}) - ${concern.explanation}`,
-			);
-		}
-	} else {
-		lines.push(COLORS.dim(" Concerns: None"));
-	}
-	return lines;
 }
 
 function formatProtocolDisplay(result: AnalysisResult): string {
@@ -644,9 +610,7 @@ function renderPolicySection(
 }
 
 function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string[] {
-	let label = result.ai
-		? riskLabel(result.ai.risk_score)
-		: recommendationRiskLabel(result.recommendation);
+	let label = recommendationRiskLabel(result.recommendation);
 
 	const simulationUncertain =
 		hasCalldata &&
@@ -655,11 +619,10 @@ function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string
 		label = "LOW";
 	}
 
-	const note = result.ai ? "" : " (AI disabled)";
 	const colored = riskColor(label)(label);
 
 	const lines: string[] = [];
-	lines.push(` 📊 RISK: ${colored}${note}`);
+	lines.push(` 📊 RISK: ${colored}`);
 
 	if (simulationUncertain) {
 		const simulation = result.simulation;

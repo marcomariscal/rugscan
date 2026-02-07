@@ -18,5 +18,5 @@ Tx scan on ethereum
 │  🔐 APPROVALS                                        │
 │  - None detected                                     │
 ├──────────────────────────────────────────────────────┤
-│  📊 RISK: SAFE (AI disabled)                         │
+│  📊 RISK: SAFE                         │
 └──────────────────────────────────────────────────────┘

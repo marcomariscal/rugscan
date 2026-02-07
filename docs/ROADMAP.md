@@ -16,8 +16,8 @@ Tasks (Phase 1)
    - Files: `src/cli/index.ts`, `src/cli/ui.ts`, `README.md`
    - Effort: M
 
-2) Remove AI analysis feature and config plumbing
-   - Files: `src/providers/ai.ts`, `src/analyzer.ts`, `src/types.ts`, `src/config.ts`, `README.md`, `package.json`
+2) Remove AI analysis feature and config plumbing (DONE in v1)
+   - Files: `src/analyzer.ts`, `src/types.ts`, `src/config.ts`, `README.md`, `package.json`
    - Effort: M
 
 3) Remove simulation, calldata decoding, and intent system from the core path

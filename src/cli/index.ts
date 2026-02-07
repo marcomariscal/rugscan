@@ -5,7 +5,6 @@ import { loadConfig, saveRpcUrl } from "../config";
 import { MAX_UINT256 } from "../constants";
 import { createJsonRpcProxyServer } from "../jsonrpc/proxy";
 import { runMcpServer } from "../mcp/server";
-import { resolveProvider } from "../providers/ai";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
 import { type CalldataInput, type ScanInput, scanInputSchema } from "../schema";
 import type { ApprovalContext, ApprovalTx, Chain, Recommendation } from "../types";
@@ -25,12 +24,82 @@ import {
 
 const VALID_CHAINS: Chain[] = ["ethereum", "base", "arbitrum", "optimism", "polygon"];
 
+type OptionSpec = { takesValue: boolean };
+
+type CommandOptionSpecs = Record<string, OptionSpec>;
+
+const OPTION_SPECS: Record<string, CommandOptionSpecs> = {
+	analyze: {
+		"--chain": { takesValue: true },
+		"-c": { takesValue: true },
+	},
+	scan: {
+		"--format": { takesValue: true },
+		"--calldata": { takesValue: true },
+		"--to": { takesValue: true },
+		"--from": { takesValue: true },
+		"--value": { takesValue: true },
+		"--data": { takesValue: true },
+		"--chain": { takesValue: true },
+		"-c": { takesValue: true },
+		"--address": { takesValue: true },
+		"--fail-on": { takesValue: true },
+		"--output": { takesValue: true },
+		"--quiet": { takesValue: false },
+		"--no-sim": { takesValue: false },
+	},
+	approval: {
+		"--token": { takesValue: true },
+		"--spender": { takesValue: true },
+		"--amount": { takesValue: true },
+		"--expected": { takesValue: true },
+		"--chain": { takesValue: true },
+		"-c": { takesValue: true },
+	},
+	proxy: {
+		"--upstream": { takesValue: true },
+		"--save": { takesValue: false },
+		"--port": { takesValue: true },
+		"--hostname": { takesValue: true },
+		"--chain": { takesValue: true },
+		"-c": { takesValue: true },
+		"--threshold": { takesValue: true },
+		"--on-risk": { takesValue: true },
+		"--record-dir": { takesValue: true },
+		"--wallet": { takesValue: false },
+		"--once": { takesValue: false },
+		"--quiet": { takesValue: false },
+	},
+};
+
+function assertNoUnknownOptions(command: string, args: string[]) {
+	const specs = OPTION_SPECS[command];
+	if (!specs) return;
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i];
+		if (arg === "--") return;
+		if (!arg.startsWith("-")) continue;
+		const spec = specs[arg];
+		if (!spec) {
+			console.error(renderError(`Error: Unknown option ${arg}`));
+			process.exit(1);
+		}
+		if (spec.takesValue) {
+			if (i + 1 >= args.length) {
+				console.error(renderError(`Error: Missing value for ${arg}`));
+				process.exit(1);
+			}
+			i += 1;
+		}
+	}
+}
+
 function printUsage() {
 	console.log(`
 rugscan - Pre-transaction security analysis for EVM contracts
 
 Usage:
-  rugscan analyze <address> [--chain <chain>] [--ai] [--model <model>]
+  rugscan analyze <address> [--chain <chain>]
   rugscan scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>]
   rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
   rugscan proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--wallet] [--once]
@@ -62,8 +131,6 @@ Options:
   --wallet       Wallet fast mode (skips slow providers; keeps simulation)
   --once         Handle one request then exit (useful for tests)
 
-  --ai           Enable AI risk analysis (requires API key)
-  --model        Override AI model or provider:model (ex: openai:gpt-4o)
   --token        Token address for approval analysis
   --spender      Spender address for approval analysis
   --amount       Approval amount (integer or "max")
@@ -76,15 +143,10 @@ Environment:
   ARBISCAN_API_KEY        Arbiscan API key
   OPTIMISM_API_KEY        Optimistic Etherscan API key
   POLYGONSCAN_API_KEY     PolygonScan API key
-  ANTHROPIC_API_KEY       Anthropic API key (AI analysis)
-  OPENAI_API_KEY          OpenAI API key (AI analysis)
-  OPENROUTER_API_KEY      OpenRouter API key (AI analysis)
 
 Examples:
   rugscan analyze 0x1234...
   rugscan analyze 0x1234... --chain base
-  rugscan analyze 0x1234... --ai
-  rugscan analyze 0x1234... --ai --model openrouter:anthropic/claude-3-haiku
   rugscan scan 0x1234... --format json
   # Paste Rabby JSON directly
   rugscan scan --calldata '{"chainId":1,"from":"0x...","to":"0x...","value":"0x0","data":"0x..."}' --format json
@@ -102,26 +164,34 @@ function isChain(value: string | undefined): value is Chain {
 async function main() {
 	const args = process.argv.slice(2);
 
-	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+	if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
 		printUsage();
 		process.exit(0);
 	}
 
 	const command = args[0];
 	if (command === "analyze") {
-		await runAnalyze(args.slice(1));
+		const commandArgs = args.slice(1);
+		assertNoUnknownOptions(command, commandArgs);
+		await runAnalyze(commandArgs);
 		return;
 	}
 	if (command === "scan") {
-		await runScan(args.slice(1));
+		const commandArgs = args.slice(1);
+		assertNoUnknownOptions(command, commandArgs);
+		await runScan(commandArgs);
 		return;
 	}
 	if (command === "approval") {
-		await runApproval(args.slice(1));
+		const commandArgs = args.slice(1);
+		assertNoUnknownOptions(command, commandArgs);
+		await runApproval(commandArgs);
 		return;
 	}
 	if (command === "proxy") {
-		await runProxy(args.slice(1));
+		const commandArgs = args.slice(1);
+		assertNoUnknownOptions(command, commandArgs);
+		await runProxy(commandArgs);
 		return;
 	}
 	if (command === "mcp") {
@@ -145,34 +215,7 @@ async function runAnalyze(args: string[]) {
 	const chain = parseChain(args);
 
 	try {
-		const enableAI = args.includes("--ai");
-		const modelIndex = args.indexOf("--model");
-		const model = modelIndex !== -1 ? args[modelIndex + 1] : undefined;
-
-		if (modelIndex !== -1 && !model) {
-			console.error(renderError("Error: --model requires a value"));
-			process.exit(1);
-		}
-		if (model && !enableAI) {
-			console.error(renderError("Error: --model requires --ai"));
-			process.exit(1);
-		}
-
 		const config = await loadConfig();
-		if (enableAI) {
-			try {
-				void resolveProvider(config.ai, model);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : "No AI API keys found.";
-				console.error(renderError(`Error: ${message}`));
-				process.exit(1);
-			}
-			config.aiOptions = {
-				enabled: true,
-				model,
-			};
-		}
-
 		console.log(renderHeading(`Analyzing ${address} on ${chain}...`));
 		console.log("");
 

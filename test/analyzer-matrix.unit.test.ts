@@ -4,11 +4,6 @@ import type { TokenSecurity, VerificationResult } from "../src/types";
 
 function baseDeps(): AnalyzerDeps {
 	return {
-		ai: {
-			analyzeRisk: async () => {
-				throw new Error("ai disabled");
-			},
-		},
 		defillama: {
 			matchProtocol: async () => null,
 		},

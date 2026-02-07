@@ -177,9 +177,8 @@ Required lines:
 
 1) `📊 RISK: <label>` — REQUIRED
    - Label set is: `SAFE | LOW | MEDIUM | HIGH | CRITICAL`
-   - Source priority:
-     - AI risk score → mapped label
-     - Otherwise recommendation → mapped label (`ok→SAFE`, `caution→LOW`, `warning→MEDIUM`, `danger→HIGH`)
+   - Source:
+     - recommendation → mapped label (`ok→SAFE`, `caution→LOW`, `warning→MEDIUM`, `danger→HIGH`)
 
 2) `⚠️ INCONCLUSIVE: <reason> — balances/approvals may be unknown` — REQUIRED **when simulation is uncertain**
    - Simulation is *uncertain* if calldata is present and:

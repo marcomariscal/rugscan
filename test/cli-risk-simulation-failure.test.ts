@@ -22,16 +22,9 @@ function baseAnalysis(): AnalysisResult {
 }
 
 describe("cli risk label with simulation failures", () => {
-	test("AI enabled + simulation failed + calldata never shows SAFE", () => {
+	test("simulation failed + calldata never shows SAFE", () => {
 		const analysis: AnalysisResult = {
 			...baseAnalysis(),
-			ai: {
-				risk_score: 10,
-				summary: "No issues detected.",
-				concerns: [],
-				model: "test-model",
-				provider: "openai",
-			},
 			simulation: {
 				success: false,
 				revertReason: "Simulation failed",
@@ -50,16 +43,9 @@ describe("cli risk label with simulation failures", () => {
 		expect(output).not.toContain("- None detected");
 	});
 
-	test("AI enabled + simulation missing + calldata never shows SAFE", () => {
+	test("simulation missing + calldata never shows SAFE", () => {
 		const analysis: AnalysisResult = {
 			...baseAnalysis(),
-			ai: {
-				risk_score: 5,
-				summary: "No issues detected.",
-				concerns: [],
-				model: "test-model",
-				provider: "openai",
-			},
 		};
 
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
@@ -70,16 +56,9 @@ describe("cli risk label with simulation failures", () => {
 		expect(output).not.toContain("- None detected");
 	});
 
-	test("AI enabled + simulation success (low confidence) + calldata never shows SAFE", () => {
+	test("simulation success (low confidence) + calldata never shows SAFE", () => {
 		const analysis: AnalysisResult = {
 			...baseAnalysis(),
-			ai: {
-				risk_score: 5,
-				summary: "No issues detected.",
-				concerns: [],
-				model: "test-model",
-				provider: "openai",
-			},
 			simulation: {
 				success: true,
 				assetChanges: [],

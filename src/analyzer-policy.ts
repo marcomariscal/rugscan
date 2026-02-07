@@ -9,8 +9,7 @@ export type AnalyzeProviderId =
 	| "defillama"
 	| "sourcifyImpl"
 	| "defillamaImpl"
-	| "goplus"
-	| "ai";
+	| "goplus";
 
 export interface AnalyzeProviderPolicy {
 	enabled: boolean;
@@ -47,7 +46,6 @@ export function createAnalyzePolicy(mode: AnalyzeMode): AnalyzePolicy {
 				sourcifyImpl: { enabled: true, timeoutMs: 1_000 },
 				defillamaImpl: { enabled: true, timeoutMs: 200 },
 				goplus: { enabled: false, timeoutMs: 600 },
-				ai: { enabled: false, timeoutMs: 2_000 },
 			},
 		};
 	}
@@ -64,7 +62,6 @@ export function createAnalyzePolicy(mode: AnalyzeMode): AnalyzePolicy {
 			sourcifyImpl: { enabled: true, timeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS },
 			defillamaImpl: { enabled: true, timeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS },
 			goplus: { enabled: true, timeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS },
-			ai: { enabled: true, timeoutMs: DEFAULT_PROVIDER_TIMEOUT_MS },
 		},
 	};
 }

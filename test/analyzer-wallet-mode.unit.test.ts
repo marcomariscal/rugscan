@@ -10,23 +10,8 @@ function createStubDeps(calls: {
 	etherscan: number;
 	defillama: number;
 	goplus: number;
-	ai: number;
 }): AnalyzerDeps {
 	return {
-		ai: {
-			analyzeRisk: async () => {
-				calls.ai += 1;
-				return {
-					analysis: {
-						risk_score: 0,
-						summary: "stub",
-						concerns: [],
-						model: "stub",
-						provider: "openai",
-					},
-				};
-			},
-		},
 		defillama: {
 			matchProtocol: async () => {
 				calls.defillama += 1;
@@ -78,7 +63,6 @@ describe("analyzer wallet mode (unit)", () => {
 			etherscan: 0,
 			defillama: 0,
 			goplus: 0,
-			ai: 0,
 		};
 		const deps = createStubDeps(calls);
 		const progressEvents: Array<{ provider: string; status: string; message?: string }> = [];
@@ -110,7 +94,6 @@ describe("analyzer wallet mode (unit)", () => {
 			etherscan: 0,
 			defillama: 0,
 			goplus: 0,
-			ai: 0,
 		};
 		const deps = createStubDeps(calls);
 

@@ -4,7 +4,6 @@
 - Detect precision loss and rounding error patterns in verified smart contracts.
 - Surface common DeFi rounding exploits (vault inflation, donation attacks, truncation).
 - Provide clear findings with minimal false positives.
-- Extend AI analysis to explicitly reason about precision/rounding issues.
 
 ## Non-Goals (explicit)
 - Full symbolic math or formal verification.
@@ -12,7 +11,7 @@
 - Economic analysis of oracle-based pricing (beyond obvious donation/flash manipulation patterns).
 
 ## Assumptions / Open Decisions
-- **Verified source required for static detection**: if `source` is missing, static checks are skipped. AI can still run if enabled.
+- **Verified source required for static detection**: if `source` is missing, static checks are skipped.
 - **Etherscan SourceCode format**: may be flattened or JSON; v1 will scan the raw string only. If this proves too noisy, we can add parsing for the JSON multi-file format.
 - **Static analysis depth**: start with lightweight regex/heuristics. Add AST-based parsing only if false positives are unacceptable.
 - **Finding mapping for flash-loan amplification**: use `DONATION_ATTACK` unless we decide to add a dedicated code.
@@ -21,7 +20,6 @@ If any of these assumptions are wrong, confirm before implementation.
 
 ## Success Criteria
 - New finding codes appear on known vulnerable snippets and do not trigger on safe patterns using `mulDiv`/rounding helpers.
-- AI concerns include precision/rounding when high-confidence evidence exists.
 - Unit tests cover each detection rule with positive + negative cases.
 
 ---
@@ -48,38 +46,6 @@ Severity mapping (proposed):
 - `ROUNDING_TO_ZERO` -> warning
 - `MISSING_MIN_CHECK` -> warning
 
-### AI concern category
-Add a precision category for AI output:
-
-```ts
-export type AIConcernCategory =
-  // ...existing
-  | "precision_rounding";
-```
-
-Update `AI_CONCERN_SCHEMA` to include the new category.
-
----
-
-## 2. AI Prompt Enhancements
-
-### SYSTEM_PROMPT additions (`src/providers/ai.ts`)
-Add a precision checklist section that instructs the model to look for:
-- **First depositor / vault inflation**: missing `totalSupply == 0` guard, share price manipulable by donation.
-- **Division ordering**: `(a / b) * c` precision loss vs `(a * c) / b`.
-- **Rounding to zero**: `amount * totalSupply / totalAssets` or fee calculations that truncate.
-- **Missing min checks**: no `minShares`, `minAmountOut`, or `deadline` validation.
-- **Flash-loan amplification**: use of `balanceOf`/`totalAssets` as price basis without safeguards.
-
-False-positive exclusions to explicitly mention:
-- Use of `Math.mulDiv`, `FullMath.mulDiv`, `FixedPointMathLib` (or similar) to preserve precision.
-- Explicit rounding helpers (`ceilDiv`, `mulDivUp`, `mulWadUp`) and `minShares > 0` guards.
-
-### Prompt output
-No schema changes beyond the new category. Continue to require high confidence (>= 80).
-
----
-
 ## 3. Static Precision Detector (Optional but Recommended)
 
 ### New module
@@ -96,7 +62,6 @@ export function detectPrecisionIssues(source: string): PrecisionFinding[];
 ```
 
 ### Source preprocessing
-- Reuse `sanitizeSourceCode()` from `src/providers/ai.ts` (or extract to a shared util) to remove comments/strings.
 - Keep scanning lightweight; avoid full parsing in v1.
 
 ### Detection rules (v1 heuristics)
@@ -167,7 +132,6 @@ Finding:
 
 ### Flow update (`src/analyzer.ts`)
 - After `source` is fetched and verified, run `detectPrecisionIssues(source)`.
-- Append returned findings to the existing `findings` array before AI analysis.
 - If `source` is missing, skip static detection.
 
 Optionally add a config flag:
@@ -180,7 +144,6 @@ Optionally add a config flag:
 Add a section describing:
 - New precision/rounding findings and severity.
 - That static detection requires verified source.
-- That AI can surface precision issues when enabled with `--ai`.
 
 ---
 
@@ -202,8 +165,6 @@ Add deterministic tests for the detector with inline Solidity snippets:
 ## 7. Files & Touch Points
 
 Planned edits:
-- `src/types.ts` - add finding codes + `precision_rounding` category.
-- `src/providers/ai.ts` - extend SYSTEM_PROMPT + schema category list.
 - `src/detectors/precision.ts` - new static detector.
 - `src/analyzer.ts` - wire in static detection.
 - `test/precision.test.ts` - unit tests for detector.
@@ -213,8 +174,6 @@ Planned edits:
 
 ## 8. Implementation Order
 
-1. Add new finding codes and AI concern category in `src/types.ts`.
-2. Update AI SYSTEM_PROMPT and Zod schema category list.
 3. Implement `detectPrecisionIssues()` with minimal regex heuristics.
 4. Wire detector into `analyze()` for verified source.
 5. Add unit tests for each rule and verify false-positive exclusions.

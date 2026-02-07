@@ -45,14 +45,13 @@ describe("cli", () => {
 		expect(result.stderr).toContain("valid contract address");
 	});
 
-	test("AI analysis requires API key", async () => {
-		const result = await runCli(["analyze", "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", "--ai"], {
-			ANTHROPIC_API_KEY: "",
-			OPENAI_API_KEY: "",
-			OPENROUTER_API_KEY: "",
-			RUGSCAN_CONFIG: "",
-		});
+	test("unknown option returns exit code 1", async () => {
+		const result = await runCli([
+			"analyze",
+			"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+			"--bogus",
+		]);
 		expect(result.exitCode).toBe(1);
-		expect(result.stderr).toContain("No AI API keys found");
+		expect(result.stderr).toContain("Unknown option");
 	});
 });

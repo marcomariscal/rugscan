@@ -31,8 +31,6 @@ export type FindingCode =
 	// Info
 	| "LOW_ACTIVITY"
 	| "PROXY"
-	| "AI_PARSE_FAILED"
-	| "AI_WARNING"
 	| "CALLDATA_DECODED"
 	| "CALLDATA_UNKNOWN_SELECTOR"
 	| "CALLDATA_SIGNATURES"
@@ -44,34 +42,6 @@ export type FindingCode =
 export type Recommendation = "danger" | "warning" | "caution" | "ok";
 
 export type ConfidenceLevel = "high" | "medium" | "low";
-
-export type AIRiskLevel = "safe" | "low" | "medium" | "high" | "critical";
-export type AIProvider = "anthropic" | "openai" | "openrouter";
-export type AIConcernCategory =
-	| "reentrancy"
-	| "access_control"
-	| "upgradeability"
-	| "token_security"
-	| "oracle"
-	| "logic_error"
-	| "centralization"
-	| "prompt_injection_attempt";
-
-export interface AIConcern {
-	title: string;
-	severity: "medium" | "high";
-	category: AIConcernCategory;
-	explanation: string;
-	confidence: number;
-}
-
-export interface AIAnalysis {
-	risk_score: number;
-	summary: string;
-	concerns: AIConcern[];
-	model: string;
-	provider: AIProvider;
-}
 
 export interface Finding {
 	level: FindingLevel;
@@ -107,7 +77,6 @@ export interface AnalysisResult {
 	findings: Finding[];
 	confidence: Confidence;
 	recommendation: Recommendation;
-	ai?: AIAnalysis;
 	intent?: string;
 	simulation?: BalanceSimulationResult;
 }
@@ -139,8 +108,6 @@ export interface ApprovalAnalysisResult {
 export interface Config {
 	etherscanKeys?: Partial<Record<Chain, string>>;
 	rpcUrls?: Partial<Record<Chain, string>>;
-	ai?: AIConfig;
-	aiOptions?: AIOptions;
 	simulation?: SimulationConfig;
 	allowlist?: AllowlistConfig;
 }
@@ -251,21 +218,4 @@ export interface ProxyInfo {
 export interface ProviderResult<T> {
 	data: T | null;
 	error?: string;
-}
-
-export interface AIConfig {
-	anthropic_api_key?: string;
-	openai_api_key?: string;
-	openrouter_api_key?: string;
-	default_model?: string;
-}
-
-export interface AIOptions {
-	enabled?: boolean;
-	model?: string;
-	mockResult?: {
-		analysis?: AIAnalysis;
-		warning?: string;
-		warnings?: string[];
-	};
 }

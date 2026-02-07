@@ -17,7 +17,6 @@ This is a static review of the current repository state.
 - Phishing/scam label lookup uses Etherscan labels and the phish/hack export as a fallback (`src/providers/etherscan.ts`).
 - GoPlus integration adds high-signal token security flags (`src/providers/goplus.ts`).
 - Approval analysis checks for unlimited approvals, target mismatches, EOAs, unverified/new spender contracts, and typosquats (`src/approval.ts`, `src/approvals/*`).
-- AI analysis (when enabled) is schema-constrained with basic prompt-injection hardening (`src/providers/ai.ts`).
 - Config layering (env + file) is straightforward and explicit (`src/config.ts`).
 
 ## Critical gaps for scam detection
@@ -47,7 +46,6 @@ These are major blind spots for a pre-signing tool, not just nice-to-haves:
 - CLI address validation only checks prefix and length (`src/cli/index.ts`), so non-hex addresses can pass and cause inconsistent results.
 - Calldata analysis relies on 4byte signatures which are ambiguous; without display of confidence, results can mislead.
 - Balance simulation is best-effort. It can be fooled by state changes, non-standard events, or proxy indirection. Simulation results do not affect recommendation, which can confuse users.
-- AI analysis sends code and metadata to third-party LLMs; even with sanitization, this is a privacy and prompt-injection risk.
 - Provider results are not normalized by confidence; all findings are treated as equally trustworthy.
 
 ## Trust assumptions
