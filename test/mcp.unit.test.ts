@@ -100,6 +100,8 @@ describe("mcp server (unit)", () => {
 			return isRecord(value) && typeof value.getWriter === "function";
 		};
 
+		let webWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
+
 		const writeStdin = async (data: Uint8Array) => {
 			if (hasWrite(stdin)) {
 				stdin.write(data);
@@ -108,67 +110,85 @@ describe("mcp server (unit)", () => {
 			}
 
 			if (hasGetWriter(stdin)) {
-				const writer = stdin.getWriter();
-				await writer.write(data);
+				if (!webWriter) webWriter = stdin.getWriter();
+				await webWriter.write(data);
 				return;
 			}
 
 			throw new Error("Unsupported stdin pipe type");
 		};
 
-		await writeStdin(
-			encodeMessage({
-				jsonrpc: "2.0",
-				id: 1,
-				method: "initialize",
-				params: {
-					protocolVersion: "2024-11-05",
-					clientInfo: { name: "rugscan-test", version: "0" },
-					capabilities: {},
-				},
-			}),
-		);
-		const init = await readMessage(reader);
-		expect(init).toHaveProperty("result");
-
-		await writeStdin(
-			encodeMessage({
-				jsonrpc: "2.0",
-				id: 2,
-				method: "tools/list",
-				params: {},
-			}),
-		);
-		const list = await readMessage(reader);
-		expect(JSON.stringify(list)).toContain("rugscan.analyzeTransaction");
-
-		await writeStdin(
-			encodeMessage({
-				jsonrpc: "2.0",
-				id: 3,
-				method: "tools/call",
-				params: {
-					name: "rugscan.analyzeTransaction",
-					arguments: {
-						chain: "ethereum",
-						to: "0x66a9893cc07d91d95644aedd05d03f95e1dba8af",
-						from: "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
-						data: "0x",
-						value: "0",
-						noSim: true,
-						walletMode: true,
+		try {
+			await writeStdin(
+				encodeMessage({
+					jsonrpc: "2.0",
+					id: 1,
+					method: "initialize",
+					params: {
+						protocolVersion: "2024-11-05",
+						clientInfo: { name: "rugscan-test", version: "0" },
+						capabilities: {},
 					},
-				},
-			}),
-		);
-		const call = await readMessage(reader);
+				}),
+			);
+			const init = await readMessage(reader);
+			expect(init).toHaveProperty("result");
 
-		const result = isRecord(call) ? call.result : undefined;
-		const found = findAnalyzeResponseInToolResult(result);
-		expect(found?.schemaVersion).toBe(1);
+			await writeStdin(
+				encodeMessage({
+					jsonrpc: "2.0",
+					id: 2,
+					method: "tools/list",
+					params: {},
+				}),
+			);
+			const list = await readMessage(reader);
+			expect(JSON.stringify(list)).toContain("rugscan.analyzeTransaction");
 
-		proc.kill();
-		await proc.exited;
+			await writeStdin(
+				encodeMessage({
+					jsonrpc: "2.0",
+					id: 3,
+					method: "tools/call",
+					params: {
+						name: "rugscan.analyzeTransaction",
+						arguments: {
+							chain: "ethereum",
+							to: "0x66a9893cc07d91d95644aedd05d03f95e1dba8af",
+							from: "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+							data: "0x",
+							value: "0",
+							noSim: true,
+							walletMode: true,
+						},
+					},
+				}),
+			);
+			const call = await readMessage(reader);
+
+			const result = isRecord(call) ? call.result : undefined;
+			const found = findAnalyzeResponseInToolResult(result);
+			expect(found?.schemaVersion).toBe(1);
+		} finally {
+			if (webWriter) {
+				try {
+					await webWriter.close();
+				} catch {
+					// ignore
+				} finally {
+					webWriter.releaseLock();
+				}
+			} else if (hasWrite(stdin) && typeof stdin.end === "function") {
+				try {
+					stdin.end();
+				} catch {
+					// ignore
+				}
+			}
+
+			proc.kill();
+			await proc.exited;
+		}
 	}, 30_000);
 
 	test("does not respond to notifications (requests without id)", async () => {
@@ -207,6 +227,8 @@ describe("mcp server (unit)", () => {
 			return isRecord(value) && typeof value.getWriter === "function";
 		};
 
+		let webWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
+
 		const writeStdin = async (data: Uint8Array) => {
 			if (hasWrite(stdin)) {
 				stdin.write(data);
@@ -215,48 +237,66 @@ describe("mcp server (unit)", () => {
 			}
 
 			if (hasGetWriter(stdin)) {
-				const writer = stdin.getWriter();
-				await writer.write(data);
+				if (!webWriter) webWriter = stdin.getWriter();
+				await webWriter.write(data);
 				return;
 			}
 
 			throw new Error("Unsupported stdin pipe type");
 		};
 
-		// Notification: omit id, expect no response.
-		await writeStdin(
-			encodeMessage({
-				jsonrpc: "2.0",
-				method: "initialize",
-				params: {
-					protocolVersion: "2024-11-05",
-					clientInfo: { name: "rugscan-test", version: "0" },
-					capabilities: {},
-				},
-			}),
-		);
+		try {
+			// Notification: omit id, expect no response.
+			await writeStdin(
+				encodeMessage({
+					jsonrpc: "2.0",
+					method: "initialize",
+					params: {
+						protocolVersion: "2024-11-05",
+						clientInfo: { name: "rugscan-test", version: "0" },
+						capabilities: {},
+					},
+				}),
+			);
 
-		// Request: should be the first message we receive.
-		await writeStdin(
-			encodeMessage({
-				jsonrpc: "2.0",
-				id: 1,
-				method: "initialize",
-				params: {
-					protocolVersion: "2024-11-05",
-					clientInfo: { name: "rugscan-test", version: "0" },
-					capabilities: {},
-				},
-			}),
-		);
+			// Request: should be the first message we receive.
+			await writeStdin(
+				encodeMessage({
+					jsonrpc: "2.0",
+					id: 1,
+					method: "initialize",
+					params: {
+						protocolVersion: "2024-11-05",
+						clientInfo: { name: "rugscan-test", version: "0" },
+						capabilities: {},
+					},
+				}),
+			);
 
-		const init = await readMessage(reader);
-		if (!isRecord(init)) throw new Error("Expected MCP response to be an object");
-		expect(init.id).toBe(1);
-		expect(init).toHaveProperty("result");
+			const init = await readMessage(reader);
+			if (!isRecord(init)) throw new Error("Expected MCP response to be an object");
+			expect(init.id).toBe(1);
+			expect(init).toHaveProperty("result");
+		} finally {
+			if (webWriter) {
+				try {
+					await webWriter.close();
+				} catch {
+					// ignore
+				} finally {
+					webWriter.releaseLock();
+				}
+			} else if (hasWrite(stdin) && typeof stdin.end === "function") {
+				try {
+					stdin.end();
+				} catch {
+					// ignore
+				}
+			}
 
-		proc.kill();
-		await proc.exited;
+			proc.kill();
+			await proc.exited;
+		}
 	}, 10_000);
 
 	test("includes zod error details in -32602 for invalid tool arguments", async () => {
@@ -295,6 +335,8 @@ describe("mcp server (unit)", () => {
 			return isRecord(value) && typeof value.getWriter === "function";
 		};
 
+		let webWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
+
 		const writeStdin = async (data: Uint8Array) => {
 			if (hasWrite(stdin)) {
 				stdin.write(data);
@@ -303,41 +345,59 @@ describe("mcp server (unit)", () => {
 			}
 
 			if (hasGetWriter(stdin)) {
-				const writer = stdin.getWriter();
-				await writer.write(data);
+				if (!webWriter) webWriter = stdin.getWriter();
+				await webWriter.write(data);
 				return;
 			}
 
 			throw new Error("Unsupported stdin pipe type");
 		};
 
-		await writeStdin(
-			encodeMessage({
-				jsonrpc: "2.0",
-				id: 1,
-				method: "tools/call",
-				params: {
-					name: "rugscan.analyzeTransaction",
-					arguments: {
-						chain: "ethereum",
-						// missing required fields like to/data
+		try {
+			await writeStdin(
+				encodeMessage({
+					jsonrpc: "2.0",
+					id: 1,
+					method: "tools/call",
+					params: {
+						name: "rugscan.analyzeTransaction",
+						arguments: {
+							chain: "ethereum",
+							// missing required fields like to/data
+						},
 					},
-				},
-			}),
-		);
+				}),
+			);
 
-		const response = await readMessage(reader);
-		if (!isRecord(response)) throw new Error("Expected MCP response to be an object");
-		const error = response.error;
-		if (!isRecord(error)) throw new Error("Expected MCP error to be an object");
-		expect(error.code).toBe(-32602);
-		expect(error.message).toBe("Invalid tool arguments");
-		const data = error.data;
-		if (!isRecord(data)) throw new Error("Expected MCP error.data to be an object");
-		expect(data.tool).toBe("rugscan.analyzeTransaction");
-		expect(Array.isArray(data.issues)).toBe(true);
+			const response = await readMessage(reader);
+			if (!isRecord(response)) throw new Error("Expected MCP response to be an object");
+			const error = response.error;
+			if (!isRecord(error)) throw new Error("Expected MCP error to be an object");
+			expect(error.code).toBe(-32602);
+			expect(error.message).toBe("Invalid tool arguments");
+			const data = error.data;
+			if (!isRecord(data)) throw new Error("Expected MCP error.data to be an object");
+			expect(data.tool).toBe("rugscan.analyzeTransaction");
+			expect(Array.isArray(data.issues)).toBe(true);
+		} finally {
+			if (webWriter) {
+				try {
+					await webWriter.close();
+				} catch {
+					// ignore
+				} finally {
+					webWriter.releaseLock();
+				}
+			} else if (hasWrite(stdin) && typeof stdin.end === "function") {
+				try {
+					stdin.end();
+				} catch {
+					// ignore
+				}
+			}
 
-		proc.kill();
-		await proc.exited;
+			proc.kill();
+			await proc.exited;
+		}
 	}, 10_000);
 });
