@@ -5,6 +5,11 @@ import { loadConfig, saveRpcUrl } from "../config";
 import { MAX_UINT256 } from "../constants";
 import { createJsonRpcProxyServer } from "../jsonrpc/proxy";
 import { runMcpServer } from "../mcp/server";
+import { buildSafeIngestPlan } from "../safe/ingest";
+import {
+	createSafeTxServiceClient,
+	parseSafeMultisigTransaction,
+} from "../safe/transaction-service";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
 import { type CalldataInput, type ScanInput, scanInputSchema } from "../schema";
 import type { ApprovalContext, ApprovalTx, Chain, Recommendation } from "../types";
@@ -47,6 +52,13 @@ const OPTION_SPECS: Record<string, CommandOptionSpecs> = {
 		"--output": { takesValue: true },
 		"--quiet": { takesValue: false },
 		"--no-sim": { takesValue: false },
+	},
+	safe: {
+		"--format": { takesValue: true },
+		"--chain": { takesValue: true },
+		"-c": { takesValue: true },
+		"--tx-json": { takesValue: true },
+		"--output": { takesValue: true },
 	},
 	approval: {
 		"--token": { takesValue: true },
@@ -101,6 +113,7 @@ rugscan - Pre-transaction security analysis for EVM contracts
 Usage:
   rugscan analyze <address> [--chain <chain>]
   rugscan scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>]
+  rugscan safe <safeTxHash> [--chain <chain>] [--tx-json <json|@file|->] [--format json] [--output <path|->]
   rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
   rugscan proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--wallet] [--once]
   rugscan mcp
@@ -118,6 +131,7 @@ Options:
   --fail-on      Exit non-zero on recommendation >= threshold (default: warning)
   --output       Output file path or - for stdout (default: -)
   --quiet        Suppress non-essential logs
+  --tx-json      Safe Transaction Service JSON (raw JSON, @file, or - for stdin). If omitted, fetches by hash.
 
   Proxy:
   --upstream     Upstream JSON-RPC HTTP URL to forward requests to
@@ -180,6 +194,12 @@ async function main() {
 		const commandArgs = args.slice(1);
 		assertNoUnknownOptions(command, commandArgs);
 		await runScan(commandArgs);
+		return;
+	}
+	if (command === "safe") {
+		const commandArgs = args.slice(1);
+		assertNoUnknownOptions(command, commandArgs);
+		await runSafe(commandArgs);
 		return;
 	}
 	if (command === "approval") {
@@ -343,6 +363,68 @@ async function runScan(args: string[]) {
 		console.error(error);
 		process.exit(1);
 	}
+}
+
+async function runSafe(args: string[]) {
+	const formatValue = getFlagValue(args, ["--format"]);
+	const format = formatValue ? parseFormat(formatValue) : "json";
+	if (format === "sarif") {
+		console.error(renderError("Error: Safe ingest does not support SARIF output"));
+		process.exit(1);
+	}
+
+	const output = getFlagValue(args, ["--output"]) ?? "-";
+	const txJsonFlag = getFlagValue(args, ["--tx-json"]);
+	const chain = parseChain(args);
+	const positional = getPositionalArgs(args);
+	const safeTxHash = positional[0];
+	if (!isSafeTxHash(safeTxHash)) {
+		console.error(renderError("Error: Please provide a valid safeTxHash (0x + 32 bytes)"));
+		process.exit(1);
+	}
+
+	try {
+		const tx = await loadSafeMultisigTransaction({ safeTxHash, chain, txJsonFlag });
+		const plan = buildSafeIngestPlan({ tx, chain });
+
+		const outputPayload =
+			format === "json"
+				? JSON.stringify({ chain, safeTxHash, tx, plan }, null, 2)
+				: `${renderHeading(`Safe ingest on ${chain}`)}\n\nSafeTxHash: ${safeTxHash}\nKind: ${plan.kind}\nSafe: ${plan.safe}\nCalls: ${plan.callsToAnalyze.length}\n`;
+
+		await writeOutput(output, outputPayload, true);
+		process.exit(0);
+	} catch (error) {
+		console.error(renderError("Safe ingest failed:"));
+		console.error(error);
+		process.exit(1);
+	}
+}
+
+async function loadSafeMultisigTransaction(options: {
+	safeTxHash: string;
+	chain: Chain;
+	txJsonFlag: string | undefined;
+}) {
+	if (options.txJsonFlag) {
+		const raw = (await readInput(options.txJsonFlag)).trim();
+		const json = safeJsonParse(raw);
+		if (!json) {
+			throw new Error("Invalid --tx-json (expected JSON)");
+		}
+		return parseSafeMultisigTransaction(json);
+	}
+
+	const client = createSafeTxServiceClient();
+	return await client.fetchMultisigTransaction({
+		safeTxHash: options.safeTxHash,
+		chain: options.chain,
+		timeoutMs: 10_000,
+	});
+}
+
+function isSafeTxHash(value: string | undefined): value is string {
+	return typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
 }
 
 async function runApproval(args: string[]) {
@@ -618,6 +700,7 @@ function getPositionalArgs(args: string[]): string[] {
 		"--threshold",
 		"--on-risk",
 		"--record-dir",
+		"--tx-json",
 	]);
 	const positional: string[] = [];
 	for (let i = 0; i < args.length; i += 1) {

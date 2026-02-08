@@ -1,0 +1,9 @@
+{
+	"chain": "arbitrum",
+	"chainId": 42161,
+	"safe": "0xf3B46870658211414684E061BC1514213e80c49c",
+	"safeTxHash": "0xcc29eb7274575a6f5ff90a15f0ecc267bb8f8253feb1f659c828ef09e5bc4152",
+	"txHash": "0x37a5e65d990089734fa25af19e2767cf663fb2be9ed718dbc2d981872966c75f",
+	"sourceUrl": "https://safe-transaction-arbitrum.safe.global/api/v1/multisig-transactions/0xcc29eb7274575a6f5ff90a15f0ecc267bb8f8253feb1f659c828ef09e5bc4152/",
+	"downloadedAt": "2026-02-07"
+}
