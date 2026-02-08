@@ -25,6 +25,6 @@ Tx scan on ethereum
 │  🔐 APPROVALS                                                                     │
 │  - Approvals unknown (simulation failed)                                          │
 ├───────────────────────────────────────────────────────────────────────────────────┤
-│  📊 RISK: LOW                                                       │
+│  📊 RISK: LOW                                                                     │
 │  ⚠️ INCONCLUSIVE: simulation failed (Timeout) — balances/approvals may be unknown │
 └───────────────────────────────────────────────────────────────────────────────────┘
