@@ -18,14 +18,21 @@ export async function analyzeApproval(
 	chain: Chain,
 	context: ApprovalContext = {},
 	config?: Config,
+	options?: { offline?: boolean },
 ): Promise<ApprovalAnalysisResult> {
 	const spender = tx.spender.toLowerCase();
 	const expectedSpender = context.expectedSpender?.toLowerCase();
 	const calledContract = context.calledContract?.toLowerCase();
+	const offline = options?.offline ?? false;
 	const rpcUrl = config?.rpcUrls?.[chain];
+	if (offline && !rpcUrl) {
+		throw new Error(
+			`offline mode: missing config rpcUrls.${chain} (no public RPC fallbacks; set it in rugscan.config.json or ~/.config/rugscan/config.json)`,
+		);
+	}
 
 	const spenderIsContract = await proxy.isContract(spender, chain, rpcUrl);
-	const spenderAnalysis = await analyze(spender, chain, config);
+	const spenderAnalysis = await analyze(spender, chain, config, undefined, { offline });
 
 	const findings: Finding[] = [];
 	const flags = {

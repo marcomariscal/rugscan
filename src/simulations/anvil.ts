@@ -40,8 +40,12 @@ export interface AnvilInstance {
 
 const instances = new Map<string, Promise<AnvilInstance>>();
 
-export async function getAnvilClient(chain: Chain, config?: Config): Promise<AnvilInstance> {
-	const forkUrl = resolveRpcUrl(chain, config);
+export async function getAnvilClient(
+	chain: Chain,
+	config?: Config,
+	options?: { offline?: boolean },
+): Promise<AnvilInstance> {
+	const forkUrl = resolveRpcUrl(chain, config, { offline: options?.offline });
 	const forkBlock = config?.simulation?.forkBlock;
 	const resolved = resolveAnvilExecutable(config);
 	if (resolved.kind === "missing") {
@@ -60,9 +64,15 @@ export async function getAnvilClient(chain: Chain, config?: Config): Promise<Anv
 	return instancePromise;
 }
 
-function resolveRpcUrl(chain: Chain, config?: Config): string {
+function resolveRpcUrl(chain: Chain, config?: Config, options?: { offline?: boolean }): string {
+	const offline = options?.offline ?? false;
 	const chainConfig = getChainConfig(chain);
-	return config?.simulation?.rpcUrl ?? config?.rpcUrls?.[chain] ?? chainConfig.rpcUrl;
+	const resolved = config?.simulation?.rpcUrl ?? config?.rpcUrls?.[chain];
+	if (resolved) return resolved;
+	if (offline) {
+		throw new Error(`offline mode: missing config rpcUrls.${chain} (no public RPC fallbacks)`);
+	}
+	return chainConfig.rpcUrl;
 }
 
 async function spawnAnvil(options: {

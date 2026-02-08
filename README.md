@@ -50,6 +50,7 @@ Run `rugscan --help` for the full CLI reference.
 ```bash
 rugscan analyze <address> [options]
 rugscan scan [address] [options]
+rugscan safe <chain> <safeTxHash> [--safe-tx-json <path>] [--offline]
 rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
 rugscan proxy [options]
 rugscan mcp
@@ -103,6 +104,10 @@ Notes:
 ### Shared options (selected)
 
 - `--chain, -c` Target chain (default: ethereum): `ethereum | base | arbitrum | optimism | polygon`
+- `--offline` / `--rpc-only` Strict offline mode (OPT-IN)
+  - Allows **only** explicitly configured upstream JSON-RPC URL(s) (`config.rpcUrls.<chain>` / `--upstream`).
+  - Blocks **all other outbound HTTP(s)** calls (Safe Tx Service, Sourcify, Etherscan, GoPlus, DeFiLlama, 4byte, etc).
+  - No implicit public RPC fallbacks.
 - `--token/--spender/--amount/--expected` Approval analysis inputs
 
 ### MCP

@@ -35,6 +35,10 @@ export interface ScanOptions {
 	requestId?: string;
 	progress?: ScanProgress;
 	/**
+	 * Strict offline mode: only the configured upstream JSON-RPC URL is allowed.
+	 */
+	offline?: boolean;
+	/**
 	 * Advanced analyzer options (ex: provider budgets, wallet fast mode).
 	 */
 	analyzeOptions?: AnalyzeOptions;
@@ -88,20 +92,27 @@ export async function scanWithAnalysis(
 		throw new Error("Missing scan input");
 	}
 
+	const analyzeOptions = options?.offline
+		? { ...(options?.analyzeOptions ?? {}), offline: true }
+		: options?.analyzeOptions;
+
 	const analysis = await analyze(
 		targetAddress,
 		chain,
 		options?.config,
 		options?.progress,
-		options?.analyzeOptions,
+		analyzeOptions,
 	);
-	const mergedAnalysis = await mergeCalldataAnalysis(normalizedInput, analysis);
+	const mergedAnalysis = await mergeCalldataAnalysis(normalizedInput, analysis, {
+		offline: options?.offline,
+	});
 	const simulation = await runBalanceSimulation(
 		normalizedInput,
 		chain,
 		options?.config,
 		options?.progress,
 		options?.timings,
+		{ offline: options?.offline },
 	);
 	const withSimulation = simulation ? { ...mergedAnalysis, simulation } : mergedAnalysis;
 	const finalAnalysis = applySimulationVerdict(normalizedInput, withSimulation);
@@ -112,9 +123,12 @@ export async function scanWithAnalysis(
 async function mergeCalldataAnalysis(
 	input: ScanInput,
 	analysis: AnalysisResult,
+	options?: { offline?: boolean },
 ): Promise<AnalysisResult> {
 	if (!input.calldata) return analysis;
-	const calldataAnalysis = await analyzeCalldata(input.calldata, analysis.contract.chain);
+	const calldataAnalysis = await analyzeCalldata(input.calldata, analysis.contract.chain, {
+		offline: options?.offline,
+	});
 	const intent = calldataAnalysis.decoded
 		? buildIntent(calldataAnalysis.decoded, {
 				contractAddress: analysis.contract.address,
@@ -222,6 +236,7 @@ async function runBalanceSimulation(
 	config: Config | undefined,
 	progress: ScanProgress | undefined,
 	timings: TimingStore | undefined,
+	options?: { offline?: boolean },
 ): Promise<BalanceSimulationResult | undefined> {
 	if (!input.calldata) return undefined;
 
@@ -232,7 +247,9 @@ async function runBalanceSimulation(
 		return buildSimulationNotRun(input.calldata);
 	}
 
-	const result = await simulateBalance(input.calldata, chain, config, timings);
+	const result = await simulateBalance(input.calldata, chain, config, timings, {
+		offline: options?.offline,
+	});
 	progress?.({
 		provider: "Simulation",
 		status: result.success ? "success" : "error",

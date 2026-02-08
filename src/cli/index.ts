@@ -5,6 +5,7 @@ import { loadConfig, saveRpcUrl } from "../config";
 import { MAX_UINT256 } from "../constants";
 import { createJsonRpcProxyServer } from "../jsonrpc/proxy";
 import { runMcpServer } from "../mcp/server";
+import { installOfflineHttpGuard } from "../offline-http";
 import { buildSafeIngestPlan } from "../safe/ingest";
 import { loadSafeMultisigTransaction } from "../safe/load";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
@@ -34,6 +35,8 @@ const OPTION_SPECS: Record<string, CommandOptionSpecs> = {
 	analyze: {
 		"--chain": { takesValue: true },
 		"-c": { takesValue: true },
+		"--offline": { takesValue: false },
+		"--rpc-only": { takesValue: false },
 	},
 	scan: {
 		"--format": { takesValue: true },
@@ -44,6 +47,8 @@ const OPTION_SPECS: Record<string, CommandOptionSpecs> = {
 		"--data": { takesValue: true },
 		"--chain": { takesValue: true },
 		"-c": { takesValue: true },
+		"--offline": { takesValue: false },
+		"--rpc-only": { takesValue: false },
 		"--address": { takesValue: true },
 		"--fail-on": { takesValue: true },
 		"--output": { takesValue: true },
@@ -66,6 +71,8 @@ const OPTION_SPECS: Record<string, CommandOptionSpecs> = {
 		"--expected": { takesValue: true },
 		"--chain": { takesValue: true },
 		"-c": { takesValue: true },
+		"--offline": { takesValue: false },
+		"--rpc-only": { takesValue: false },
 	},
 	proxy: {
 		"--upstream": { takesValue: true },
@@ -74,6 +81,8 @@ const OPTION_SPECS: Record<string, CommandOptionSpecs> = {
 		"--hostname": { takesValue: true },
 		"--chain": { takesValue: true },
 		"-c": { takesValue: true },
+		"--offline": { takesValue: false },
+		"--rpc-only": { takesValue: false },
 		"--threshold": { takesValue: true },
 		"--on-risk": { takesValue: true },
 		"--record-dir": { takesValue: true },
@@ -107,15 +116,15 @@ function assertNoUnknownOptions(command: string, args: string[]) {
 
 function printUsage() {
 	console.log(`
-assay - Pre-transaction security analysis for EVM contracts
+rugscan - Pre-transaction security analysis for EVM contracts
 
 Usage:
-  assay analyze <address> [--chain <chain>]
-  assay scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>]
-  assay safe <chain> <safeTxHash> [--safe-tx-json <path>] [--offline] [--format json] [--output <path|->]
-  assay approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
-  assay proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--wallet] [--once]
-  assay mcp
+  rugscan analyze <address> [--chain <chain>] [--offline]
+  rugscan scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>] [--offline]
+  rugscan safe <chain> <safeTxHash> [--safe-tx-json <path>] [--offline] [--format json] [--output <path|->]
+  rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>] [--offline]
+  rugscan proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--offline] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--wallet] [--once]
+  rugscan mcp
 
 Options:
   --chain, -c    Chain to analyze on (default: ethereum)
@@ -130,6 +139,10 @@ Options:
   --fail-on      Exit non-zero on recommendation >= threshold (default: warning)
   --output       Output file path or - for stdout (default: -)
   --quiet        Suppress non-essential logs
+  --offline,
+  --rpc-only     Strict mode: allow only explicitly configured upstream JSON-RPC URL(s).
+                 Blocks ALL other outbound HTTP(s) calls (Etherscan, Sourcify, Safe Tx Service, etc)
+                 and disables non-RPC providers. No implicit public RPC fallbacks.
   --safe-tx-json Safe Transaction Service JSON file path. If omitted, fetches by hash (unless --offline).
 
   Proxy:
@@ -232,14 +245,29 @@ async function runAnalyze(args: string[]) {
 	}
 
 	const chain = parseChain(args);
+	const offline = args.includes("--offline") || args.includes("--rpc-only");
 
 	try {
 		const config = await loadConfig();
+		if (offline) {
+			const rpcUrl = config.rpcUrls?.[chain];
+			if (!rpcUrl) {
+				console.error(
+					renderError(
+						`offline mode: missing config rpcUrls.${chain} (no public RPC fallbacks; set it in rugscan.config.json or ~/.config/rugscan/config.json)`,
+					),
+				);
+				process.exit(1);
+			}
+			installOfflineHttpGuard({ allowedRpcUrls: [rpcUrl], allowLocalhost: false });
+		}
 		console.log(renderHeading(`Analyzing ${address} on ${chain}...`));
 		console.log("");
 
 		const renderProgress = createProgressRenderer(process.stdout.isTTY);
-		const result = await analyze(address, chain, config, renderProgress);
+		const result = await analyze(address, chain, config, renderProgress, {
+			offline,
+		});
 
 		console.log("");
 		console.log(renderResultBox(result, { hasCalldata: false }));
@@ -264,6 +292,7 @@ async function runScan(args: string[]) {
 	const output = getFlagValue(args, ["--output"]) ?? "-";
 	const quiet = args.includes("--quiet");
 	const noSim = args.includes("--no-sim");
+	const offline = args.includes("--offline") || args.includes("--rpc-only");
 	const failOn = parseFailOn(getFlagValue(args, ["--fail-on"]));
 	const chainValue = getFlagValue(args, ["--chain", "-c"]);
 	const addressFlag = getFlagValue(args, ["--address"]);
@@ -327,6 +356,18 @@ async function runScan(args: string[]) {
 
 	try {
 		const config = await loadConfig();
+		if (offline) {
+			const rpcUrl = config.rpcUrls?.[chain];
+			if (!rpcUrl) {
+				console.error(
+					renderError(
+						`offline mode: missing config rpcUrls.${chain} (no public RPC fallbacks; set it in rugscan.config.json or ~/.config/rugscan/config.json)`,
+					),
+				);
+				process.exit(1);
+			}
+			installOfflineHttpGuard({ allowedRpcUrls: [rpcUrl] });
+		}
 		if (noSim) {
 			config.simulation = { ...config.simulation, enabled: false };
 		}
@@ -340,6 +381,7 @@ async function runScan(args: string[]) {
 		const { analysis, response } = await scanWithAnalysis(parsed.data, {
 			chain,
 			config,
+			offline,
 			progress,
 		});
 
@@ -374,6 +416,9 @@ async function runSafe(args: string[]) {
 
 	const output = getFlagValue(args, ["--output"]) ?? "-";
 	const offline = args.includes("--offline") || args.includes("--rpc-only");
+	if (offline) {
+		installOfflineHttpGuard({ allowedRpcUrls: [], allowLocalhost: false });
+	}
 
 	const safeTxJsonRaw = getFlagValue(args, ["--safe-tx-json"]) ?? getFlagValue(args, ["--tx-json"]);
 	const safeTxJsonPath = safeTxJsonRaw?.startsWith("@") ? safeTxJsonRaw.slice(1) : safeTxJsonRaw;
@@ -452,9 +497,22 @@ async function runApproval(args: string[]) {
 	}
 
 	const chain = parseChain(args);
+	const offline = args.includes("--offline") || args.includes("--rpc-only");
 
 	try {
 		const config = await loadConfig();
+		if (offline) {
+			const rpcUrl = config.rpcUrls?.[chain];
+			if (!rpcUrl) {
+				console.error(
+					renderError(
+						`offline mode: missing config rpcUrls.${chain} (no public RPC fallbacks; set it in rugscan.config.json or ~/.config/rugscan/config.json)`,
+					),
+				);
+				process.exit(1);
+			}
+			installOfflineHttpGuard({ allowedRpcUrls: [rpcUrl], allowLocalhost: false });
+		}
 		const tx: ApprovalTx = {
 			token,
 			spender,
@@ -468,7 +526,7 @@ async function runApproval(args: string[]) {
 		console.log(renderHeading(`Analyzing approval for ${spender} on ${chain}...`));
 		console.log("");
 
-		const result = await analyzeApproval(tx, chain, context, config);
+		const result = await analyzeApproval(tx, chain, context, config, { offline });
 
 		console.log(renderApprovalBox(tx, chain, context, result));
 		console.log("");
@@ -509,6 +567,7 @@ async function runProxy(args: string[]) {
 	const wallet = args.includes("--wallet");
 	const once = args.includes("--once");
 	const quiet = args.includes("--quiet");
+	const offline = args.includes("--offline") || args.includes("--rpc-only");
 
 	const config = await loadConfig();
 	const resolved = resolveProxyUpstreamUrl({
@@ -531,6 +590,9 @@ async function runProxy(args: string[]) {
 	}
 
 	const upstreamUrl = resolved.upstreamUrl;
+	if (offline) {
+		installOfflineHttpGuard({ allowedRpcUrls: [upstreamUrl] });
+	}
 	const defaultOnRisk = process.stdin.isTTY && process.stdout.isTTY ? "prompt" : "block";
 	const server = createJsonRpcProxyServer({
 		upstreamUrl,
@@ -541,6 +603,7 @@ async function runProxy(args: string[]) {
 		quiet,
 		recordDir,
 		config,
+		offline,
 		policy: {
 			threshold,
 			onRisk: onRisk ?? defaultOnRisk,
@@ -554,6 +617,7 @@ async function runProxy(args: string[]) {
 					const { analysis, response } = await scanWithAnalysis(input, {
 						chain: ctx.chain,
 						config: ctx.config,
+						offline,
 						progress,
 						analyzeOptions: { mode: "wallet" },
 					});
@@ -602,7 +666,7 @@ async function runProxy(args: string[]) {
 async function runMcp(args: string[]) {
 	if (args.includes("--help") || args.includes("-h")) {
 		console.log(
-			"assay mcp - MCP server over stdio (Model Context Protocol)\n\nUsage:\n  assay mcp\n\nNotes:\n  - Communicates over stdin/stdout using JSON-RPC framing (Content-Length).\n  - Exposes Rugscan analysis as MCP tools.\n",
+			"rugscan mcp - MCP server over stdio (Model Context Protocol)\n\nUsage:\n  rugscan mcp\n\nNotes:\n  - Communicates over stdin/stdout using JSON-RPC framing (Content-Length).\n  - Exposes Rugscan analysis as MCP tools.\n",
 		);
 		process.exit(0);
 	}

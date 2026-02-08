@@ -28,11 +28,22 @@ export interface ProxyOptions {
 	policy?: Partial<ProxyPolicy>;
 	config?: Config;
 	once?: boolean;
+	/**
+	 * Strict offline mode: only upstreamUrl JSON-RPC is allowed.
+	 * All other HTTP providers are disabled.
+	 */
+	offline?: boolean;
 	quiet?: boolean;
 	recordDir?: string;
 	scanFn?: (
 		input: ScanInput,
-		options: { chain: Chain; config: Config; quiet?: boolean; timings?: TimingStore },
+		options: {
+			chain: Chain;
+			config: Config;
+			quiet?: boolean;
+			timings?: TimingStore;
+			offline?: boolean;
+		},
 	) => Promise<ProxyScanOutcome>;
 }
 
@@ -588,7 +599,13 @@ async function writeRecording(options: {
 
 async function defaultScanFn(
 	input: ScanInput,
-	options: { chain: Chain; config: Config; quiet: boolean; timings: TimingStore },
+	options: {
+		chain: Chain;
+		config: Config;
+		quiet: boolean;
+		timings: TimingStore;
+		offline?: boolean;
+	},
 ): Promise<ProxyScanOutcome> {
 	const providerStarts = new Map<string, number>();
 	const baseProgress = options.quiet
@@ -616,6 +633,7 @@ async function defaultScanFn(
 	const { analysis, response } = await scanWithAnalysis(input, {
 		chain: options.chain,
 		config: options.config,
+		offline: options.offline,
 		progress,
 		timings: options.timings,
 	});
@@ -672,7 +690,7 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				chain,
 				upstreamUrl: options.upstreamUrl,
 			});
-			const instance = await getAnvilClient(chain, scanConfig);
+			const instance = await getAnvilClient(chain, scanConfig, { offline: options.offline });
 			await instance.runExclusive(async () => {
 				await instance.resetFork();
 			});
@@ -787,18 +805,31 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 						? options.scanFn
 						: async (
 								scanInput: ScanInput,
-								ctx: { chain: Chain; config: Config; quiet?: boolean; timings?: TimingStore },
+								ctx: {
+									chain: Chain;
+									config: Config;
+									quiet?: boolean;
+									timings?: TimingStore;
+									offline?: boolean;
+								},
 							) =>
 								await defaultScanFn(scanInput, {
 									...ctx,
 									quiet: ctx.quiet ?? quiet,
 									timings: ctx.timings ?? timings,
+									offline: ctx.offline ?? options.offline,
 								});
 
 					const queuedAt = nowMs();
 					const queued = scanQueue.then(async () => {
 						timings.add("proxy.queueWait", nowMs() - queuedAt);
-						return await scanFn(validated.data, { chain, config: scanConfig, quiet, timings });
+						return await scanFn(validated.data, {
+							chain,
+							config: scanConfig,
+							quiet,
+							timings,
+							offline: options.offline,
+						});
 					});
 					scanQueue = queued.then(
 						() => undefined,

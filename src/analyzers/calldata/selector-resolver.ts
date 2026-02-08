@@ -17,12 +17,19 @@ export interface SelectorLookupResult {
 
 const selectorCache = new Map<string, CachedSelector>();
 
-export async function resolveSelector(selector: string): Promise<SelectorLookupResult> {
+export async function resolveSelector(
+	selector: string,
+	options?: { offline?: boolean },
+): Promise<SelectorLookupResult> {
 	const normalized = selector.toLowerCase();
 	const now = Date.now();
 	const cached = selectorCache.get(normalized);
 	if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
 		return { selector: normalized, signatures: cached.signatures, cached: true };
+	}
+
+	if (options?.offline) {
+		return cachedResult(normalized, cached);
 	}
 
 	try {

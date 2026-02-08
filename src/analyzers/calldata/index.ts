@@ -20,8 +20,10 @@ export interface CalldataAnalysisResult {
 export async function analyzeCalldata(
 	input: CalldataInput,
 	chain?: Chain,
+	options?: { offline?: boolean },
 ): Promise<CalldataAnalysisResult> {
 	const findings: Finding[] = [];
+	const offline = options?.offline ?? false;
 	const selector = extractSelector(input.data);
 	if (!selector) {
 		findings.push({
@@ -45,7 +47,7 @@ export async function analyzeCalldata(
 		return { selector, findings, decoded: known };
 	}
 
-	const abi = chain ? await sourcify.getABI(input.to, chain) : null;
+	const abi = !offline && chain ? await sourcify.getABI(input.to, chain) : null;
 	if (abi) {
 		const decoded = decodeAbiCalldata(input.data, abi);
 		if (decoded) {
@@ -54,7 +56,7 @@ export async function analyzeCalldata(
 		}
 	}
 
-	const lookup = await resolveSelector(selector);
+	const lookup = await resolveSelector(selector, { offline });
 	if (lookup.signatures.length === 0) {
 		findings.push({
 			level: "info",

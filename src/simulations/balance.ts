@@ -80,8 +80,10 @@ export async function simulateBalance(
 	chain: Chain,
 	config?: Config,
 	timings?: TimingStore,
+	options?: { offline?: boolean },
 ): Promise<BalanceSimulationResult> {
 	const backend = config?.simulation?.backend ?? "anvil";
+	const offline = options?.offline ?? false;
 	const hints = buildFailureHints(tx);
 	if (backend !== "anvil") {
 		return simulateHeuristic(tx, chain, "Simulation backend set to heuristic.", hints);
@@ -107,7 +109,7 @@ export async function simulateBalance(
 	}
 
 	try {
-		return await simulateWithAnvil(tx, chain, config, timings);
+		return await simulateWithAnvil(tx, chain, config, timings, { offline });
 	} catch (error) {
 		if (error instanceof AnvilUnavailableError) {
 			const notRun = buildSimulationNotRun(tx);
@@ -125,12 +127,20 @@ export async function simulateBalance(
 	}
 }
 
-function resolveAnvilRpcUrlCandidates(chain: Chain, config?: Config): string[] {
+function resolveAnvilRpcUrlCandidates(
+	chain: Chain,
+	config?: Config,
+	options?: { offline?: boolean },
+): string[] {
+	const offline = options?.offline ?? false;
+
 	const explicit = config?.simulation?.rpcUrl;
 	if (explicit) return [explicit];
 
 	const configured = config?.rpcUrls?.[chain];
 	if (configured) return [configured];
+
+	if (offline) return [];
 
 	const defaultUrl = getChainConfig(chain).rpcUrl;
 	if (chain !== "ethereum") return [defaultUrl];
@@ -167,15 +177,17 @@ async function simulateWithAnvil(
 	chain: Chain,
 	config?: Config,
 	timings?: TimingStore,
+	options?: { offline?: boolean },
 ): Promise<BalanceSimulationResult> {
-	const rpcUrls = resolveAnvilRpcUrlCandidates(chain, config);
+	const offline = options?.offline ?? false;
+	const rpcUrls = resolveAnvilRpcUrlCandidates(chain, config, { offline });
 
 	let lastError: unknown;
 	for (const rpcUrl of rpcUrls) {
 		const attemptConfig = withSimulationRpcUrl(config, rpcUrl);
 		for (let attempt = 0; attempt < 2; attempt += 1) {
 			try {
-				return await simulateWithAnvilOnce(tx, chain, attemptConfig, timings);
+				return await simulateWithAnvilOnce(tx, chain, attemptConfig, timings, { offline });
 			} catch (error) {
 				lastError = error;
 			}
@@ -193,8 +205,10 @@ async function simulateWithAnvilOnce(
 	chain: Chain,
 	config?: Config,
 	timings?: TimingStore,
+	options?: { offline?: boolean },
 ): Promise<BalanceSimulationResult> {
-	const instance = await getAnvilClient(chain, config);
+	const offline = options?.offline ?? false;
+	const instance = await getAnvilClient(chain, config, { offline });
 	const client = instance.client;
 	const from = tx.from && isAddress(tx.from) ? tx.from : null;
 	const to = tx.to && isAddress(tx.to) ? tx.to : null;
@@ -224,7 +238,9 @@ async function simulateWithAnvilOnce(
 			await client.impersonateAccount({ address: from });
 			await client.setBalance({ address: from, value: HIGH_BALANCE });
 
-			const isContractAccount = await checkContractAccount(from, chain, config);
+			const isContractAccount = await checkContractAccount(from, chain, config, {
+				offline,
+			});
 			if (isContractAccount) {
 				confidence = "low";
 				notes.push("Sender is a contract account; simulation is best-effort.");
@@ -852,9 +868,15 @@ async function checkContractAccount(
 	address: Address,
 	chain: Chain,
 	config?: Config,
+	options?: { offline?: boolean },
 ): Promise<boolean> {
+	const offline = options?.offline ?? false;
 	const chainConfig = getChainConfig(chain);
-	const rpcUrl = config?.simulation?.rpcUrl ?? config?.rpcUrls?.[chain] ?? chainConfig.rpcUrl;
+	const rpcUrl =
+		config?.simulation?.rpcUrl ??
+		config?.rpcUrls?.[chain] ??
+		(!offline ? chainConfig.rpcUrl : undefined);
+	if (!rpcUrl) return false;
 	const client = createPublicClient({
 		transport: http(rpcUrl),
 	});

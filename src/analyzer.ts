@@ -51,9 +51,18 @@ const DEFAULT_DEPS: AnalyzerDeps = {
 	sourcify: { checkVerification: sourcify.checkVerification },
 };
 
+function isOfflineAllowedProvider(providerId: AnalyzeProviderId): boolean {
+	return providerId === "rpc" || providerId === "proxy";
+}
+
 export interface AnalyzeOptions {
 	mode?: AnalyzeMode;
 	deps?: AnalyzerDeps;
+	/**
+	 * Strict offline mode: only the configured upstream JSON-RPC URL is allowed.
+	 * All non-RPC HTTP providers are skipped.
+	 */
+	offline?: boolean;
 }
 
 type ProviderProgress = (event: {
@@ -74,6 +83,7 @@ export async function analyze(
 
 	const deps = options?.deps ?? DEFAULT_DEPS;
 	const mode = options?.mode ?? "default";
+	const offline = options?.offline ?? false;
 	const policy = createAnalyzePolicy(mode);
 	const budget = policy.budgetMs ? createTimeBudget(policy.budgetMs) : null;
 
@@ -98,6 +108,11 @@ export async function analyze(
 	> => {
 		const providerPolicy = policy.providers[args.id];
 		report?.({ provider: args.label, status: "start" });
+
+		if (offline && !isOfflineAllowedProvider(args.id)) {
+			report?.({ provider: args.label, status: "success", message: "skipped (--offline)" });
+			return { status: "skipped", message: "skipped (--offline)" };
+		}
 
 		const timeoutMs = resolveTimeoutMs(args.id);
 		if (!providerPolicy.enabled) {
@@ -143,6 +158,11 @@ export async function analyze(
 	const addr = address.toLowerCase();
 	const etherscanKey = config?.etherscanKeys?.[chain];
 	const rpcUrl = config?.rpcUrls?.[chain];
+	if (offline && !rpcUrl) {
+		throw new Error(
+			`offline mode: missing config rpcUrls.${chain} (no public RPC fallbacks; set it in rugscan.config.json or ~/.config/rugscan/config.json)`,
+		);
+	}
 
 	// 1. Check if it's actually a contract
 	let isContractAddress = true;
