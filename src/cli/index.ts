@@ -6,10 +6,7 @@ import { MAX_UINT256 } from "../constants";
 import { createJsonRpcProxyServer } from "../jsonrpc/proxy";
 import { runMcpServer } from "../mcp/server";
 import { buildSafeIngestPlan } from "../safe/ingest";
-import {
-	createSafeTxServiceClient,
-	parseSafeMultisigTransaction,
-} from "../safe/transaction-service";
+import { loadSafeMultisigTransaction } from "../safe/load";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
 import { type CalldataInput, type ScanInput, scanInputSchema } from "../schema";
 import type { ApprovalContext, ApprovalTx, Chain, Recommendation } from "../types";
@@ -55,10 +52,12 @@ const OPTION_SPECS: Record<string, CommandOptionSpecs> = {
 	},
 	safe: {
 		"--format": { takesValue: true },
-		"--chain": { takesValue: true },
-		"-c": { takesValue: true },
+		"--safe-tx-json": { takesValue: true },
+		// Back-compat for earlier WIP implementations.
 		"--tx-json": { takesValue: true },
 		"--output": { takesValue: true },
+		"--offline": { takesValue: false },
+		"--rpc-only": { takesValue: false },
 	},
 	approval: {
 		"--token": { takesValue: true },
@@ -108,15 +107,15 @@ function assertNoUnknownOptions(command: string, args: string[]) {
 
 function printUsage() {
 	console.log(`
-rugscan - Pre-transaction security analysis for EVM contracts
+assay - Pre-transaction security analysis for EVM contracts
 
 Usage:
-  rugscan analyze <address> [--chain <chain>]
-  rugscan scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>]
-  rugscan safe <safeTxHash> [--chain <chain>] [--tx-json <json|@file|->] [--format json] [--output <path|->]
-  rugscan approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
-  rugscan proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--wallet] [--once]
-  rugscan mcp
+  assay analyze <address> [--chain <chain>]
+  assay scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>]
+  assay safe <chain> <safeTxHash> [--safe-tx-json <path>] [--offline] [--format json] [--output <path|->]
+  assay approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
+  assay proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--wallet] [--once]
+  assay mcp
 
 Options:
   --chain, -c    Chain to analyze on (default: ethereum)
@@ -131,7 +130,7 @@ Options:
   --fail-on      Exit non-zero on recommendation >= threshold (default: warning)
   --output       Output file path or - for stdout (default: -)
   --quiet        Suppress non-essential logs
-  --tx-json      Safe Transaction Service JSON (raw JSON, @file, or - for stdin). If omitted, fetches by hash.
+  --safe-tx-json Safe Transaction Service JSON file path. If omitted, fetches by hash (unless --offline).
 
   Proxy:
   --upstream     Upstream JSON-RPC HTTP URL to forward requests to
@@ -374,17 +373,39 @@ async function runSafe(args: string[]) {
 	}
 
 	const output = getFlagValue(args, ["--output"]) ?? "-";
-	const txJsonFlag = getFlagValue(args, ["--tx-json"]);
-	const chain = parseChain(args);
+	const offline = args.includes("--offline") || args.includes("--rpc-only");
+
+	const safeTxJsonRaw = getFlagValue(args, ["--safe-tx-json"]) ?? getFlagValue(args, ["--tx-json"]);
+	const safeTxJsonPath = safeTxJsonRaw?.startsWith("@") ? safeTxJsonRaw.slice(1) : safeTxJsonRaw;
+
 	const positional = getPositionalArgs(args);
-	const safeTxHash = positional[0];
+	const chainValue = positional[0];
+	const safeTxHash = positional[1];
+
+	const chain = resolveScanChain(chainValue);
+	if (!chain) {
+		console.error(renderError(`Error: Invalid chain "${chainValue ?? ""}"`));
+		console.error(`Valid chains: ${VALID_CHAINS.join(", ")}`);
+		process.exit(1);
+	}
+
 	if (!isSafeTxHash(safeTxHash)) {
 		console.error(renderError("Error: Please provide a valid safeTxHash (0x + 32 bytes)"));
 		process.exit(1);
 	}
 
+	if (offline && !safeTxJsonPath) {
+		console.error(renderError("offline mode: provide --safe-tx-json (no Safe API fetch)"));
+		process.exit(1);
+	}
+
 	try {
-		const tx = await loadSafeMultisigTransaction({ safeTxHash, chain, txJsonFlag });
+		const tx = await loadSafeMultisigTransaction({
+			chain,
+			safeTxHash,
+			offline,
+			safeTxJsonPath,
+		});
 		const plan = buildSafeIngestPlan({ tx, chain });
 
 		const outputPayload =
@@ -399,28 +420,6 @@ async function runSafe(args: string[]) {
 		console.error(error);
 		process.exit(1);
 	}
-}
-
-async function loadSafeMultisigTransaction(options: {
-	safeTxHash: string;
-	chain: Chain;
-	txJsonFlag: string | undefined;
-}) {
-	if (options.txJsonFlag) {
-		const raw = (await readInput(options.txJsonFlag)).trim();
-		const json = safeJsonParse(raw);
-		if (!json) {
-			throw new Error("Invalid --tx-json (expected JSON)");
-		}
-		return parseSafeMultisigTransaction(json);
-	}
-
-	const client = createSafeTxServiceClient();
-	return await client.fetchMultisigTransaction({
-		safeTxHash: options.safeTxHash,
-		chain: options.chain,
-		timeoutMs: 10_000,
-	});
 }
 
 function isSafeTxHash(value: string | undefined): value is string {
@@ -603,7 +602,7 @@ async function runProxy(args: string[]) {
 async function runMcp(args: string[]) {
 	if (args.includes("--help") || args.includes("-h")) {
 		console.log(
-			"rugscan mcp - MCP server over stdio (Model Context Protocol)\n\nUsage:\n  rugscan mcp\n\nNotes:\n  - Communicates over stdin/stdout using JSON-RPC framing (Content-Length).\n  - Exposes Rugscan analysis as MCP tools.\n",
+			"assay mcp - MCP server over stdio (Model Context Protocol)\n\nUsage:\n  assay mcp\n\nNotes:\n  - Communicates over stdin/stdout using JSON-RPC framing (Content-Length).\n  - Exposes Rugscan analysis as MCP tools.\n",
 		);
 		process.exit(0);
 	}
@@ -700,6 +699,7 @@ function getPositionalArgs(args: string[]): string[] {
 		"--threshold",
 		"--on-risk",
 		"--record-dir",
+		"--safe-tx-json",
 		"--tx-json",
 	]);
 	const positional: string[] = [];

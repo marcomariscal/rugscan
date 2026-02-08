@@ -7,6 +7,7 @@ async function runCli(args: string[]) {
 	const proc = Bun.spawn(["bun", "run", "src/cli/index.ts", ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
+		env: { ...process.env, NO_COLOR: "1" },
 	});
 	const stdout = await new Response(proc.stdout).text();
 	const stderr = await new Response(proc.stderr).text();
@@ -15,14 +16,14 @@ async function runCli(args: string[]) {
 }
 
 describe("cli safe ingest (offline fixture)", () => {
-	test("reads Safe Tx Service JSON from --tx-json and emits plan JSON", async () => {
+	test("reads Safe Tx Service JSON from --safe-tx-json and emits plan JSON (no HTTP)", async () => {
 		const result = await runCli([
 			"safe",
-			SAFE_TX_HASH,
-			"--chain",
 			"arbitrum",
-			"--tx-json",
-			`@${FIXTURE_PATH}`,
+			SAFE_TX_HASH,
+			"--offline",
+			"--safe-tx-json",
+			FIXTURE_PATH,
 			"--format",
 			"json",
 		]);
@@ -35,5 +36,12 @@ describe("cli safe ingest (offline fixture)", () => {
 		expect(payload.safeTxHash).toBe(SAFE_TX_HASH);
 		expect(payload.plan.kind).toBe("multisend");
 		expect(payload.plan.callsToAnalyze).toHaveLength(2);
+	});
+
+	test("offline mode blocks Safe API fetch unless --safe-tx-json is provided", async () => {
+		const result = await runCli(["safe", "arbitrum", SAFE_TX_HASH, "--offline"]);
+
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain("offline mode: provide --safe-tx-json (no Safe API fetch)");
 	});
 });
