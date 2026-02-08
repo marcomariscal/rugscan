@@ -6,7 +6,8 @@
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
 	"bin": {
-		"rugscan": "src/cli/index.ts"
+		"rugscan": "src/cli/index.ts",
+		"assay": "src/cli/index.ts"
 	},
 	"scripts": {
 		"dev": "bun run src/cli/index.ts",

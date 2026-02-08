@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createJsonRpcProxyServer } from "../src/jsonrpc/proxy";
-import type { ScanInput } from "../src/schema";
-import type { Chain, Config, Recommendation } from "../src/types";
+import { createJsonRpcProxyServer, type ProxyScanOutcome } from "../src/jsonrpc/proxy";
+import type { AnalyzeResponse, ScanInput } from "../src/schema";
+import type { Chain, Config } from "../src/types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
@@ -39,31 +39,29 @@ describe("jsonrpc proxy - recording", () => {
 		const scanFn = async (
 			input: ScanInput,
 			_ctx: { chain: Chain; config: Config },
-		): Promise<{
-			recommendation: Recommendation;
-			simulationSuccess: boolean;
-			response: unknown;
-		}> => {
+		): Promise<ProxyScanOutcome> => {
+			const response: AnalyzeResponse = {
+				schemaVersion: 1,
+				requestId: crypto.randomUUID(),
+				scan: {
+					input,
+					recommendation: "ok",
+					confidence: 1,
+					findings: [],
+					contract: {
+						address: input.calldata?.to ?? "0x0000000000000000000000000000000000000000",
+						chain: "ethereum",
+						isContract: true,
+						isProxy: false,
+						verifiedSource: false,
+					},
+				},
+			};
+
 			return {
 				recommendation: "ok",
 				simulationSuccess: true,
-				response: {
-					schemaVersion: 1,
-					requestId: crypto.randomUUID(),
-					scan: {
-						input,
-						recommendation: "ok",
-						confidence: 1,
-						findings: [],
-						contract: {
-							address: input.calldata?.to ?? "0x0000000000000000000000000000000000000000",
-							chain: "ethereum",
-							isContract: true,
-							isProxy: false,
-							verifiedSource: false,
-						},
-					},
-				},
+				response,
 			};
 		};
 
@@ -74,8 +72,9 @@ describe("jsonrpc proxy - recording", () => {
 			quiet: true,
 			recordDir,
 			once: true,
+			exitOnOnce: false,
 			policy: { threshold: "danger", onRisk: "block" },
-			scanFn: scanFn as never,
+			scanFn,
 		});
 
 		try {
