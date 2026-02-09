@@ -60,13 +60,14 @@ function resolveConfigPath(): string | undefined {
 }
 
 function loadEnvConfig(): Config {
+	const sharedEtherscanKey = process.env.ETHERSCAN_API_KEY;
 	return {
 		etherscanKeys: {
-			ethereum: process.env.ETHERSCAN_API_KEY,
-			base: process.env.BASESCAN_API_KEY,
-			arbitrum: process.env.ARBISCAN_API_KEY,
-			optimism: process.env.OPTIMISM_API_KEY,
-			polygon: process.env.POLYGONSCAN_API_KEY,
+			ethereum: sharedEtherscanKey,
+			base: process.env.BASESCAN_API_KEY ?? sharedEtherscanKey,
+			arbitrum: process.env.ARBISCAN_API_KEY ?? sharedEtherscanKey,
+			optimism: process.env.OPTIMISM_API_KEY ?? sharedEtherscanKey,
+			polygon: process.env.POLYGONSCAN_API_KEY ?? sharedEtherscanKey,
 		},
 	};
 }

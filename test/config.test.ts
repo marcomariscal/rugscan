@@ -41,4 +41,27 @@ describe("config", () => {
 			await rm(tempPath, { force: true });
 		}
 	});
+
+	test("single ETHERSCAN_API_KEY is used as fallback for non-mainnet chains", async () => {
+		const previous = {
+			ETHERSCAN_API_KEY: process.env.ETHERSCAN_API_KEY,
+			BASESCAN_API_KEY: process.env.BASESCAN_API_KEY,
+			ARBISCAN_API_KEY: process.env.ARBISCAN_API_KEY,
+		};
+
+		try {
+			setEnv("ETHERSCAN_API_KEY", "shared-key");
+			setEnv("BASESCAN_API_KEY", undefined);
+			setEnv("ARBISCAN_API_KEY", "arb-override");
+
+			const config = await loadConfig();
+			expect(config.etherscanKeys?.ethereum).toBe("shared-key");
+			expect(config.etherscanKeys?.base).toBe("shared-key");
+			expect(config.etherscanKeys?.arbitrum).toBe("arb-override");
+		} finally {
+			setEnv("ETHERSCAN_API_KEY", previous.ETHERSCAN_API_KEY);
+			setEnv("BASESCAN_API_KEY", previous.BASESCAN_API_KEY);
+			setEnv("ARBISCAN_API_KEY", previous.ARBISCAN_API_KEY);
+		}
+	});
 });
