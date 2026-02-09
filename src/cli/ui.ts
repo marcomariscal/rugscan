@@ -824,9 +824,19 @@ function formatSimulationApproval(
 		previousAmount === undefined
 			? undefined
 			: formatAllowanceAmountLabel(approval.standard, previousAmount, approval.decimals);
-	const isRevoke = amount === 0n;
 
-	if (isRevoke) {
+	if (amount === undefined) {
+		const action = `${prefix}Allow ${spenderLabel} to spend UNKNOWN ${tokenLabel}`;
+		return {
+			text: previousLabel ? `${action} (was ${previousLabel})` : action,
+			detail:
+				previousLabel === undefined ? "allowance amount unknown — state read failed" : undefined,
+			isWarning: true,
+			key: `${approval.token.toLowerCase()}|${approval.spender.toLowerCase()}|amount|unknown`,
+		};
+	}
+
+	if (amount === 0n) {
 		const action = `${prefix}Revoke ${spenderLabel} spending of ${tokenLabel}`;
 		return {
 			text: previousLabel ? `${action} (was ${previousLabel})` : action,
