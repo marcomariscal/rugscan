@@ -1,8 +1,8 @@
-# Multi-Interface Design Research for rugscan
+# Multi-Interface Design Research for Assay (formerly Rugscan)
 Date: 2026-02-02
 
 ## Summary
-rugscan should expose one core analysis engine with four adapters: CLI, REST API, SDK, and MCP. Existing security tools are CLI-first with rich structured outputs (JSON/SARIF) and config files. Wallet-facing security engines emphasize fast pre-sign simulation, balance-change previews, and clear risk signals. Agent-friendly CLIs prioritize machine-readable output, deterministic exit codes, and stdin/stdout workflows.
+Assay should expose one core analysis engine with four adapters: CLI, REST API, SDK, and MCP. Existing security tools are CLI-first with rich structured outputs (JSON/SARIF) and config files. Wallet-facing security engines emphasize fast pre-sign simulation, balance-change previews, and clear risk signals. Agent-friendly CLIs prioritize machine-readable output, deterministic exit codes, and stdin/stdout workflows.
 
 ## Research Findings
 
@@ -82,9 +82,9 @@ Common inputs in this space include:
 - MCP is an open protocol that lets AI apps connect to tools/resources and discover them at runtime. (Source: MCP Introduction)
 - MCP defines a tool discovery and invocation flow (`tools/list`, `tools/call`) via JSON-RPC, and it expects the client to control human-in-the-loop approval. (Source: MCP Tools spec)
 
-**Pattern to carry forward:** provide a rugscan MCP server that exposes primitive scan tools and returns rich structured output; keep workflow logic in the agent, not the tool.
+**Pattern to carry forward:** provide an Assay MCP server that exposes primitive scan tools and returns rich structured output; keep workflow logic in the agent, not the tool.
 
-## Recommendations for rugscan
+## Recommendations for Assay
 
 ### A) One core analysis engine + four adapters
 - **Core engine**: pure analysis that returns a stable `ScanResult` schema.

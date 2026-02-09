@@ -1,4 +1,4 @@
-# Rugscan Target Architecture
+# Assay (formerly Rugscan) Target Architecture
 
 This is the desired architecture for the simplified, local-first CLI.
 

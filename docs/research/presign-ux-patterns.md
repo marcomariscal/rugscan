@@ -1,7 +1,7 @@
 # Pre-sign transaction security scanner UX patterns
 
 Research date: 2026-02-02
-Scope: wallet pre-sign UX, security tools, CLI input patterns, and integration models
+Scope: wallet pre-sign UX, security tools, CLI input patterns, and integration models for Assay (formerly Rugscan).
 
 ## Executive takeaways
 - Wallets rarely expose a full JSON export of unsigned transactions; the most common advanced view is raw hex (often hidden behind an advanced toggle). Copy/export is usually manual select/copy, not a dedicated button.
@@ -24,9 +24,9 @@ Notes:
 | Rainbow | Review screens focus on human-readable swap/bridge details (network, min received, fees, slippage, gas) with editable gas. | No raw data export mentioned in support docs. | Human-readable summary fields. | Rainbow support docs for swap/bridge review screens. |
 | Coinbase Wallet / Base app | Official docs emphasize network fee customization (max fee, priority fee, gas limit). | No raw data export mentioned in official docs. | Human-readable summary + gas fee customization. | Coinbase Help docs for adjusting network fees. |
 
-Implications for Rugscan:
+Implications for Assay:
 - Do not rely on wallets to give you a ready JSON export. Offer multiple input paths: raw hex, calldata + to/value, or JSON-RPC payload.
-- Provide a one-click "copy for Rugscan" in your own UI if you build a wallet plugin/extension.
+- Provide a one-click "copy for Assay" in your own UI if you build a wallet plugin/extension.
 
 ## 2) Existing pre-sign security tools
 
@@ -47,7 +47,7 @@ Notes:
 - `cast send` (Foundry) accepts raw hex data via `--data`, or ABI signature + args, with flags for `--rpc-url`, `--chain`, `--value`, gas options, etc. This is a clear multi-input model that favors flags and optional raw hex overrides.
 - `slither` is path-based (analyze a project or file) rather than transaction-input driven. Its CLI shows a "single command with options" pattern for security tooling, not JSON payloads.
 
-### Recommended CLI inputs for Rugscan
+### Recommended CLI inputs for Assay
 Support multiple formats and normalize internally to a single canonical schema:
 
 1) JSON (stdin or file)
