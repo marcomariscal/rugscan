@@ -223,8 +223,80 @@ function formatFindingLine(finding: Finding): string {
 	return `${style.color(message)} ${code}`.trimEnd();
 }
 
-function renderBox(title: string, sections: string[][]): string {
-	const allLines = [title, ...sections.flat()];
+/**
+ * Word-wrap a single line to fit within maxWidth visible columns.
+ * Preserves ANSI escape sequences across the break by tracking the last active
+ * color code and re-applying it on continuation lines.
+ *
+ * Continuation lines are indented slightly deeper than the original leading
+ * whitespace to visually signal they belong to the same logical line.
+ */
+function wrapBoxLine(input: string, maxWidth: number): string[] {
+	if (maxWidth <= 0 || visibleLength(input) <= maxWidth) return [input];
+
+	const stripped = stripAnsi(input);
+	const leadingSpaces = stripped.length - stripped.trimStart().length;
+	// Continuation indent: 3 more than the original, but never more than half the width
+	const contIndent = " ".repeat(Math.min(leadingSpaces + 3, Math.floor(maxWidth / 2)));
+
+	const lines: string[] = [];
+	let remaining = input;
+
+	while (visibleLength(remaining) > maxWidth) {
+		let visPos = 0;
+		let lastSpaceByte = -1;
+		let activeAnsi = "";
+		let i = 0;
+
+		while (i < remaining.length && visPos < maxWidth) {
+			// Skip ANSI escape sequences (zero visible width)
+			if (remaining[i] === "\x1b") {
+				const tail = remaining.slice(i);
+				// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape sequence
+				const m = tail.match(/^\x1b\[[0-9;]*m/);
+				if (m) {
+					const seq = m[0];
+					// Treat full reset (\x1b[0m) and default-foreground (\x1b[39m) as "no color"
+					activeAnsi = seq === "\x1b[0m" || seq === "\x1b[39m" ? "" : seq;
+					i += seq.length;
+					continue;
+				}
+			}
+			if (remaining[i] === " ") lastSpaceByte = i;
+			visPos++;
+			i++;
+		}
+
+		const breakByte = lastSpaceByte > 0 ? lastSpaceByte : i;
+		const skipByte = lastSpaceByte > 0 ? lastSpaceByte + 1 : i;
+
+		// Close any open ANSI sequence on this fragment
+		lines.push(`${remaining.slice(0, breakByte)}\x1b[0m`);
+		// Re-open the active ANSI color on the next fragment
+		remaining = `${contIndent}${activeAnsi}${remaining.slice(skipByte)}`;
+	}
+
+	if (remaining.length > 0) lines.push(remaining);
+	return lines;
+}
+
+/**
+ * Apply wrapBoxLine to every line in an array, returning a flat result.
+ * When maxContentWidth is undefined, lines pass through unchanged (backwards-compatible).
+ */
+function wrapAllLines(lines: string[], maxContentWidth: number | undefined): string[] {
+	if (maxContentWidth === undefined) return lines;
+	return lines.flatMap((line) => wrapBoxLine(line, maxContentWidth));
+}
+
+function renderBox(title: string, sections: string[][], maxWidth?: number): string {
+	// Box chrome takes 4 visible columns: "│ " (2) + " │" (2)
+	const contentMax = maxWidth !== undefined ? maxWidth - 4 : undefined;
+
+	const wrappedTitle = contentMax ? wrapBoxLine(title, contentMax) : [title];
+	const wrappedSections = sections.map((s) => wrapAllLines(s, contentMax));
+
+	const allLines = [...wrappedTitle, ...wrappedSections.flat()];
 	const width = allLines.reduce((max, line) => Math.max(max, visibleLength(line)), 0);
 	const horizontal = "─".repeat(width + 2);
 
@@ -233,13 +305,15 @@ function renderBox(title: string, sections: string[][]): string {
 	const divider = `├${horizontal}┤`;
 
 	const lines: string[] = [top];
-	lines.push(`│ ${padRight(title, width)} │`);
-	sections.forEach((section, index) => {
+	for (const t of wrappedTitle) {
+		lines.push(`│ ${padRight(t, width)} │`);
+	}
+	wrappedSections.forEach((section, index) => {
 		lines.push(divider);
 		for (const line of section) {
 			lines.push(`│ ${padRight(line, width)} │`);
 		}
-		if (index === sections.length - 1) {
+		if (index === wrappedSections.length - 1) {
 			return;
 		}
 	});
@@ -247,8 +321,14 @@ function renderBox(title: string, sections: string[][]): string {
 	return lines.join("\n");
 }
 
-function renderUnifiedBox(headerLines: string[], sections: string[][]): string {
-	const allLines = [...headerLines, ...sections.flat()];
+function renderUnifiedBox(headerLines: string[], sections: string[][], maxWidth?: number): string {
+	// Box chrome takes 4 visible columns: "│ " (2) + " │" (2)
+	const contentMax = maxWidth !== undefined ? maxWidth - 4 : undefined;
+
+	const wrappedHeaders = wrapAllLines(headerLines, contentMax);
+	const wrappedSections = sections.map((s) => wrapAllLines(s, contentMax));
+
+	const allLines = [...wrappedHeaders, ...wrappedSections.flat()];
 	const width = allLines.reduce((max, line) => Math.max(max, visibleLength(line)), 0);
 	const horizontal = "─".repeat(width + 2);
 
@@ -257,10 +337,10 @@ function renderUnifiedBox(headerLines: string[], sections: string[][]): string {
 	const divider = `├${horizontal}┤`;
 
 	const lines: string[] = [top];
-	for (const line of headerLines) {
+	for (const line of wrappedHeaders) {
 		lines.push(`│ ${padRight(line, width)} │`);
 	}
-	sections.forEach((section) => {
+	wrappedSections.forEach((section) => {
 		lines.push(divider);
 		for (const line of section) {
 			lines.push(`│ ${padRight(line, width)} │`);
@@ -880,7 +960,14 @@ export interface PolicySummary {
 
 export function renderResultBox(
 	result: AnalysisResult,
-	context?: { hasCalldata?: boolean; sender?: string; policy?: PolicySummary; verbose?: boolean },
+	context?: {
+		hasCalldata?: boolean;
+		sender?: string;
+		policy?: PolicySummary;
+		verbose?: boolean;
+		/** When set, long lines word-wrap to fit within this terminal width. */
+		maxWidth?: number;
+	},
 ): string {
 	const hasCalldata = context?.hasCalldata ?? false;
 	const actorLabel: "You" | "Sender" = context?.sender ? "You" : "Sender";
@@ -918,7 +1005,7 @@ export function renderResultBox(
 				renderNextActionSection(result, hasCalldata, context?.policy),
 			];
 
-	return renderUnifiedBox(headerLines, sections);
+	return renderUnifiedBox(headerLines, sections, context?.maxWidth);
 }
 
 function buildBalanceChangeItems(simulation: BalanceSimulationResult, chain: Chain): string[] {
@@ -1192,6 +1279,7 @@ export function renderApprovalBox(
 	chain: Chain,
 	context: ApprovalContext | undefined,
 	result: ApprovalAnalysisResult,
+	maxWidth?: number,
 ): string {
 	const { label, icon, color } = recommendationStyle(result.recommendation);
 	const title = ` ${color(`${icon} ${label}`)}`;
@@ -1236,7 +1324,7 @@ export function renderApprovalBox(
 	const spenderRecommendation = recommendationStyle(result.spenderAnalysis.recommendation);
 	spenderLines.push(` Recommendation: ${spenderRecommendation.color(spenderRecommendation.label)}`);
 
-	return renderBox(title, [approvalLines, findingsLines, spenderLines]);
+	return renderBox(title, [approvalLines, findingsLines, spenderLines], maxWidth);
 }
 
 export function renderHeading(text: string): string {
