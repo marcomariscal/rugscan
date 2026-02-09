@@ -2,6 +2,8 @@
 
 Pre-transaction security analysis for EVM contracts. Know what you're signing before you sign it.
 
+> ⚠️ **Disclaimer:** Assay provides informational risk signals only. It is not financial, legal, tax, or investment advice. Use at your own risk.
+
 ## Features
 
 - **Contract verification** — Sourcify (free) + Etherscan fallback
@@ -10,7 +12,7 @@ Pre-transaction security analysis for EVM contracts. Know what you're signing be
 - **Protocol matching** — DeFiLlama integration for known protocols
 - **Approval analysis** — Detect risky approval patterns before signing
 - **Phishing detection** — Etherscan labels for known phishing/scam addresses
-- **Schema v2 output** — Section-level confidence in JSON (`contract`, `simulation.balances`, `simulation.approvals`)
+- **Structured JSON output** — Contract summary, simulation details, and findings for automation
 
 ## Install
 
@@ -19,8 +21,8 @@ Pre-transaction security analysis for EVM contracts. Know what you're signing be
 For now, run from source:
 
 ```bash
-git clone https://github.com/marcomariscal/Assay.git
-cd Assay
+git clone https://github.com/marcomariscal/assay.git
+cd assay
 bun install
 
 # examples below use `assay ...`; when running from source, replace with:
@@ -122,6 +124,40 @@ Tools exposed:
 - `assay.analyzeTransaction`
 - `assay.analyzeAddress`
 
+### Claude Code: MCP vs non-MCP
+
+**Recommended: MCP mode** (tool calls from Claude Code)
+
+Add an MCP server entry in your Claude Code MCP config:
+
+```json
+{
+  "mcpServers": {
+    "assay": {
+      "command": "assay",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Then Claude can call `assay.analyzeTransaction` / `assay.analyzeAddress` directly.
+
+**Fallback: non-MCP mode** (CLI only)
+
+Run Assay from terminal and paste output into Claude:
+
+```bash
+# address scan (JSON output)
+assay scan 0x1234... --format json
+
+# calldata scan from file
+assay scan --calldata @tx.json --format json
+
+# human-readable output
+assay scan --calldata @tx.json --format text
+```
+
 ## Output
 
 ```
@@ -142,15 +178,19 @@ Tools exposed:
 ╰─────────────────────────────────────────────────────────────────╯
 ```
 
-**Exit codes (not a guarantee):**
+**Exit codes:**
 - `assay analyze` / `assay approval`:
   - `0` — OK per configured checks (no findings at/above the built-in thresholds)
   - `1` — CAUTION/WARNING
   - `2` — DANGER
-- `assay scan`:
-  - `0` — recommendation is below `--fail-on`
-  - `2` — recommendation is >= `--fail-on` (default: `warning`)
-  - `1` — invalid flags or runtime error
+- `assay scan` (pass/fail style):
+  - `0` — pass (risk is below your `--fail-on` threshold)
+  - `2` — fail/block (risk meets or exceeds `--fail-on`)
+  - `1` — tool/usage error (bad flags or runtime failure)
+
+Example with default threshold (`--fail-on warning`):
+- `ok` / `caution` → `0`
+- `warning` / `danger` → `2`
 
 ## Environment Variables
 
@@ -215,7 +255,6 @@ const response = await scanAddress("0x1234...", "ethereum", {
   apiKey: process.env.ASSAY_API_KEY,
 });
 
-console.log(response.schemaVersion); // 2
 console.log(response.scan.recommendation); // "ok" | "caution" | "warning" | "danger"
 console.log(response.scan.contract.confidence); // "high" | "medium" | "low"
 console.log(response.scan.simulation?.balances.confidence); // "high" | "medium" | "low" | "none"
@@ -230,7 +269,6 @@ const txResponse = await scanCalldata({
 console.log(txResponse.scan.simulation?.approvals.changes);
 ```
 
-`POST /v1/scan` returns schema version `2` payloads.
 
 ## Supported Chains
 
@@ -306,4 +344,4 @@ bun run check
 
 ## License
 
-MIT
+This project is licensed under the [MIT License](./LICENSE).

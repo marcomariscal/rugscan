@@ -118,6 +118,11 @@ function printUsage() {
 	console.log(`
 assay - Pre-transaction security analysis for EVM contracts
 
+Disclaimer:
+  Assay provides informational risk signals only.
+  Not financial, legal, tax, or investment advice.
+  Use at your own risk.
+
 Usage:
   assay analyze <address> [--chain <chain>] [--offline|--rpc-only]
   assay scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>] [--offline|--rpc-only]
