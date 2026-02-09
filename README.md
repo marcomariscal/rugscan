@@ -2,6 +2,8 @@
 
 Pre-transaction security analysis for EVM contracts. Know what you're signing before you sign it.
 
+> ⚠️ **Disclaimer:** Assay provides informational risk signals only. It is not financial, legal, tax, or investment advice. Use at your own risk.
+
 ## Features
 
 - **Contract verification** — Sourcify (free) + Etherscan fallback
