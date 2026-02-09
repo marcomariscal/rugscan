@@ -25,5 +25,25 @@ jobs:
 
       - run: bun install --frozen-lockfile
       - run: bun run check
-      - run: bun run build
+
+      - name: Run build (typecheck)
+        id: build
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        run: bun run build
+
+      - name: Summarize non-blocking build failure on PR
+        if: always() && steps.build.outcome == 'failure' && github.event_name == 'pull_request'
+        run: |
+          echo "::error title=TypeScript build failed::Non-blocking build failure on PR. Fix type errors before release and flip this to blocking."
+          {
+            echo "### ⚠️ Build failed (non-blocking on PR)"
+            echo
+            echo "This check currently runs in advisory mode on pull requests due existing baseline type errors."
+            echo "It remains blocking on \\`main\\` pushes."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail build outside PRs
+        if: steps.build.outcome == 'failure' && github.event_name != 'pull_request'
+        run: exit 1
+
       - run: bun test

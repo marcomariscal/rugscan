@@ -10,6 +10,8 @@ Use this checklist to configure `main` immediately after merge.
 1. Open: `assay` repository → **Settings** → **Security & analysis**
 2. Ensure **Dependency graph** is enabled
 
+> Until Dependency graph is enabled, the `Dependency Review` workflow will report a warning and skip (non-blocking).
+
 ### 1) Branch protection rule
 
 1. Open: `assay` repository → **Settings** → **Branches**

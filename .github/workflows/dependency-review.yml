@@ -16,7 +16,32 @@ jobs:
   dependency-review:
     runs-on: ubuntu-latest
     steps:
+      - name: Check dependency graph status
+        id: depgraph
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const status = data.security_and_analysis?.dependency_graph?.status || 'unknown';
+            core.info(`dependency_graph status: ${status}`);
+            core.setOutput('enabled', status === 'enabled' ? 'true' : 'false');
+
       - name: Dependency Review
+        if: steps.depgraph.outputs.enabled == 'true'
         uses: actions/dependency-review-action@v4
         with:
           comment-summary-in-pr: always
+
+      - name: Summarize skipped dependency review
+        if: steps.depgraph.outputs.enabled != 'true'
+        run: |
+          echo "::warning title=Dependency Review skipped::Dependency graph is not enabled for this repository."
+          {
+            echo "### ⚠️ Dependency Review skipped"
+            echo
+            echo "Dependency graph is not enabled in repository settings."
+            echo "Enable it at: https://github.com/${{ github.repository }}/settings/security_analysis"
+          } >> "$GITHUB_STEP_SUMMARY"
