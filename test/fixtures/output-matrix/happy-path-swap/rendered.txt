@@ -1,0 +1,28 @@
+Tx scan on ethereum
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Chain: ethereum                                                           │
+│  Protocol: Uniswap (uniswap)                                               │
+│  Action: Swap 0.25 ETH → 750 USDC                                          │
+│  Contract: Universal Router                                                │
+├────────────────────────────────────────────────────────────────────────────┤
+│  🎯 RECOMMENDATION: ✅ OK                                                   │
+│  Why: No high-risk findings; simulation and intent checks look consistent. │
+├────────────────────────────────────────────────────────────────────────────┤
+│  🧾 CHECKS                                                                 │
+│  Context: verified · age: unknown · txs: unknown                           │
+│  ✓ Source verified                                                         │
+│  ✓ Known protocol: Uniswap                                                 │
+├────────────────────────────────────────────────────────────────────────────┤
+│  💰 BALANCE CHANGES (high confidence)                                      │
+│  - You sent 0.25 ETH                                                       │
+│  - You received 750 USDC                                                   │
+├────────────────────────────────────────────────────────────────────────────┤
+│  🔐 APPROVALS (high confidence)                                            │
+│  - None detected                                                           │
+├────────────────────────────────────────────────────────────────────────────┤
+│  📊 RECOMMENDATION: OK                                                     │
+├────────────────────────────────────────────────────────────────────────────┤
+│  👉 NEXT ACTION                                                            │
+│  Action: SAFE to continue.                                                 │
+└────────────────────────────────────────────────────────────────────────────┘

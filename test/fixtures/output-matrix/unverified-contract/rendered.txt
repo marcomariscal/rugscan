@@ -1,0 +1,21 @@
+Tx scan on base
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│  Chain: base                                                                  │
+│  Protocol: Unknown                                                            │
+│  Contract: LaunchpadRouter                                                    │
+├───────────────────────────────────────────────────────────────────────────────┤
+│  🎯 RECOMMENDATION: ⚠️ WARNING                                                │
+│  Why: Source code is not verified                                             │
+├───────────────────────────────────────────────────────────────────────────────┤
+│  🧾 CHECKS                                                                    │
+│  Context: unverified · age: 0d · txs: 3                                       │
+│  ⚠️ Source not verified (or unknown)                                          │
+│  🚨 Source code is not verified [UNVERIFIED]                                  │
+│  ℹ️ Very low transaction history [LOW_ACTIVITY]                               │
+├───────────────────────────────────────────────────────────────────────────────┤
+│  📊 RECOMMENDATION: WARNING                                                   │
+├───────────────────────────────────────────────────────────────────────────────┤
+│  👉 NEXT ACTION                                                               │
+│  Action: PROMPT + verify spender/recipient and approval scope before signing. │
+└───────────────────────────────────────────────────────────────────────────────┘

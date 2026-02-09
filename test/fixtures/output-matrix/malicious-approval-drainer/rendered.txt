@@ -1,0 +1,29 @@
+Tx scan on ethereum
+
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  Chain: ethereum                                                                       │
+│  Protocol: USDC (usdc)                                                                 │
+│  Action: Allow 0x9999...9999 to spend up to UNLIMITED USDC (0xa0b8...eb48)             │
+│  Contract: USD Coin                                                                    │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  🎯 RECOMMENDATION: 🚨 DANGER                                                          │
+│  Why: Approval target is tied to known drainer activity                                │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  🧾 CHECKS                                                                             │
+│  Context: verified · age: unknown · txs: unknown                                       │
+│  ✓ Source verified                                                                     │
+│  ✓ Known protocol: USDC                                                                │
+│  🚨 Approval target is tied to known drainer activity [APPROVAL_TO_DANGEROUS_CONTRACT] │
+│  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL]                      │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  💰 BALANCE CHANGES (high confidence)                                                  │
+│  - No balance changes detected                                                         │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  🔐 APPROVALS (high confidence)                                                        │
+│  ⚠️ Allow 0x9999...9999 to spend UNLIMITED USDC (was 0)                                │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  📊 RECOMMENDATION: DANGER                                                             │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│  👉 NEXT ACTION                                                                        │
+│  Action: BLOCK — high-risk findings detected.                                          │
+└────────────────────────────────────────────────────────────────────────────────────────┘
