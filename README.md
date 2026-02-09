@@ -254,7 +254,32 @@ Notes:
   - `error.data.recommendation` + `error.data.simulationSuccess`
   - `error.data.allowlist` (when enabled): violations + `unknownApprovalSpenders`
 
-## Library Usage
+## Programmatic API (from source/local package)
+
+`assay` is **not published to npm yet**.
+If you consume this repo as a local/git dependency, there are two programmatic surfaces:
+
+1) **Core in-process API** (no HTTP round-trip)
+
+```typescript
+import { analyze, analyzeApproval } from "assay";
+
+const addressResult = await analyze("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "ethereum");
+console.log(addressResult.recommendation);
+console.log(addressResult.findings);
+
+const approvalResult = await analyzeApproval(
+  {
+    token: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    spender: "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+    amount: 1_000_000n,
+  },
+  "ethereum",
+);
+console.log(approvalResult.recommendation);
+```
+
+2) **HTTP scan client helpers** (calls `/v1/scan`)
 
 ```typescript
 import { scanAddress, scanCalldata } from "assay";
@@ -263,10 +288,7 @@ const response = await scanAddress("0x1234...", "ethereum", {
   baseUrl: "http://localhost:3000",
   apiKey: process.env.ASSAY_API_KEY,
 });
-
-console.log(response.scan.recommendation); // "ok" | "caution" | "warning" | "danger"
-console.log(response.scan.contract.confidence); // "high" | "medium" | "low"
-console.log(response.scan.simulation?.balances.confidence); // "high" | "medium" | "low" | "none"
+console.log(response.scan.recommendation);
 
 const txResponse = await scanCalldata({
   to: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -274,20 +296,19 @@ const txResponse = await scanCalldata({
   data: "0x095ea7b3...",
   chain: "ethereum",
 });
-
 console.log(txResponse.scan.simulation?.approvals.changes);
 ```
 
-
 ## Supported Chains
 
-| Chain | Explorer Key Env Var |
-|-------|---------------------|
-| Ethereum | `ETHERSCAN_API_KEY` |
-| Base | `ETHERSCAN_API_KEY` |
-| Arbitrum | `ETHERSCAN_API_KEY` |
-| Optimism | `ETHERSCAN_API_KEY` |
-| Polygon | `ETHERSCAN_API_KEY` |
+- `ethereum`
+- `base`
+- `arbitrum`
+- `optimism`
+- `polygon`
+
+Explorer enrichment for all of the above uses the same key:
+- `ETHERSCAN_API_KEY` (Etherscan V2)
 
 ## Finding Codes
 
