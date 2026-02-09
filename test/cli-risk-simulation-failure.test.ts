@@ -21,8 +21,8 @@ function baseAnalysis(): AnalysisResult {
 	};
 }
 
-describe("cli risk label with simulation failures", () => {
-	test("simulation failed + calldata never shows SAFE", () => {
+describe("cli recommendation label with simulation failures", () => {
+	test("simulation failed + calldata never shows OK", () => {
 		const analysis: AnalysisResult = {
 			...baseAnalysis(),
 			simulation: {
@@ -35,27 +35,31 @@ describe("cli risk label with simulation failures", () => {
 		};
 
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
-		const riskLine = output.split("\n").find((line) => line.includes("📊 RISK:"));
-		expect(riskLine).toBeDefined();
-		expect(riskLine).not.toContain("SAFE");
-		expect(riskLine).toContain("LOW");
+		const recommendationLine = output
+			.split("\n")
+			.find((line) => line.includes("📊 RECOMMENDATION:"));
+		expect(recommendationLine).toBeDefined();
+		expect(recommendationLine).not.toContain("OK");
+		expect(recommendationLine).toContain("CAUTION");
 		expect(output).not.toContain("- None detected");
 	});
 
-	test("simulation missing + calldata never shows SAFE", () => {
+	test("simulation missing + calldata never shows OK", () => {
 		const analysis: AnalysisResult = {
 			...baseAnalysis(),
 		};
 
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
-		const riskLine = output.split("\n").find((line) => line.includes("📊 RISK:"));
-		expect(riskLine).toBeDefined();
-		expect(riskLine).not.toContain("SAFE");
-		expect(riskLine).toContain("LOW");
+		const recommendationLine = output
+			.split("\n")
+			.find((line) => line.includes("📊 RECOMMENDATION:"));
+		expect(recommendationLine).toBeDefined();
+		expect(recommendationLine).not.toContain("OK");
+		expect(recommendationLine).toContain("CAUTION");
 		expect(output).not.toContain("- None detected");
 	});
 
-	test("simulation success (low confidence) + calldata never shows SAFE", () => {
+	test("simulation success (low confidence) + calldata never shows OK", () => {
 		const analysis: AnalysisResult = {
 			...baseAnalysis(),
 			simulation: {
@@ -67,10 +71,12 @@ describe("cli risk label with simulation failures", () => {
 		};
 
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
-		const riskLine = output.split("\n").find((line) => line.includes("📊 RISK:"));
-		expect(riskLine).toBeDefined();
-		expect(riskLine).not.toContain("SAFE");
-		expect(riskLine).toContain("LOW");
+		const recommendationLine = output
+			.split("\n")
+			.find((line) => line.includes("📊 RECOMMENDATION:"));
+		expect(recommendationLine).toBeDefined();
+		expect(recommendationLine).not.toContain("OK");
+		expect(recommendationLine).toContain("CAUTION");
 		expect(output).toContain("Could not verify all balance changes; treat this as higher risk.");
 		expect(output).toContain("Approval coverage is incomplete; treat this as higher risk.");
 	});

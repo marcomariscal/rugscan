@@ -1,23 +1,22 @@
 Tx scan on ethereum
 
-┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  Chain: ethereum                                                                                                                       │
-│  Protocol: USDC                                                                                                                        │
-│  Action: Approve USDC allowance                                                                                                        │
-│  Contract: USD Coin                                                                                                                    │
-├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  🧾 CHECKS                                                                                                                             │
-│  ✓ Source verified                                                                                                                     │
-│  ✓ Source code verified: USD Coin [VERIFIED]                                                                                           │
-│  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL]                                                                      │
-├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES                                                                                                                    │
-│  - Simulation data unavailable; treat this as higher risk.                                                                             │
-├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS                                                                                                                          │
-│  - Partial approvals observed; treat unknown approvals as higher risk:                                                                 │
-│  ⚠️ Allow 0x0000...0002 to spend UNLIMITED USD Coin                                                                                    │
-├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  📊 RISK: LOW                                                                                                                          │
-│  ⚠️ INCONCLUSIVE: Simulation data is incomplete; recommendation already reflects this uncertainty. — balances/approvals may be unknown │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│  Chain: ethereum                                                       │
+│  Protocol: USDC                                                        │
+│  Action: Approve USDC allowance                                        │
+│  Contract: USD Coin                                                    │
+├────────────────────────────────────────────────────────────────────────┤
+│  🧾 CHECKS                                                             │
+│  ✓ Source verified                                                     │
+│  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL]      │
+├────────────────────────────────────────────────────────────────────────┤
+│  💰 BALANCE CHANGES                                                    │
+│  - Simulation data unavailable; treat this as higher risk.             │
+├────────────────────────────────────────────────────────────────────────┤
+│  🔐 APPROVALS                                                          │
+│  - Partial approvals observed; treat unknown approvals as higher risk: │
+│  ⚠️ Allow 0x0000...0002 to spend UNLIMITED USD Coin                    │
+├────────────────────────────────────────────────────────────────────────┤
+│  📊 RECOMMENDATION: CAUTION                                            │
+│  ⚠️ INCONCLUSIVE: simulation unavailable                               │
+└────────────────────────────────────────────────────────────────────────┘

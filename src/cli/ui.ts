@@ -230,8 +230,36 @@ function renderUnifiedBox(headerLines: string[], sections: string[][]): string {
 	return lines.join("\n");
 }
 
+function protocolFromKnownProtocolFinding(findings: Finding[]): string | null {
+	for (const finding of findings) {
+		if (finding.code !== "KNOWN_PROTOCOL") continue;
+
+		if (isRecord(finding.details)) {
+			const name = finding.details.name;
+			if (typeof name === "string" && cleanLabel(name).length > 0) {
+				return cleanLabel(name);
+			}
+		}
+
+		const message = cleanLabel(finding.message);
+		for (const prefix of ["Recognized protocol:", "Known protocol:"]) {
+			if (!message.startsWith(prefix)) continue;
+			const parsed = cleanLabel(message.slice(prefix.length));
+			if (parsed.length > 0) {
+				return parsed;
+			}
+		}
+	}
+
+	return null;
+}
+
 function formatProtocolDisplay(result: AnalysisResult): string {
 	if (result.protocolMatch?.name) return cleanLabel(result.protocolMatch.name);
+
+	const fromFinding = protocolFromKnownProtocolFinding(result.findings);
+	if (fromFinding) return fromFinding;
+
 	if (!result.protocol) return "Unknown";
 	const protocol = cleanLabel(result.protocol);
 	const separator = " — ";
@@ -314,18 +342,26 @@ function findDecodedSignature(findings: Finding[]): string | null {
 	return null;
 }
 
-function recommendationRiskLabel(recommendation: Recommendation): string {
-	if (recommendation === "danger") return "HIGH";
-	if (recommendation === "warning") return "MEDIUM";
-	if (recommendation === "caution") return "LOW";
-	return "SAFE";
-}
+function formatInconclusiveReason(result: AnalysisResult): string {
+	const simulation = result.simulation;
+	if (!simulation) {
+		return "simulation unavailable";
+	}
+	if (!simulation.success) {
+		return `simulation failed${simulation.revertReason ? ` (${simulation.revertReason})` : ""}`;
+	}
 
-function riskColor(label: string) {
-	if (label === "CRITICAL" || label === "HIGH") return COLORS.danger;
-	if (label === "MEDIUM") return COLORS.warning;
-	if (label === "LOW") return COLORS.warning;
-	return COLORS.ok;
+	const reasons: string[] = [];
+	if (simulation.balances.confidence !== "high") {
+		reasons.push(`balances ${simulation.balances.confidence} confidence`);
+	}
+	if (simulation.approvals.confidence !== "high") {
+		reasons.push(`approvals ${simulation.approvals.confidence} confidence`);
+	}
+	if (reasons.length === 0) {
+		return "simulation confidence below high";
+	}
+	return reasons.join("; ");
 }
 
 function formatBalanceChangeLine(changes: string[]): string {
@@ -543,7 +579,6 @@ function renderChecksSection(result: AnalysisResult): string[] {
 		(f) =>
 			f.level === "danger" ||
 			f.level === "warning" ||
-			(f.level === "safe" && (f.code === "VERIFIED" || f.code === "KNOWN_PROTOCOL")) ||
 			f.code === "KNOWN_PHISHING" ||
 			f.code === "UPGRADEABLE" ||
 			f.code === "UNVERIFIED",
@@ -634,26 +669,15 @@ function renderPolicySection(
 }
 
 function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string[] {
-	let label = recommendationRiskLabel(result.recommendation);
-
 	const simulationUncertain = simulationIsUncertain(result, hasCalldata);
-	if (simulationUncertain && label === "SAFE") {
-		label = "LOW";
-	}
-
-	const colored = riskColor(label)(label);
-
+	const displayedRecommendation: Recommendation =
+		simulationUncertain && result.recommendation === "ok" ? "caution" : result.recommendation;
+	const recommendation = recommendationStyle(displayedRecommendation);
 	const lines: string[] = [];
-	lines.push(` 📊 RISK: ${colored}`);
+	lines.push(` 📊 RECOMMENDATION: ${recommendation.color(recommendation.label)}`);
 
 	if (simulationUncertain) {
-		const simulation = result.simulation;
-		const reason = !simulation
-			? "Simulation data is incomplete; recommendation already reflects this uncertainty."
-			: !simulation.success
-				? `simulation failed${simulation.revertReason ? ` (${simulation.revertReason})` : ""}`
-				: `balances ${simulation.balances.confidence} confidence, approvals ${simulation.approvals.confidence} confidence`;
-		lines.push(COLORS.warning(` ⚠️ INCONCLUSIVE: ${reason} — balances/approvals may be unknown`));
+		lines.push(COLORS.warning(` ⚠️ INCONCLUSIVE: ${formatInconclusiveReason(result)}`));
 	}
 
 	return lines;

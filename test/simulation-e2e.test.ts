@@ -74,7 +74,7 @@ describe("simulation e2e", () => {
 		expect(output).toContain("You sent 1 ETH");
 		expect(output).toContain("You received 1 WETH");
 		expect(output).toContain("🔐 APPROVALS");
-		expect(output).toContain("📊 RISK:");
+		expect(output).toContain("📊 RECOMMENDATION:");
 		expect(output).not.toContain("Simulation pending");
 		expect(output).not.toContain("Simulation failed");
 	}, 180000);
