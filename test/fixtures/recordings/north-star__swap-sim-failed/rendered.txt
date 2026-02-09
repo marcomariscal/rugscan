@@ -6,7 +6,7 @@ Tx scan on ethereum
 │  Action: Swap ETH → USDC                                                                   │
 │  Contract: Universal Router                                                                │
 ├────────────────────────────────────────────────────────────────────────────────────────────┤
-│  🎯 RECOMMENDATION: ✅ OK                                                                   │
+│  🎯 RECOMMENDATION: ⚡ CAUTION                                                              │
 │  Why: Simulation is inconclusive, so balance and approval effects may be incomplete.       │
 ├────────────────────────────────────────────────────────────────────────────────────────────┤
 │  🧾 CHECKS                                                                                 │
@@ -19,12 +19,12 @@ Tx scan on ethereum
 │  ✓ Allowlisted to: Universal Router (0x66a9...a8af)                                        │
 │  Policy decision: BLOCK (INCONCLUSIVE simulation)                                          │
 ├────────────────────────────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES (low confidence)                                                       │
+│  💰 BALANCE CHANGES (coverage: low)                                                        │
 │  - Simulation did not complete (Timeout)                                                   │
 │  - wallet fast-mode enabled; simulation skipped.                                           │
 │  - Balance changes unknown                                                                 │
 ├────────────────────────────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS (low confidence)                                                             │
+│  🔐 APPROVALS (coverage: low)                                                              │
 │  - Could not verify approval changes; treat this as higher risk.                           │
 ├────────────────────────────────────────────────────────────────────────────────────────────┤
 │  📊 RECOMMENDATION: CAUTION                                                                │

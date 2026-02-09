@@ -16,10 +16,10 @@ Tx scan on ethereum
 │  🚨 Approval target is tied to known drainer activity [APPROVAL_TO_DANGEROUS_CONTRACT] │
 │  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL]                      │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES (high confidence)                                                  │
+│  💰 BALANCE CHANGES (coverage: high)                                                   │
 │  - No balance changes detected                                                         │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS (high confidence)                                                        │
+│  🔐 APPROVALS (coverage: high)                                                         │
 │  ⚠️ Allow 0x9999...9999 to spend UNLIMITED USDC (was 0)                                │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │  📊 RECOMMENDATION: DANGER                                                             │

@@ -14,10 +14,10 @@ Tx scan on ethereum
 │  ✓ Source verified                                                         │
 │  ✓ Known protocol: Uniswap                                                 │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES (high confidence)                                      │
+│  💰 BALANCE CHANGES (coverage: high)                                       │
 │  - No balance changes detected                                             │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS (high confidence)                                            │
+│  🔐 APPROVALS (coverage: high)                                             │
 │  - None detected                                                           │
 ├────────────────────────────────────────────────────────────────────────────┤
 │  📊 RECOMMENDATION: OK                                                     │

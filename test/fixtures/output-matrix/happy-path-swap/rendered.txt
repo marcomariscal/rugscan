@@ -14,11 +14,11 @@ Tx scan on ethereum
 │  ✓ Source verified                                                         │
 │  ✓ Known protocol: Uniswap                                                 │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES (high confidence)                                      │
+│  💰 BALANCE CHANGES (coverage: high)                                       │
 │  - You sent 0.25 ETH                                                       │
 │  - You received 750 USDC                                                   │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS (high confidence)                                            │
+│  🔐 APPROVALS (coverage: high)                                             │
 │  - None detected                                                           │
 ├────────────────────────────────────────────────────────────────────────────┤
 │  📊 RECOMMENDATION: OK                                                     │
