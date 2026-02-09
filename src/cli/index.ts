@@ -26,6 +26,11 @@ import {
 
 const VALID_CHAINS: Chain[] = ["ethereum", "base", "arbitrum", "optimism", "polygon"];
 
+/** Return the terminal width when running interactively, undefined otherwise. */
+function terminalWidth(): number | undefined {
+	return process.stdout.columns || undefined;
+}
+
 type OptionSpec = { takesValue: boolean };
 
 type CommandOptionSpecs = Record<string, OptionSpec>;
@@ -332,6 +337,7 @@ async function runScan(args: string[]) {
 							hasCalldata: Boolean(parsed.data.calldata),
 							sender: parsed.data.calldata?.from,
 							verbose,
+							maxWidth: terminalWidth(),
 						});
 
 		await writeOutput(output, outputPayload, format === "text");
@@ -467,7 +473,7 @@ async function runApproval(args: string[]) {
 
 		const result = await analyzeApproval(tx, chain, context, config, { offline });
 
-		console.log(renderApprovalBox(tx, chain, context, result));
+		console.log(renderApprovalBox(tx, chain, context, result, terminalWidth()));
 		console.log("");
 
 		if (result.recommendation === "danger") {
@@ -568,6 +574,7 @@ async function runProxy(args: string[]) {
 								{
 									hasCalldata: Boolean(input.calldata),
 									sender: input.calldata?.from,
+									maxWidth: terminalWidth(),
 								},
 							)}\n`;
 
