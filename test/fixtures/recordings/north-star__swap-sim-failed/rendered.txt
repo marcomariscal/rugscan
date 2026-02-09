@@ -1,30 +1,28 @@
 Tx scan on ethereum
 
-┌───────────────────────────────────────────────────────────────────────────────────┐
-│  Chain: ethereum                                                                  │
-│  Protocol: Uniswap (uniswap)                                                      │
-│  Action: Swap ETH → USDC                                                          │
-│  Contract: Universal Router                                                       │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│  🧾 CHECKS                                                                        │
-│  ✓ Source verified                                                                │
-│  ✓ Known protocol: Uniswap                                                        │
-│  ✓ Source code verified: Universal Router [VERIFIED]                              │
-│  ✓ Recognized protocol: Uniswap [KNOWN_PROTOCOL]                                  │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│  🛡️ POLICY / ALLOWLIST                                                           │
-│  ✓ Allowed protocol (soft): Uniswap                                               │
-│  ✓ Allowlisted to: Universal Router (0x66a9...a8af)                               │
-│  Policy decision: BLOCK (INCONCLUSIVE simulation)                                 │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES (low confidence)                                              │
-│  - Simulation did not complete (Timeout)                                          │
-│  - wallet fast-mode enabled; simulation skipped.                                  │
-│  - Balance changes unknown                                                        │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS (low confidence)                                                    │
-│  - Could not verify approval changes; treat this as higher risk.                  │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│  📊 RISK: LOW                                                                     │
-│  ⚠️ INCONCLUSIVE: simulation failed (Timeout) — balances/approvals may be unknown │
-└───────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Chain: ethereum                                                 │
+│  Protocol: Uniswap (uniswap)                                     │
+│  Action: Swap ETH → USDC                                         │
+│  Contract: Universal Router                                      │
+├──────────────────────────────────────────────────────────────────┤
+│  🧾 CHECKS                                                       │
+│  ✓ Source verified                                               │
+│  ✓ Known protocol: Uniswap                                       │
+├──────────────────────────────────────────────────────────────────┤
+│  🛡️ POLICY / ALLOWLIST                                          │
+│  ✓ Allowed protocol (soft): Uniswap                              │
+│  ✓ Allowlisted to: Universal Router (0x66a9...a8af)              │
+│  Policy decision: BLOCK (INCONCLUSIVE simulation)                │
+├──────────────────────────────────────────────────────────────────┤
+│  💰 BALANCE CHANGES (low confidence)                             │
+│  - Simulation did not complete (Timeout)                         │
+│  - wallet fast-mode enabled; simulation skipped.                 │
+│  - Balance changes unknown                                       │
+├──────────────────────────────────────────────────────────────────┤
+│  🔐 APPROVALS (low confidence)                                   │
+│  - Could not verify approval changes; treat this as higher risk. │
+├──────────────────────────────────────────────────────────────────┤
+│  📊 RECOMMENDATION: CAUTION                                      │
+│  ⚠️ INCONCLUSIVE: simulation failed (Timeout)                    │
+└──────────────────────────────────────────────────────────────────┘

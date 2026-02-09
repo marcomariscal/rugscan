@@ -1,22 +1,20 @@
 Tx scan on ethereum
 
-┌──────────────────────────────────────────────────────┐
-│  Chain: ethereum                                     │
-│  Protocol: Uniswap (uniswap)                         │
-│  Action: Swap ETH → USDC                             │
-│  Contract: Universal Router                          │
-├──────────────────────────────────────────────────────┤
-│  🧾 CHECKS                                           │
-│  ✓ Source verified                                   │
-│  ✓ Known protocol: Uniswap                           │
-│  ✓ Source code verified: Universal Router [VERIFIED] │
-│  ✓ Recognized protocol: Uniswap [KNOWN_PROTOCOL]     │
-├──────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES (high confidence)                │
-│  - No balance changes detected                       │
-├──────────────────────────────────────────────────────┤
-│  🔐 APPROVALS (high confidence)                      │
-│  - None detected                                     │
-├──────────────────────────────────────────────────────┤
-│  📊 RISK: SAFE                                       │
-└──────────────────────────────────────────────────────┘
+┌───────────────────────────────────────┐
+│  Chain: ethereum                      │
+│  Protocol: Uniswap (uniswap)          │
+│  Action: Swap ETH → USDC              │
+│  Contract: Universal Router           │
+├───────────────────────────────────────┤
+│  🧾 CHECKS                            │
+│  ✓ Source verified                    │
+│  ✓ Known protocol: Uniswap            │
+├───────────────────────────────────────┤
+│  💰 BALANCE CHANGES (high confidence) │
+│  - No balance changes detected        │
+├───────────────────────────────────────┤
+│  🔐 APPROVALS (high confidence)       │
+│  - None detected                      │
+├───────────────────────────────────────┤
+│  📊 RECOMMENDATION: OK                │
+└───────────────────────────────────────┘

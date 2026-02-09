@@ -240,7 +240,12 @@ describe("north-star pre-sign UX (contract)", () => {
 			expect(normalizedActual).toBe(normalizedExpected);
 
 			// 2) Required section headings exist and are ordered
-			const requiredHeadings = ["🧾 CHECKS", "💰 BALANCE CHANGES", "🔐 APPROVALS", "📊 RISK"];
+			const requiredHeadings = [
+				"🧾 CHECKS",
+				"💰 BALANCE CHANGES",
+				"🔐 APPROVALS",
+				"📊 RECOMMENDATION",
+			];
 			let lastIndex = -1;
 			for (const heading of requiredHeadings) {
 				expect(normalizedActual).toContain(heading);

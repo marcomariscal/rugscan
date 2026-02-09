@@ -8,7 +8,6 @@ Tx scan on ethereum
 ├───────────────────────────────────────────────────────────────────┤
 │  🧾 CHECKS                                                        │
 │  ✓ Source verified                                                │
-│  ✓ Source code verified: USD Coin [VERIFIED]                      │
 │  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL] │
 ├───────────────────────────────────────────────────────────────────┤
 │  🛡️ POLICY / ALLOWLIST                                           │
@@ -23,5 +22,5 @@ Tx scan on ethereum
 │  🔐 APPROVALS (high confidence)                                   │
 │  ⚠️ Allow 0x9999...9999 to spend UNLIMITED USD Coin               │
 ├───────────────────────────────────────────────────────────────────┤
-│  📊 RISK: MEDIUM                                                  │
+│  📊 RECOMMENDATION: WARNING                                       │
 └───────────────────────────────────────────────────────────────────┘
