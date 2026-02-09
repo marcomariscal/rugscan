@@ -1,4 +1,4 @@
-# rugscan Code Review
+# Assay (formerly Rugscan) Code Review
 
 Scope: `src/types.ts`, `src/chains.ts`, `src/analyzer.ts`, `src/providers/*.ts`, `src/cli/index.ts`
 

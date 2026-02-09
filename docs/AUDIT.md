@@ -1,4 +1,4 @@
-# Rugscan Security Audit (current codebase)
+# Assay (formerly Rugscan) Security Audit (current codebase)
 
 Scope reviewed:
 - Core analysis flow: `src/analyzer.ts`, `src/approval.ts`, `src/scan.ts`

@@ -1,4 +1,4 @@
-# Rugscan Roadmap ("Blowfish, but open source and local")
+# Assay (formerly Rugscan) Roadmap ("Blowfish, but open source and local")
 
 Effort scale:
 - S: 0.5-1 day

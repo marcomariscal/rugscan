@@ -1,4 +1,4 @@
-# Rugscan Simplification Plan
+# Assay (formerly Rugscan) Simplification Plan
 
 ## Assumptions
 - Primary product is a local CLI for quick contract checks.

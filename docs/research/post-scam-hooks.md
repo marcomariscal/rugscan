@@ -1,9 +1,9 @@
 # Post-Scam Hooks & Agent Integration (Exploratory)
 
-Goal: define a post-scam hook system for Rugscan that triggers when a scam/rug is detected, routes signals to humans/agents, and feeds collective intelligence without leaking sensitive user data.
+Goal: define a post-scam hook system for Assay (formerly Rugscan) that triggers when a scam/rug is detected, routes signals to humans/agents, and feeds collective intelligence without leaking sensitive user data.
 
 ## Assumptions
-- Rugscan already produces pre-trade warnings and can classify post-trade outcomes.
+- Assay already produces pre-trade warnings and can classify post-trade outcomes.
 - "Post-scam" events should be evidence-backed and versioned to prevent noisy alerts.
 - Some integrations may require manual review or rate limits in early milestones.
 

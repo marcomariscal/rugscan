@@ -1,8 +1,8 @@
-# Agent integrations (rugscan)
+# Agent integrations (Assay)
 
-This doc describes **supported integration modes** for using rugscan as a preflight security gate before submitting EVM transactions.
+This doc describes **supported integration modes** for using Assay (formerly Rugscan) as a preflight security gate before submitting EVM transactions.
 
-> Scope note: rugscan is **EVM / Ethereum JSON-RPC only** right now.
+> Scope note: Assay is **EVM / Ethereum JSON-RPC only** right now.
 > The integration points below specifically target `eth_sendTransaction` and `eth_sendRawTransaction`.
 
 ## Mode 1 (preferred): In-process wrapper (agent-native)
@@ -14,7 +14,7 @@ Wrap your existing `viem` transport and block risky transactions *before* they h
 - Intercepts:
   - `eth_sendTransaction`
   - `eth_sendRawTransaction`
-- Runs the full rugscan pipeline in-process (`scanWithAnalysis`).
+- Runs the full Assay pipeline in-process (`scanWithAnalysis`).
 - If risky/unknown, throws `RugscanTransportError` containing:
   - `analyzeResponse` (structured)
   - `renderedSummary` (human-readable string)
@@ -74,7 +74,7 @@ This repo currently ships the viem wrapper as the “serious” integration path
 
 ## Mode 2: CLI preflight gate
 
-Run rugscan as a **preflight check** in an agent/tool workflow before signing/sending.
+Run Assay as a **preflight check** in an agent/tool workflow before signing/sending.
 
 - `rugscan scan ... --fail-on <threshold>` exits non-zero when recommendation >= threshold.
 - Useful when you can’t easily wrap a provider, or you want a one-shot shell step.
@@ -102,7 +102,7 @@ rugscan exec -- <command>
 
 Behavior:
 
-1. Start a local rugscan proxy bound to `127.0.0.1:<port>`.
+1. Start a local Assay proxy bound to `127.0.0.1:<port>`.
 2. Run `<command>` with `RPC_URL` (and/or common aliases like `ETH_RPC_URL`) set to the proxy URL.
 3. Proxy intercepts `eth_sendTransaction` / `eth_sendRawTransaction` and blocks risky/unknown.
 
