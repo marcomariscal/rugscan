@@ -111,7 +111,7 @@ assay proxy --upstream https://... --record-dir ./assay-recordings
 Notes:
 - `--wallet` enables a faster provider mix (keeps simulation, skips slower upstream calls).
 - `--record-dir` saves a per-tx bundle (JSON-RPC request, parsed calldata, AnalyzeResponse, rendered output) under the given directory.
-- For allowlists, see "Proxy Allowlist (v1)" below.
+- For allowlists, see "Proxy Allowlist" below.
 
 ### Shared options (selected)
 
@@ -233,7 +233,7 @@ Create `./assay.config.json` or `~/.config/assay/config.json`:
 
 Override location with `ASSAY_CONFIG=/path/to/config.json`.
 
-### Proxy Allowlist (v1)
+### Proxy Allowlist
 
 When running `assay proxy`, you can optionally enforce a local allowlist so transactions are blocked unless they only touch trusted endpoints.
 
