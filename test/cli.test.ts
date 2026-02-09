@@ -16,20 +16,35 @@ async function runCli(args: string[], envOverrides: Record<string, string | unde
 }
 
 describe("cli", () => {
-	test("exit codes: OK=0, CAUTION/WARNING=1, DANGER=2", async () => {
-		const okResult = await runCli(["analyze", "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984"]);
+	test("scan exit codes (with --fail-on caution): OK=0, CAUTION/WARNING=2, DANGER=2", async () => {
+		const okResult = await runCli([
+			"scan",
+			"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+			"--fail-on",
+			"caution",
+		]);
 		expect(okResult.exitCode).toBe(0);
 
-		const cautionResult = await runCli(["analyze", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"]);
-		expect(cautionResult.exitCode).toBe(1);
+		const cautionResult = await runCli([
+			"scan",
+			"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+			"--fail-on",
+			"caution",
+		]);
+		expect(cautionResult.exitCode).toBe(2);
 
-		const dangerResult = await runCli(["analyze", "0xdAC17F958D2ee523a2206206994597C13D831ec7"]);
+		const dangerResult = await runCli([
+			"scan",
+			"0xdAC17F958D2ee523a2206206994597C13D831ec7",
+			"--fail-on",
+			"caution",
+		]);
 		expect(dangerResult.exitCode).toBe(2);
 	}, 120000);
 
 	test("--chain flag targets the requested network", async () => {
 		const result = await runCli([
-			"analyze",
+			"scan",
 			"0x4200000000000000000000000000000000000006",
 			"--chain",
 			"base",
@@ -40,17 +55,13 @@ describe("cli", () => {
 	}, 120000);
 
 	test("invalid addresses return exit code 1", async () => {
-		const result = await runCli(["analyze", "not-an-address"]);
+		const result = await runCli(["scan", "not-an-address"]);
 		expect(result.exitCode).toBe(1);
-		expect(result.stderr).toContain("valid contract address");
+		expect(result.stderr).toContain("valid address or calldata input");
 	});
 
 	test("unknown option returns exit code 1", async () => {
-		const result = await runCli([
-			"analyze",
-			"0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
-			"--bogus",
-		]);
+		const result = await runCli(["scan", "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", "--bogus"]);
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr).toContain("Unknown option");
 	});

@@ -32,8 +32,8 @@ bun install
 ## Quick Start
 
 ```bash
-# Basic analysis
-assay analyze 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+# Basic address scan
+assay scan 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 
 # Approval analysis
 assay approval --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
@@ -42,7 +42,7 @@ assay approval --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
   --expected 0xE592427A0AEce92De3Edee1F18E0157C05861564
 
 # Different chain
-assay analyze 0x1234... --chain base
+assay scan 0x1234... --chain base
 ```
 
 ## CLI Usage
@@ -50,7 +50,6 @@ assay analyze 0x1234... --chain base
 Run `assay --help` for the full CLI reference.
 
 ```bash
-assay analyze <address> [options]
 assay scan [address] [options]
 assay safe <chain> <safeTxHash> [--safe-tx-json <path>] [--offline]
 assay approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>]
@@ -189,7 +188,7 @@ assay scan --calldata @tx.json --format text
 ```
 
 **Exit codes:**
-- `assay analyze` / `assay approval`:
+- `assay approval`:
   - `0` — OK per configured checks (no findings at/above the built-in thresholds)
   - `1` — CAUTION/WARNING
   - `2` — DANGER

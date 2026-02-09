@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { analyze } from "../analyzer";
 import { analyzeApproval } from "../approval";
 import { loadConfig, saveRpcUrl } from "../config";
 import { MAX_UINT256 } from "../constants";
@@ -32,12 +31,6 @@ type OptionSpec = { takesValue: boolean };
 type CommandOptionSpecs = Record<string, OptionSpec>;
 
 const OPTION_SPECS: Record<string, CommandOptionSpecs> = {
-	analyze: {
-		"--chain": { takesValue: true },
-		"-c": { takesValue: true },
-		"--offline": { takesValue: false },
-		"--rpc-only": { takesValue: false },
-	},
 	scan: {
 		"--format": { takesValue: true },
 		"--calldata": { takesValue: true },
@@ -124,7 +117,6 @@ Disclaimer:
   Use at your own risk.
 
 Usage:
-  assay analyze <address> [--chain <chain>] [--offline|--rpc-only]
   assay scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>] [--offline|--rpc-only]
   assay safe <chain> <safeTxHash> [--safe-tx-json <path>] [--offline|--rpc-only] [--format json] [--output <path|->]
   assay approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>] [--offline|--rpc-only]
@@ -132,7 +124,7 @@ Usage:
   assay mcp
 
 Options:
-  --chain, -c    Chain to analyze on (default: ethereum)
+  --chain, -c    Chain for scan/approval/proxy (default: ethereum)
                  Valid: ethereum, base, arbitrum, optimism, polygon
   --format       Output format for scan (json|sarif; default: text)
   --calldata     Unsigned tx JSON (Rabby/MetaMask-like), canonical calldata JSON, raw hex calldata, @file, or - for stdin
@@ -172,9 +164,8 @@ Environment:
   ETHERSCAN_API_KEY       Etherscan V2 API key (used across supported chains)
 
 Examples:
-  assay analyze 0x1234...
-  assay analyze 0x1234... --chain base
   assay scan 0x1234... --format json
+  assay scan 0x1234... --chain base
   # Paste Rabby JSON directly
   assay scan --calldata '{"chainId":1,"from":"0x...","to":"0x...","value":"0x0","data":"0x..."}' --format json
 
@@ -197,12 +188,6 @@ async function main() {
 	}
 
 	const command = args[0];
-	if (command === "analyze") {
-		const commandArgs = args.slice(1);
-		assertNoUnknownOptions(command, commandArgs);
-		await runAnalyze(commandArgs);
-		return;
-	}
 	if (command === "scan") {
 		const commandArgs = args.slice(1);
 		assertNoUnknownOptions(command, commandArgs);
@@ -231,61 +216,16 @@ async function main() {
 		await runMcp(args.slice(1));
 		return;
 	}
+	if (command === "analyze") {
+		console.error(
+			renderError("Error: `assay analyze` was removed. Use `assay scan <address>` instead."),
+		);
+		process.exit(1);
+	}
 
 	console.error(`Unknown command: ${command}`);
 	printUsage();
 	process.exit(1);
-}
-
-async function runAnalyze(args: string[]) {
-	// Parse arguments
-	const address = args[0];
-	if (!isValidAddress(address)) {
-		console.error(renderError("Error: Please provide a valid contract address"));
-		process.exit(1);
-	}
-
-	const chain = parseChain(args);
-	const offline = args.includes("--offline") || args.includes("--rpc-only");
-
-	try {
-		const config = await loadConfig();
-		if (offline) {
-			const rpcUrl = config.rpcUrls?.[chain];
-			if (!rpcUrl) {
-				console.error(
-					renderError(
-						`offline mode: missing config rpcUrls.${chain} (no public RPC fallbacks; set it in assay.config.json or ~/.config/assay/config.json)`,
-					),
-				);
-				process.exit(1);
-			}
-			installOfflineHttpGuard({ allowedRpcUrls: [rpcUrl], allowLocalhost: false });
-		}
-		console.log(renderHeading(`Analyzing ${address} on ${chain}...`));
-		console.log("");
-
-		const renderProgress = createProgressRenderer(process.stdout.isTTY);
-		const result = await analyze(address, chain, config, renderProgress, {
-			offline,
-		});
-
-		console.log("");
-		console.log(renderResultBox(result, { hasCalldata: false }));
-		console.log("");
-
-		// Exit code based on recommendation
-		if (result.recommendation === "danger") {
-			process.exit(2);
-		}
-		if (result.recommendation === "warning" || result.recommendation === "caution") {
-			process.exit(1);
-		}
-	} catch (error) {
-		console.error(renderError("Analysis failed:"));
-		console.error(error);
-		process.exit(1);
-	}
 }
 
 async function runScan(args: string[]) {
