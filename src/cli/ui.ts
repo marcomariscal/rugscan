@@ -9,9 +9,9 @@ import type {
 	AssetChange,
 	BalanceSimulationResult,
 	Chain,
-	ConfidenceLevel,
 	Finding,
 	Recommendation,
+	SimulationConfidenceLevel,
 } from "../types";
 
 const COLORS = {
@@ -506,9 +506,10 @@ function orderBalanceChanges(changes: string[]): string[] {
 	return [...negative, ...positive, ...other];
 }
 
-function sectionConfidenceSuffix(level: ConfidenceLevel | undefined): string {
+function sectionCoverageSuffix(level: SimulationConfidenceLevel | undefined): string {
 	if (!level) return "";
-	return ` (${level} confidence)`;
+	if (level === "none") return " (coverage: unavailable)";
+	return ` (coverage: ${level})`;
 }
 
 function simulationIsUncertain(result: AnalysisResult, hasCalldata: boolean): boolean {
@@ -527,7 +528,7 @@ function renderBalanceSection(
 ): string[] {
 	const lines: string[] = [];
 	const confidence = result.simulation?.balances.confidence;
-	lines.push(` 💰 BALANCE CHANGES${sectionConfidenceSuffix(confidence)}`);
+	lines.push(` 💰 BALANCE CHANGES${sectionCoverageSuffix(confidence)}`);
 
 	if (!hasCalldata) {
 		lines.push(COLORS.dim(" - Not available (no calldata)"));
@@ -638,7 +639,7 @@ function formatApprovalAmount(amount: bigint, decimals?: number): string {
 function renderApprovalsSection(result: AnalysisResult, hasCalldata: boolean): string[] {
 	const lines: string[] = [];
 	const confidence = result.simulation?.approvals.confidence;
-	lines.push(` 🔐 APPROVALS${sectionConfidenceSuffix(confidence)}`);
+	lines.push(` 🔐 APPROVALS${sectionCoverageSuffix(confidence)}`);
 	if (!hasCalldata) {
 		lines.push(COLORS.dim(" - Not available (no calldata)"));
 		return lines;
@@ -781,6 +782,13 @@ function resolvePolicyDecision(
 	return { decision: "ALLOW" };
 }
 
+function recommendationForDisplay(result: AnalysisResult, hasCalldata: boolean): Recommendation {
+	if (simulationIsUncertain(result, hasCalldata) && result.recommendation === "ok") {
+		return "caution";
+	}
+	return result.recommendation;
+}
+
 function buildRecommendationWhy(
 	result: AnalysisResult,
 	hasCalldata: boolean,
@@ -804,18 +812,22 @@ function buildRecommendationWhy(
 
 	const topFinding = collectChecksFindings(result)[0];
 	if (topFinding) {
+		if (topFinding.code === "UPGRADEABLE") {
+			return "Upgradeable proxy detected — code can change post-deploy, so trust assumptions matter.";
+		}
 		return cleanLabel(topFinding.message);
 	}
 
-	if (result.recommendation === "ok") {
+	const displayedRecommendation = recommendationForDisplay(result, hasCalldata);
+	if (displayedRecommendation === "ok") {
 		return hasCalldata
 			? "No high-risk findings; simulation and intent checks look consistent."
 			: "No high-risk findings in the available contract checks.";
 	}
-	if (result.recommendation === "caution") {
+	if (displayedRecommendation === "caution") {
 		return "Some risky patterns were detected and should be verified before signing.";
 	}
-	if (result.recommendation === "warning") {
+	if (displayedRecommendation === "warning") {
 		return "Multiple risk signals need manual confirmation before signing.";
 	}
 	return "High-risk signals were detected in this transaction.";
@@ -826,7 +838,8 @@ function renderRecommendationSection(
 	hasCalldata: boolean,
 	policy?: PolicySummary,
 ): string[] {
-	const style = recommendationStyle(result.recommendation);
+	const displayedRecommendation = recommendationForDisplay(result, hasCalldata);
+	const style = recommendationStyle(displayedRecommendation);
 	const lines: string[] = [];
 	lines.push(` 🎯 RECOMMENDATION: ${style.color(`${style.icon} ${style.label}`)}`);
 	lines.push(` Why: ${buildRecommendationWhy(result, hasCalldata, policy)}`);
@@ -879,8 +892,7 @@ function renderPolicySection(
 
 function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string[] {
 	const simulationUncertain = simulationIsUncertain(result, hasCalldata);
-	const displayedRecommendation: Recommendation =
-		simulationUncertain && result.recommendation === "ok" ? "caution" : result.recommendation;
+	const displayedRecommendation = recommendationForDisplay(result, hasCalldata);
 	const recommendation = recommendationStyle(displayedRecommendation);
 	const lines: string[] = [];
 	lines.push(` 📊 RECOMMENDATION: ${recommendation.color(recommendation.label)}`);

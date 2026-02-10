@@ -20,10 +20,10 @@ Tx scan on ethereum
 │  ⚠️ Non-allowlisted spender: Unknown spender (0x9999...9999)         │
 │  Policy decision: BLOCK                                              │
 ├──────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES (high confidence)                                │
+│  💰 BALANCE CHANGES (coverage: high)                                 │
 │  - No balance changes detected                                       │
 ├──────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS (high confidence)                                      │
+│  🔐 APPROVALS (coverage: high)                                       │
 │  ⚠️ Allow 0x9999...9999 to spend UNLIMITED USD Coin                  │
 ├──────────────────────────────────────────────────────────────────────┤
 │  📊 RECOMMENDATION: WARNING                                          │
