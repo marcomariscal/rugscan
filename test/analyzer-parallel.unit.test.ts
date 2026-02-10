@@ -184,7 +184,7 @@ describe("analyzer parallel execution (unit)", () => {
 		}
 
 		expect(terminalCounts.get("Sourcify")).toBe(1);
-		expect(terminalCounts.get("Etherscan Labels")).toBe(1);
+		expect(terminalCounts.get("Etherscan phishing list")).toBe(1);
 		expect(terminalCounts.get("Etherscan")).toBe(1);
 		expect(terminalCounts.get("Proxy")).toBe(1);
 		expect(terminalCounts.get("DeFiLlama")).toBe(1);

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
 	_resetPhishHackCache,
@@ -41,9 +41,9 @@ function writeCacheFile(chainId: number, addresses: string[], ageMs = 0) {
 		addresses,
 	};
 	writeFileSync(cachePath, `${JSON.stringify(payload)}\n`, "utf-8");
+
 	// If we need to make it look old (stale), we backdate mtime
 	if (ageMs > 0) {
-		const { utimesSync } = require("node:fs") as typeof import("node:fs");
 		const backDate = new Date(Date.now() - ageMs);
 		utimesSync(cachePath, backDate, backDate);
 	}
@@ -56,10 +56,7 @@ function stubFetchNeverCalled(): void {
 }
 
 function stubFetchTimeout(): void {
-	globalThis.fetch = async (_input, init) => {
-		// Simulate abort/timeout
-		const signal = (init as RequestInit | undefined)?.signal;
-		if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+	globalThis.fetch = async () => {
 		throw new DOMException("Aborted", "AbortError");
 	};
 }
@@ -76,29 +73,11 @@ function stubFetchPhishHack(addresses: string[]): void {
 		if (url === csvLink) {
 			return new Response(csvContent, { status: 200 });
 		}
-		// nametag endpoint returns not-ok to trigger fallback
-		return new Response("", { status: 403 });
+		throw new Error(`unexpected fetch: ${url}`);
 	};
 }
 
-function stubFetchExclusive(): void {
-	globalThis.fetch = async (input) => {
-		const url = typeof input === "string" ? input : input.toString();
-		if (url.includes("nametag")) {
-			return new Response(
-				JSON.stringify({
-					status: "0",
-					message: "NOTOK",
-					result: "Error! API Exclusive endpoint",
-				}),
-				{ status: 200 },
-			);
-		}
-		return new Response("", { status: 403 });
-	};
-}
-
-describe("etherscan labels disk cache", () => {
+describe("etherscan phishing list disk cache", () => {
 	test("getLabelsCacheState returns cold when no cache file exists", () => {
 		const state: LabelsCacheState = getLabelsCacheState("ethereum");
 		expect(state).toBe("cold");
@@ -190,41 +169,17 @@ describe("etherscan labels disk cache", () => {
 
 		expect(result).toBeNull();
 	});
-});
 
-describe("nametag exclusive endpoint detection", () => {
-	test("API Exclusive response caches non-support and falls back to phish list", async () => {
+	test("API key does not affect phishing list behavior", async () => {
 		const phishAddr = "0x000011387eb24f199e875b1325e4805efd3b0000";
-		writeCacheFile(1, [phishAddr]);
-		stubFetchExclusive();
+		stubFetchPhishHack([phishAddr]);
 
 		const result = await getAddressLabels(phishAddr, "ethereum", "fake-api-key", {
-			timeoutMs: 2_000,
+			timeoutMs: 5_000,
 			cache: true,
 		});
 
 		expect(result).not.toBeNull();
 		expect(result?.labels).toContain("Phish / Hack");
-	});
-
-	test("without API key, nametag endpoint is skipped entirely", async () => {
-		const phishAddr = "0x000011387eb24f199e875b1325e4805efd3b0000";
-		writeCacheFile(1, [phishAddr]);
-
-		let nametagCalled = false;
-		globalThis.fetch = async (input) => {
-			const url = typeof input === "string" ? input : input.toString();
-			if (url.includes("nametag")) {
-				nametagCalled = true;
-			}
-			return new Response("", { status: 403 });
-		};
-
-		await getAddressLabels(phishAddr, "ethereum", undefined, {
-			timeoutMs: 2_000,
-			cache: true,
-		});
-
-		expect(nametagCalled).toBe(false);
 	});
 });

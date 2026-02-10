@@ -237,7 +237,6 @@ export async function analyze(
 	let contractName: string | undefined;
 	let source: string | undefined;
 	let phishingLabels: string[] = [];
-	let phishingNametag: string | undefined;
 	let isPhishing = false;
 	let implementationName: string | undefined;
 	let protocolNameForFriendly: string | undefined;
@@ -292,7 +291,7 @@ export async function analyze(
 		const labelsCacheState = etherscan.getLabelsCacheState(chain);
 		const step = await runProvider({
 			id: "etherscanLabels",
-			label: "Etherscan Labels",
+			label: "Etherscan phishing list",
 			skipMessage: "skipped (--wallet)",
 			timeoutMessage:
 				labelsCacheState === "warm" ? undefined : `timeout (labels cache ${labelsCacheState})`,
@@ -303,21 +302,18 @@ export async function analyze(
 		if (step.status === "ok") {
 			const addressLabels = step.value;
 			if (addressLabels) {
-				const nametag = addressLabels.nametag;
 				const labels = addressLabels.labels;
-				const hasPhishingSignal =
-					(nametag ? containsPhishingKeyword(nametag) : false) ||
-					labels.some(containsPhishingKeyword);
+				const hasPhishingSignal = labels.some(containsPhishingKeyword);
 				report?.({
-					provider: "Etherscan Labels",
+					provider: "Etherscan phishing list",
 					status: "success",
-					message: hasPhishingSignal ? "phishing label" : "labels checked",
+					message: hasPhishingSignal ? "match" : "checked",
 				});
 			} else {
 				report?.({
-					provider: "Etherscan Labels",
+					provider: "Etherscan phishing list",
 					status: "success",
-					message: "no labels",
+					message: "no match",
 				});
 			}
 		}
@@ -433,10 +429,7 @@ export async function analyze(
 		const addressLabels = labelsStep.value;
 		if (addressLabels) {
 			phishingLabels = addressLabels.labels;
-			phishingNametag = addressLabels.nametag;
-			isPhishing =
-				(phishingNametag ? containsPhishingKeyword(phishingNametag) : false) ||
-				phishingLabels.some(containsPhishingKeyword);
+			isPhishing = phishingLabels.some(containsPhishingKeyword);
 		}
 	}
 
@@ -570,8 +563,7 @@ export async function analyze(
 	}
 
 	if (isPhishing) {
-		const detail =
-			phishingNametag ?? (phishingLabels.length > 0 ? phishingLabels.join(", ") : undefined);
+		const detail = phishingLabels.length > 0 ? phishingLabels.join(", ") : undefined;
 		findings.push({
 			level: "danger",
 			code: "KNOWN_PHISHING",

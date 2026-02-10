@@ -36,7 +36,7 @@ export function createAnalyzePolicy(mode: AnalyzeMode): AnalyzePolicy {
 			providers: {
 				rpc: { enabled: true, timeoutMs: 800 },
 				sourcify: { enabled: true, timeoutMs: 1_600 },
-				// Etherscan Labels can be very slow (and may fetch large tag exports).
+				// Etherscan phishing list can be very slow (and may fetch large tag exports).
 				etherscanLabels: { enabled: false, timeoutMs: 250 },
 				// Full Etherscan metadata is helpful but not worth blocking wallet sends.
 				etherscan: { enabled: false, timeoutMs: 750 },

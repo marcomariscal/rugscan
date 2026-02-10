@@ -82,109 +82,19 @@ export async function getContractData(
 }
 
 export interface AddressLabels {
-	nametag?: string;
 	labels: string[];
 }
-
-const nametagEndpointSupportedByChainId = new Map<number, boolean>();
 
 export async function getAddressLabels(
 	address: string,
 	chain: Chain,
-	apiKey?: string,
+	_apiKey?: string,
 	options?: ProviderRequestOptions,
 ): Promise<AddressLabels | null> {
-	const chainConfig = getChainConfig(chain);
-	const baseUrl = chainConfig.etherscanApiUrl;
-	const rootUrl = baseUrl.endsWith("/api") ? baseUrl.slice(0, -4) : baseUrl;
-	const chainId = chainConfig.chainId;
-
-	// The nametag endpoint is paywalled on many chains/accounts.
-	// If we don't have an API key, skip straight to the phish/hack export list.
-	if (!apiKey || apiKey.trim().length === 0) {
-		return await getPhishHackLabel(address, chainId, options);
-	}
-
-	const supported = nametagEndpointSupportedByChainId.get(chainId);
-	if (supported === false) {
-		return await getPhishHackLabel(address, chainId, options);
-	}
-
-	const url = `${rootUrl}/api/v2/nametag?address=${address}&chainid=${chainId}&apikey=${apiKey}`;
-
-	try {
-		const response = await fetchWithTimeout(url, { signal: options?.signal }, options?.timeoutMs);
-		if (!response.ok) {
-			return await getPhishHackLabel(address, chainId, options);
-		}
-
-		const data = await response.json();
-		if (isApiExclusiveError(data)) {
-			nametagEndpointSupportedByChainId.set(chainId, false);
-			return await getPhishHackLabel(address, chainId, options);
-		}
-
-		nametagEndpointSupportedByChainId.set(chainId, true);
-
-		const parsed = parseAddressLabels(data);
-		if (parsed) return parsed;
-		return await getPhishHackLabel(address, chainId, options);
-	} catch {
-		return await getPhishHackLabel(address, chainId, options);
-	}
-}
-
-function parseAddressLabels(value: unknown): AddressLabels | null {
-	if (!isRecord(value)) return null;
-
-	if ("status" in value) {
-		const status = value.status;
-		if (status !== "1" && status !== 1) {
-			return null;
-		}
-	}
-
-	if (isRecord(value) && ("nametag" in value || "labels" in value)) {
-		const parsed = parseNametagRecord(value);
-		if (parsed) return parsed;
-	}
-
-	if (Array.isArray(value.result) && value.result.length > 0) {
-		const entry = value.result[0];
-		if (isRecord(entry)) {
-			return parseNametagRecord(entry);
-		}
-	}
-
-	return null;
-}
-
-function isApiExclusiveError(value: unknown): boolean {
-	if (!isRecord(value)) return false;
-
-	const message = isNonEmptyString(value.message) ? value.message : "";
-	const result = isNonEmptyString(value.result) ? value.result : "";
-	const combined = `${message} ${result}`.toLowerCase();
-	return combined.includes("exclusive") && combined.includes("endpoint");
-}
-
-function parseNametagRecord(record: Record<string, unknown>): AddressLabels | null {
-	const nametag = isNonEmptyString(record.nametag) ? record.nametag : undefined;
-	const labels = normalizeLabels(record.labels);
-	if (!nametag && labels.length === 0) {
-		return null;
-	}
-	return { nametag, labels };
-}
-
-function normalizeLabels(value: unknown): string[] {
-	if (Array.isArray(value)) {
-		return value.filter(isNonEmptyString);
-	}
-	if (isNonEmptyString(value)) {
-		return [value];
-	}
-	return [];
+	// Scope update: Etherscan nametag/labels endpoint is Pro/Plus.
+	// We only use Etherscan's phish/hack export list to preserve KNOWN_PHISHING.
+	const chainId = getChainConfig(chain).chainId;
+	return await getPhishHackLabel(address, chainId, options);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -211,7 +121,6 @@ export function getLabelsCacheState(chain: Chain, nowMs: number = Date.now()): L
 /** Reset in-memory caches — only intended for tests. */
 export function _resetPhishHackCache(): void {
 	phishHackCache.clear();
-	nametagEndpointSupportedByChainId.clear();
 }
 
 function resolveAssayCacheDir(): string {
