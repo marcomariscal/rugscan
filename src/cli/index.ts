@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { analyzeApproval } from "../approval";
+import { runBounded } from "../concurrency";
 import { loadConfig, saveRpcUrl } from "../config";
 import { MAX_UINT256 } from "../constants";
 import { createJsonRpcProxyServer } from "../jsonrpc/proxy";
@@ -19,6 +20,7 @@ import {
 import {
 	createProgressRenderer,
 	renderApprovalBox,
+	renderCallProgressLine,
 	renderError,
 	renderHeading,
 	renderResultBox,
@@ -418,20 +420,28 @@ async function runSafe(args: string[]) {
 			process.stdout.write(`${renderHeading(`Safe scan on ${chain}`)}\n\n`);
 		}
 
-		// Analyze each sub-call (online only)
-		const callResults: SafeCallResult[] = [];
+		// Analyze each sub-call (online only).
+		// Multiple calls run in parallel with bounded concurrency to avoid
+		// blasting RPC providers while still being significantly faster than
+		// sequential execution.  Results are stored by index so the final
+		// report is deterministic regardless of completion order.
+		const SAFE_CONCURRENCY = 3;
+		const callResults: SafeCallResult[] = new Array(plan.callsToAnalyze.length);
+
 		if (!offline) {
 			const config = await loadConfig();
 			if (noSim) {
 				config.simulation = { ...config.simulation, enabled: false };
 			}
 			const showProgress = !quiet && output === "-";
-			const progress = showProgress
-				? createProgressRenderer(Boolean(process.stdout.isTTY))
-				: undefined;
+			const totalCalls = plan.callsToAnalyze.length;
 
-			for (let i = 0; i < plan.callsToAnalyze.length; i++) {
-				const call = plan.callsToAnalyze[i];
+			// Multi-call: print a batch header. Single-call: per-provider spinner instead.
+			if (showProgress && totalCalls > 1) {
+				process.stdout.write(`${renderHeading(`Analyzing ${totalCalls} calls...`)}\n\n`);
+			}
+
+			const tasks = plan.callsToAnalyze.map((call, index) => async () => {
 				const scanInput: ScanInput = {
 					calldata: {
 						to: call.to,
@@ -442,10 +452,15 @@ async function runSafe(args: string[]) {
 					},
 				};
 
-				if (showProgress) {
-					process.stdout.write(
-						`\n${renderHeading(`Analyzing call ${i + 1}/${plan.callsToAnalyze.length}...`)}\n`,
-					);
+				// Single-call keeps the familiar per-provider spinner;
+				// multi-call suppresses it (too noisy with concurrent workers).
+				const callProgress =
+					showProgress && totalCalls === 1
+						? createProgressRenderer(Boolean(process.stdout.isTTY))
+						: undefined;
+
+				if (showProgress && totalCalls === 1) {
+					process.stdout.write(`\n${renderHeading("Analyzing call 1/1...")}\n`);
 				}
 
 				try {
@@ -453,18 +468,27 @@ async function runSafe(args: string[]) {
 						chain,
 						config,
 						offline,
-						progress,
+						progress: callProgress,
 					});
-					callResults.push({ to: call.to, analysis });
+					callResults[index] = { to: call.to, analysis };
 				} catch (err) {
 					const message = err instanceof Error ? err.message : "unknown error";
-					callResults.push({ to: call.to, error: message });
+					callResults[index] = { to: call.to, error: message };
 				}
-			}
+
+				// Progressive disclosure: per-call completion line
+				if (showProgress && totalCalls > 1) {
+					process.stdout.write(
+						`${renderCallProgressLine(index, callResults[index], totalCalls)}\n`,
+					);
+				}
+			});
+
+			await runBounded(tasks, Math.min(SAFE_CONCURRENCY, totalCalls));
 		} else {
 			// Offline: parse-only (no analysis)
-			for (const call of plan.callsToAnalyze) {
-				callResults.push({ to: call.to });
+			for (let i = 0; i < plan.callsToAnalyze.length; i++) {
+				callResults[i] = { to: plan.callsToAnalyze[i].to };
 			}
 		}
 

@@ -1433,6 +1433,32 @@ function formatCallOneLiner(index: number, call: SafeCallResult, hasCalldata: bo
 	return ` Call ${index + 1} → ${target}${intent}  ${style.color(style.icon)}`;
 }
 
+/** Real-time progress line emitted as each call completes during parallel analysis. */
+export function renderCallProgressLine(
+	index: number,
+	result: SafeCallResult,
+	totalCalls: number,
+): string {
+	const { analysis } = result;
+	const target = analysis?.contract?.name
+		? cleanLabel(analysis.contract.name)
+		: shortenAddress(result.to);
+	const intent = analysis?.intent ? ` · ${cleanLabel(analysis.intent)}` : "";
+	const label = `Call ${index + 1}/${totalCalls}`;
+
+	if (result.error) {
+		const short = result.error.length > 50 ? `${result.error.slice(0, 50)}…` : result.error;
+		return `  ${COLORS.danger("✗")} ${label} → ${target}${intent}  ${COLORS.dim(`(${short})`)}`;
+	}
+
+	if (!analysis) {
+		return `  ${COLORS.dim("◌")} ${label} → ${target}${intent}`;
+	}
+
+	const style = recommendationStyle(analysis.recommendation);
+	return `  ${COLORS.ok("✓")} ${label} → ${target}${intent}  ${style.color(style.icon)}`;
+}
+
 function buildSafeOverallWhy(calls: SafeCallResult[]): string {
 	const analyzed = calls.filter((c) => c.analysis);
 	if (analyzed.length === 0) return "No analysis available.";
