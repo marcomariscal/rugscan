@@ -128,6 +128,7 @@ export async function analyze(
 		label: string;
 		skipMessage: string;
 		fn: (req: ProviderRequestOptions) => Promise<T>;
+		timeoutMessage?: string;
 	}): Promise<ProviderStep<T>> => {
 		const providerPolicy = policy.providers[args.id];
 		report?.({ provider: args.label, status: "start" });
@@ -163,7 +164,11 @@ export async function analyze(
 			return { status: "ok", value: outcome.value };
 		}
 		if (outcome.reason === "timeout") {
-			report?.({ provider: args.label, status: "error", message: "timeout" });
+			report?.({
+				provider: args.label,
+				status: "error",
+				message: args.timeoutMessage ?? "timeout",
+			});
 			return { status: "timeout" };
 		}
 
@@ -180,6 +185,7 @@ export async function analyze(
 	// Normalize address
 	const addr = address.toLowerCase();
 	const etherscanKey = config?.etherscanKeys?.[chain];
+	const hasEtherscanKey = Boolean(etherscanKey && etherscanKey.trim().length > 0);
 	const rpcUrl = config?.rpcUrls?.[chain];
 	if (offline && !rpcUrl) {
 		throw new Error(
@@ -288,6 +294,9 @@ export async function analyze(
 			id: "etherscanLabels",
 			label: "Etherscan Labels",
 			skipMessage: "skipped (--wallet)",
+			timeoutMessage: hasEtherscanKey
+				? undefined
+				: "timeout — tip: set ETHERSCAN_API_KEY for more reliable labels",
 			fn: async (req) => {
 				return await deps.etherscan.getAddressLabels(addr, chain, etherscanKey, req);
 			},
