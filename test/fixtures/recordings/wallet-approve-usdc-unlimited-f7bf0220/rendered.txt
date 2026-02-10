@@ -1,4 +1,4 @@
-[37mTx scan on ethereum (wallet mode)[39m
+[37mTransaction scan on ethereum (wallet mode)[39m
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │  Chain: ethereum                                                                │
@@ -11,7 +11,8 @@
 │ [33m ⚠️ Proxy / upgradeable (code can change)[39m                                       │
 │ [32m ✓ Known protocol: Circle USDC[39m                                                  │
 │  [33m⚠️ Upgradeable proxy (eip1967) - code can change[39m [37m[UPGRADEABLE][39m                 │
-│  [32m✓ Source code verified: FiatTokenProxy[39m [37m[VERIFIED][39m                             │
+│  [32m✓ Source code verified: FiatTokenProxy
+[39m [37m[VERIFIED][39m                             │
 │  [32m✓ Recognized protocol: Circle USDC[39m [37m[KNOWN_PROTOCOL][39m                            │
 │  [33m⚠️ Unlimited token approval (max allowance)[39m [37m[UNLIMITED_APPROVAL][39m               │
 ├─────────────────────────────────────────────────────────────────────────────────┤

@@ -178,7 +178,7 @@ function buildRenderedText(options: {
 	analysis: AnalysisResult;
 	sender?: string;
 }): string {
-	const heading = renderHeading(`Tx scan on ${options.chain}`);
+	const heading = renderHeading(`Transaction scan on ${options.chain}`);
 	const body = renderResultBox(options.analysis, {
 		hasCalldata: true,
 		sender: options.sender,

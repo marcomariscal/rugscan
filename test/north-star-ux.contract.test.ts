@@ -232,7 +232,8 @@ describe("north-star pre-sign UX (contract)", () => {
 			const analysis = analysisRaw;
 			const context = contextRaw;
 
-			const actual = `${renderHeading(`Tx scan on ${analysis.contract.chain}`)}\n\n${renderResultBox(analysis, context)}\n`;
+			const scanLabel = context.hasCalldata ? "Transaction" : "Address";
+			const actual = `${renderHeading(`${scanLabel} scan on ${analysis.contract.chain}`)}\n\n${renderResultBox(analysis, context)}\n`;
 			const normalizedActual = stripAnsi(actual);
 			const normalizedExpected = stripAnsi(expectedRaw);
 

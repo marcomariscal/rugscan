@@ -1,7 +1,7 @@
 {
 	"name": "assay",
 	"version": "0.1.0",
-	"description": "Pre-transaction security analysis for EVM contracts",
+	"description": "Pre-sign security analysis for EVM transactions",
 	"type": "module",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",

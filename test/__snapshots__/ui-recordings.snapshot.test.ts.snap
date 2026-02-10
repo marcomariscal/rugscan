@@ -1,7 +1,7 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`ui recordings snapshots recorded proxy outputs stay readable: north-star__swap-sim-ok 1`] = `
-"Tx scan on ethereum
+"Transaction scan on ethereum
 
 ┌──────────────────────────────┐
 │  Chain: ethereum             │
@@ -15,7 +15,7 @@ exports[`ui recordings snapshots recorded proxy outputs stay readable: north-sta
 `;
 
 exports[`ui recordings snapshots recorded proxy outputs stay readable: north-star__swap-sim-failed 1`] = `
-"Tx scan on ethereum
+"Transaction scan on ethereum
 
 ┌───────────────────────────────────────────────────────────────────────────────────────────────┐
 │  Chain: ethereum                                                                              │
@@ -52,7 +52,7 @@ exports[`ui recordings snapshots recorded proxy outputs stay readable: north-sta
 `;
 
 exports[`ui recordings snapshots recorded proxy outputs stay readable: wallet-approve-usdc-unlimited-f7bf0220 1`] = `
-"\x1B[37mTx scan on ethereum (wallet mode)\x1B[39m
+"\x1B[37mTransaction scan on ethereum (wallet mode)\x1B[39m
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │  Chain: ethereum                                                                │
@@ -84,7 +84,7 @@ exports[`ui recordings snapshots recorded proxy outputs stay readable: wallet-ap
 `;
 
 exports[`ui recordings snapshots recorded proxy outputs stay readable: north-star__policy-unknown-spender 1`] = `
-"Tx scan on ethereum
+"Transaction scan on ethereum
 
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Chain: ethereum                                                     │
@@ -119,7 +119,7 @@ exports[`ui recordings snapshots recorded proxy outputs stay readable: north-sta
 `;
 
 exports[`ui recordings snapshots recorded proxy outputs stay readable: wallet-transferfrom-failed-8362e95e 1`] = `
-"Tx scan on ethereum
+"Transaction scan on ethereum
 
 ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │  Chain: ethereum                                                                                                  │
@@ -145,7 +145,7 @@ exports[`ui recordings snapshots recorded proxy outputs stay readable: wallet-tr
 `;
 
 exports[`ui recordings snapshots recorded proxy outputs stay readable: north-star__approve-unlimited-sim-not-run 1`] = `
-"Tx scan on ethereum
+"Transaction scan on ethereum
 
 ┌───────────────────────────────────────────────────────────────────────────────────────────────┐
 │  Chain: ethereum                                                                              │
@@ -176,7 +176,7 @@ exports[`ui recordings snapshots recorded proxy outputs stay readable: north-sta
 `;
 
 exports[`ui recordings snapshots recorded proxy outputs stay readable: wallet-uniswap-swap-rlp-to-eth-fb2584e4 1`] = `
-"\x1B[37mTx scan on ethereum (wallet mode)\x1B[39m
+"\x1B[37mTransaction scan on ethereum (wallet mode)\x1B[39m
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │  Chain: ethereum                                                                │

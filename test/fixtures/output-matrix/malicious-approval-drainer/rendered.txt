@@ -1,4 +1,4 @@
-Tx scan on ethereum
+Transaction scan on ethereum
 
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │  Chain: ethereum                                                                       │
