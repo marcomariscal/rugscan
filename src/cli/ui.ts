@@ -863,7 +863,16 @@ function buildRecommendationWhy(
 ): string {
 	const simulationUncertain = simulationIsUncertain(result, hasCalldata);
 	if (simulationUncertain) {
-		return "Simulation didn't complete, so balance and approval effects couldn't be fully verified.";
+		const sim = result.simulation;
+		if (!sim) {
+			return "Simulation didn't run, so balance and approval effects couldn't be fully verified.";
+		}
+		if (!sim.success) {
+			const detail = sim.revertReason ? ` (${sim.revertReason})` : "";
+			return `Simulation didn't complete${detail}, so balance and approval effects couldn't be fully verified.`;
+		}
+		const reason = formatInconclusiveReason(result);
+		return `Simulation results were incomplete (${reason}), so balance and approval effects couldn't be fully verified.`;
 	}
 
 	if (policy) {
