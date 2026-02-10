@@ -14,7 +14,8 @@ function stripAnsi(input: string): string {
 describe("output text matrix (high-leverage scenarios)", () => {
 	for (const scenario of OUTPUT_MATRIX_SCENARIOS) {
 		test(`${scenario.id}: ${scenario.label}`, async () => {
-			const rendered = `${renderHeading(`Tx scan on ${scenario.analysis.contract.chain}`)}\n\n${renderResultBox(scenario.analysis, scenario.context)}\n`;
+			const scanLabel = scenario.context.hasCalldata ? "Transaction" : "Address";
+			const rendered = `${renderHeading(`${scanLabel} scan on ${scenario.analysis.contract.chain}`)}\n\n${renderResultBox(scenario.analysis, scenario.context)}\n`;
 			const actual = stripAnsi(rendered);
 			const expectedPath = path.join(fixturesDir, scenario.id, "rendered.txt");
 			const expected = stripAnsi(await readFile(expectedPath, "utf-8"));

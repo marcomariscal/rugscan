@@ -649,10 +649,14 @@ async function defaultScanFn(
 	let renderedText: string | undefined;
 	if (!options.quiet) {
 		const renderStarted = nowMs();
-		renderedText = `${renderHeading(`Tx scan on ${options.chain}`)}\n\n${renderResultBox(analysis, {
-			hasCalldata: Boolean(input.calldata),
-			sender: input.calldata?.from,
-		})}\n`;
+		const scanLabel = input.calldata ? "Transaction" : "Address";
+		renderedText = `${renderHeading(`${scanLabel} scan on ${options.chain}`)}\n\n${renderResultBox(
+			analysis,
+			{
+				hasCalldata: Boolean(input.calldata),
+				sender: input.calldata?.from,
+			},
+		)}\n`;
 		options.timings.add("proxy.render", nowMs() - renderStarted);
 	}
 

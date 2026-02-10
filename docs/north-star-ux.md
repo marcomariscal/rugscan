@@ -15,11 +15,12 @@ This spec intentionally matches the current `renderResultBox()` layout (CLI/prox
 A single heading line, then a blank line:
 
 ```
-Tx scan on <chain>
+Transaction scan on <chain>
 
 <box>
 ```
 
+- For address-only scans (no calldata), the heading is `Address scan on <chain>`.
 - `<chain>` is the resolved chain name (e.g. `ethereum`, `base`).
 
 ### 1.2 Unified box — REQUIRED

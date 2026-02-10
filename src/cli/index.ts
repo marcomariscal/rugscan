@@ -122,7 +122,7 @@ function assertNoUnknownOptions(command: string, args: string[]) {
 
 function printUsage() {
 	console.log(`
-assay - Pre-transaction security analysis for EVM contracts
+assay - Pre-sign security analysis for EVM transactions
 
 Disclaimer:
   Assay provides informational risk signals only.
@@ -136,6 +136,10 @@ Usage:
   assay proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--offline|--rpc-only] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--wallet] [--once]
   assay mcp
 
+Scan modes:
+  Address scan:      assay scan <address>
+  Transaction scan:  assay scan --calldata <...>   (or --data/--to/--value)
+
 Options:
   --chain, -c    Chain for scan/approval/proxy (default: ethereum)
                  Valid: ethereum, base, arbitrum, optimism, polygon
@@ -147,6 +151,7 @@ Options:
   --data         Raw hex calldata (alternative to --calldata)
   --no-sim       Disable transaction simulation (Anvil)
   --fail-on      Exit non-zero on recommendation >= threshold (default: warning)
+                 NOTE: "caution" exits 0 by default; use --fail-on caution for strict gating
   --output       Output file path or - for stdout (default: -)
   --quiet        Suppress non-essential logs
   --verbose      Show full findings list in text output (no cap)
@@ -324,7 +329,11 @@ async function runScan(args: string[]) {
 		const showProgress = format === "text" && !quiet && output === "-";
 		const progress = showProgress ? createProgressRenderer(process.stdout.isTTY) : undefined;
 		if (format === "text" && !quiet && output === "-") {
-			const target = address ?? calldata?.to ?? "input";
+			const target = address
+				? `address ${address}`
+				: calldata?.to
+					? `transaction to ${calldata.to}`
+					: "input";
 			process.stdout.write(`${renderHeading(`Analyzing ${target} on ${chain}...`)}\n\n`);
 		}
 
@@ -672,7 +681,7 @@ async function runProxy(args: string[]) {
 
 					const renderedText = quiet
 						? undefined
-						: `${renderHeading(`Tx scan on ${ctx.chain} (wallet mode)`)}\n\n${renderResultBox(
+						: `${renderHeading(`Transaction scan on ${ctx.chain} (wallet mode)`)}\n\n${renderResultBox(
 								analysis,
 								{
 									hasCalldata: Boolean(input.calldata),
