@@ -128,27 +128,66 @@ function isSkippedProgressMessage(message: string | undefined): boolean {
 	return message.toLowerCase().includes("skipped");
 }
 
+function activeProvidersLabel(activeProviders: string[]): string {
+	if (activeProviders.length === 0) {
+		return "Running checks...";
+	}
+	const [first, ...rest] = activeProviders;
+	if (!first) {
+		return "Running checks...";
+	}
+	if (rest.length === 0) {
+		return `Checking ${first}...`;
+	}
+	return `Checking ${first} (+${rest.length} more)...`;
+}
+
 export function createProgressRenderer(enabled: boolean) {
 	const spinner = new Spinner(enabled);
+	const activeProviders: string[] = [];
+
+	const addActiveProvider = (provider: string) => {
+		if (activeProviders.includes(provider)) return;
+		activeProviders.push(provider);
+	};
+
+	const removeActiveProvider = (provider: string) => {
+		const index = activeProviders.indexOf(provider);
+		if (index === -1) return;
+		activeProviders.splice(index, 1);
+	};
+
+	const restartSpinnerIfNeeded = () => {
+		if (!enabled) return;
+		if (activeProviders.length === 0) return;
+		spinner.start(activeProvidersLabel(activeProviders));
+	};
+
 	return (event: ProviderEvent) => {
 		const provider = event.provider;
 		const message = typeof event.message === "string" ? cleanLabel(event.message) : undefined;
 		switch (event.status) {
 			case "start":
-				spinner.start(`Checking ${provider}...`);
+				addActiveProvider(provider);
+				restartSpinnerIfNeeded();
 				break;
 			case "success": {
+				removeActiveProvider(provider);
 				const detail = message ? ` ${COLORS.dim(`(${message})`)}` : "";
 				if (isSkippedProgressMessage(message)) {
 					spinner.succeed(`${COLORS.warning("⏭")} ${provider}${detail}`);
+					restartSpinnerIfNeeded();
 					break;
 				}
 				spinner.succeed(`${COLORS.ok("✓")} ${provider}${detail}`);
+				restartSpinnerIfNeeded();
 				break;
 			}
 			case "error": {
+				removeActiveProvider(provider);
 				const detail = message ? ` ${COLORS.dim(`(${message})`)}` : "";
 				spinner.fail(`${COLORS.danger("✗")} ${provider}${detail}`);
+				restartSpinnerIfNeeded();
 				break;
 			}
 		}
