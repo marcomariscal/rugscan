@@ -54,7 +54,7 @@ function createStubDeps(calls: {
 }
 
 describe("analyzer wallet mode (unit)", () => {
-	test("skips Etherscan Labels in wallet mode", async () => {
+	test("skips Etherscan phishing list in wallet mode", async () => {
 		const calls = {
 			rpc: 0,
 			proxy: 0,
@@ -80,7 +80,7 @@ describe("analyzer wallet mode (unit)", () => {
 		expect(calls.labels).toBe(0);
 		expect(
 			progressEvents.some(
-				(e) => e.provider === "Etherscan Labels" && e.message?.includes("--wallet"),
+				(e) => e.provider === "Etherscan phishing list" && e.message?.includes("--wallet"),
 			),
 		).toBe(true);
 	});
