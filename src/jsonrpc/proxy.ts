@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
-import { parseTransaction, recoverTransactionAddress } from "viem";
+import { parseTransaction, recoverTransactionAddress, serializeTransaction } from "viem";
 import { createProgressRenderer, renderHeading, renderResultBox } from "../cli/ui";
 import { loadConfig } from "../config";
 import { fetchWithTimeout } from "../http";
@@ -204,16 +204,18 @@ function evaluateAllowlist(options: {
 	outcome: ProxyScanOutcome;
 }): AllowlistEvaluation {
 	const allowlist = options.config.allowlist;
-	const hasToAllowlist = Array.isArray(allowlist?.to);
-	const hasSpenderAllowlist = Array.isArray(allowlist?.spenders);
+	const allowToEntries = allowlist?.to;
+	const allowSpenderEntries = allowlist?.spenders;
+	const hasToAllowlist = Array.isArray(allowToEntries);
+	const hasSpenderAllowlist = Array.isArray(allowSpenderEntries);
 
 	if (!hasToAllowlist && !hasSpenderAllowlist) {
 		return { enabled: false, violations: [], unknownApprovalSpenders: false };
 	}
 
-	const allowTo = hasToAllowlist ? new Set(allowlist.to.map((v) => v.toLowerCase())) : null;
+	const allowTo = hasToAllowlist ? new Set(allowToEntries.map((v) => v.toLowerCase())) : null;
 	const allowSpenders = hasSpenderAllowlist
-		? new Set(allowlist.spenders.map((v) => v.toLowerCase()))
+		? new Set(allowSpenderEntries.map((v) => v.toLowerCase()))
 		: null;
 
 	const violations: AllowlistViolation[] = [];
@@ -382,7 +384,7 @@ function parseHexDataField(value: unknown): string {
 	return value.length > 0 ? value : "0x";
 }
 
-function isHexString(value: unknown): value is string {
+function isHexString(value: unknown): value is `0x${string}` {
 	if (typeof value !== "string") return false;
 	if (!/^0x[0-9a-fA-F]*$/.test(value)) return false;
 	// Must be even length (each byte = 2 hex chars)
@@ -427,7 +429,8 @@ export async function extractSendRawTransactionCalldata(
 		const parsed = parseTransaction(raw);
 		const to = typeof parsed.to === "string" ? parsed.to : undefined;
 		if (!to) return null;
-		const from = await recoverTransactionAddress({ serializedTransaction: raw });
+		const serializedTransaction = serializeTransaction(parsed);
+		const from = await recoverTransactionAddress({ serializedTransaction });
 		const value = parsed.value ?? 0n;
 		const data = typeof parsed.data === "string" ? parsed.data : "0x";
 		const chainId = parsed.chainId;

@@ -64,8 +64,8 @@ export async function runWithTimeout<T>(
 	});
 
 	const taskPromise: Promise<TimeoutOutcome<T>> = fn(controller.signal)
-		.then((value) => ({ ok: true, value, elapsedMs: now() - startedAtMs }))
-		.catch((error: unknown) => {
+		.then((value): TimeoutOutcome<T> => ({ ok: true, value, elapsedMs: now() - startedAtMs }))
+		.catch((error: unknown): TimeoutOutcome<T> => {
 			const reason = didTimeout ? "timeout" : controller.signal.aborted ? "aborted" : "error";
 			return { ok: false, reason, error, elapsedMs: now() - startedAtMs };
 		});

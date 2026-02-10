@@ -1,5 +1,5 @@
 import type { Transport } from "viem";
-import { parseTransaction, recoverTransactionAddress } from "viem";
+import { parseTransaction, recoverTransactionAddress, serializeTransaction } from "viem";
 import { renderResultBox } from "../cli/ui";
 import { type ScanOptions, scanWithAnalysis } from "../scan";
 import type { AnalyzeResponse, CalldataInput, ScanInput } from "../schema";
@@ -88,7 +88,8 @@ async function extractSendRawTransactionCalldata(params: unknown): Promise<Calld
 		const parsed = parseTransaction(raw);
 		const to = typeof parsed.to === "string" ? parsed.to : undefined;
 		if (!to) return null;
-		const from = await recoverTransactionAddress({ serializedTransaction: raw });
+		const serializedTransaction = serializeTransaction(parsed);
+		const from = await recoverTransactionAddress({ serializedTransaction });
 		const value = parsed.value ?? 0n;
 		const data = typeof parsed.data === "string" ? parsed.data : "0x";
 		const chainId = parsed.chainId;

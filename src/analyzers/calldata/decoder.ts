@@ -1,5 +1,5 @@
 import type { Abi, AbiFunction, AbiParameter } from "viem";
-import { decodeFunctionData, getAbiItem, parseAbiItem } from "viem";
+import { decodeFunctionData, getAbiItem, isHex, parseAbiItem } from "viem";
 import { extractSelector, isRecord, normalizeAddress, stringifyValue } from "./utils";
 
 const ERC20_ABI: Abi = [
@@ -80,6 +80,7 @@ export interface DecodedCall {
 export function decodeKnownCalldata(data: string): DecodedCall | null {
 	const selector = extractSelector(data);
 	if (!selector) return null;
+	if (!isHex(data)) return null;
 
 	try {
 		const decoded = decodeFunctionData({ abi: KNOWN_ABI, data });
@@ -104,6 +105,7 @@ export function decodeKnownCalldata(data: string): DecodedCall | null {
 export function decodeSignatureCandidates(data: string, signatures: string[]): DecodedCall[] {
 	const selector = extractSelector(data);
 	if (!selector) return [];
+	if (!isHex(data)) return [];
 
 	const decoded: DecodedCall[] = [];
 	const seen = new Set<string>();
@@ -132,6 +134,7 @@ export function decodeSignatureCandidates(data: string, signatures: string[]): D
 export function decodeAbiCalldata(data: string, abi: Abi): DecodedCall | null {
 	const selector = extractSelector(data);
 	if (!selector) return null;
+	if (!isHex(data)) return null;
 
 	try {
 		const decoded = decodeFunctionData({ abi, data });
@@ -162,6 +165,7 @@ export function decodeAbiCalldata(data: string, abi: Abi): DecodedCall | null {
 }
 
 function decodeArgs(abi: AbiFunction, data: string): unknown[] | null {
+	if (!isHex(data)) return null;
 	try {
 		const decoded = decodeFunctionData({ abi: [abi], data });
 		if (!Array.isArray(decoded.args)) return null;

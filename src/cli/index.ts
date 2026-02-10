@@ -984,7 +984,7 @@ function getString(record: Record<string, unknown>, key: string): string | undef
 
 async function readInput(value: string): Promise<string> {
 	if (value === "-") {
-		return await new Response(process.stdin).text();
+		return await Bun.stdin.text();
 	}
 	if (value.startsWith("@")) {
 		const path = value.slice(1);

@@ -178,6 +178,7 @@ export async function parseReceiptLogs(
 	for (const log of logs) {
 		const topic = log.topics[0];
 		if (!topic) continue;
+		const logIndex = typeof log.logIndex === "number" ? log.logIndex : 0;
 
 		if (topic === TRANSFER_TOPIC) {
 			const decoded = decodeLog(TRANSFER_ABI, log, "Transfer");
@@ -185,7 +186,7 @@ export async function parseReceiptLogs(
 			const to = getAddressArg(decoded?.args, "to");
 			const value = getBigIntArg(decoded?.args, "value");
 			if (!from || !to || value === null) continue;
-			rawTransfers.push({ token: log.address, from, to, value, logIndex: log.logIndex });
+			rawTransfers.push({ token: log.address, from, to, value, logIndex });
 			continue;
 		}
 
@@ -202,7 +203,7 @@ export async function parseReceiptLogs(
 				spender,
 				amount: value,
 				scope: "token",
-				logIndex: log.logIndex,
+				logIndex,
 			});
 			continue;
 		}
@@ -224,7 +225,7 @@ export async function parseReceiptLogs(
 				spender,
 				amount,
 				scope: "token",
-				logIndex: log.logIndex,
+				logIndex,
 			});
 			continue;
 		}
@@ -243,7 +244,7 @@ export async function parseReceiptLogs(
 				spender,
 				amount,
 				scope: "token",
-				logIndex: log.logIndex,
+				logIndex,
 			});
 			continue;
 		}
@@ -261,7 +262,7 @@ export async function parseReceiptLogs(
 				spender: approved,
 				tokenId,
 				scope: "token",
-				logIndex: log.logIndex,
+				logIndex,
 			});
 			continue;
 		}
@@ -289,7 +290,7 @@ export async function parseReceiptLogs(
 				spender: operator,
 				scope: "all",
 				approved,
-				logIndex: log.logIndex,
+				logIndex,
 			});
 			continue;
 		}
@@ -310,7 +311,7 @@ export async function parseReceiptLogs(
 				to,
 				tokenId: id,
 				amount: value,
-				logIndex: log.logIndex,
+				logIndex,
 			});
 			continue;
 		}
@@ -336,7 +337,7 @@ export async function parseReceiptLogs(
 					to,
 					tokenId,
 					amount,
-					logIndex: log.logIndex,
+					logIndex,
 				});
 			}
 		}

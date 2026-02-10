@@ -184,13 +184,11 @@ function formatDecodedParams(decoded: DecodedCall): string {
 		return decoded.args
 			.map((value, index) => formatArgEntry(names?.[index], value, index))
 			.join(", ");
-	}
-	if (isRecord(decoded.args)) {
+	} else if (isRecord(decoded.args)) {
+		const args = decoded.args;
 		const names =
-			decoded.argNames && decoded.argNames.length > 0
-				? decoded.argNames
-				: Object.keys(decoded.args);
-		return names.map((name, index) => formatArgEntry(name, decoded.args[name], index)).join(", ");
+			decoded.argNames && decoded.argNames.length > 0 ? decoded.argNames : Object.keys(args);
+		return names.map((name, index) => formatArgEntry(name, args[name], index)).join(", ");
 	}
 	return "";
 }

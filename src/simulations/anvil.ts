@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { createTestClient, http, publicActions } from "viem";
+import { createTestClient, http, publicActions, type Quantity } from "viem";
 import { arbitrum, base, mainnet, optimism, polygon } from "viem/chains";
 import { getChainConfig } from "../chains";
 import type { Chain, Config } from "../types";
@@ -118,7 +118,7 @@ async function spawnAnvil(options: {
 	const client = createAnvilClient(rpcUrl, options.chain);
 
 	let queue: Promise<void> = Promise.resolve();
-	let baselineSnapshotId: string | null = null;
+	let baselineSnapshotId: Quantity | null = null;
 	const fork = { forkUrl: options.forkUrl, forkBlock: options.forkBlock };
 
 	function runExclusive<T>(task: () => Promise<T>): Promise<T> {

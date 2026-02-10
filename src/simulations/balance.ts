@@ -1,4 +1,11 @@
-import { type Address, decodeAbiParameters, type Hex, hexToString, isAddress } from "viem";
+import {
+	type Address,
+	decodeAbiParameters,
+	type Hex,
+	hexToString,
+	isAddress,
+	sliceHex,
+} from "viem";
 import { decodeKnownCalldata } from "../analyzers/calldata/decoder";
 import { isRecord, toBigInt } from "../analyzers/calldata/utils";
 import { getChainConfig } from "../chains";
@@ -820,8 +827,8 @@ function curatedTokens(chain: Chain): Address[] {
 	return CURATED_TOKENS[chain] ?? [];
 }
 
-function isHexString(value: string): value is Hex {
-	return /^0x[0-9a-fA-F]*$/.test(value);
+function isHexString(value: unknown): value is Hex {
+	return typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
 }
 
 function buildFailureHints(tx: CalldataInput): string[] {
@@ -879,7 +886,7 @@ function decodeRevertError(error: unknown): string | null {
 	if (data) {
 		const selector = data.slice(0, 10).toLowerCase();
 		if (selector === "0x08c379a0") {
-			const encoded = `0x${data.slice(10)}`;
+			const encoded = sliceHex(data, 4);
 			try {
 				const decoded = decodeAbiParameters([{ type: "string" }], encoded);
 				const reason = decoded[0];
@@ -891,7 +898,7 @@ function decodeRevertError(error: unknown): string | null {
 			}
 		}
 		if (selector === "0x4e487b71") {
-			const encoded = `0x${data.slice(10)}`;
+			const encoded = sliceHex(data, 4);
 			try {
 				const decoded = decodeAbiParameters([{ type: "uint256" }], encoded);
 				const code = decoded[0];
@@ -986,7 +993,7 @@ async function readTokenMetadata(
 			changes
 				.filter((change) => change.assetType === "erc20" && change.address)
 				.map((change) => change.address)
-				.filter((address): address is Address => isAddress(address)),
+				.filter((address): address is Address => typeof address === "string" && isAddress(address)),
 		),
 	);
 	const metadata = new Map<Address, { symbol?: string; decimals?: number }>();

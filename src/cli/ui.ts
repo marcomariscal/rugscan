@@ -1573,7 +1573,7 @@ function buildAggregateSafeBalanceSection(
 
 	const worstConf = worstConfidenceOf(calls, (s) => s.balances.confidence);
 	const lines: string[] = [];
-	lines.push(` 💰 BALANCE CHANGES${sectionConfidenceSuffix(worstConf)}`);
+	lines.push(` 💰 BALANCE CHANGES${sectionCoverageSuffix(worstConf)}`);
 
 	if (anyFailed) {
 		lines.push(COLORS.warning(" - Some simulations failed; balance impact may be incomplete."));
@@ -1636,7 +1636,7 @@ function buildAggregateSafeApprovalSection(calls: SafeCallResult[]): string[] {
 
 	const worstConf = worstConfidenceOf(calls, (s) => s.approvals.confidence);
 	const lines: string[] = [];
-	lines.push(` 🔐 APPROVALS${sectionConfidenceSuffix(worstConf)}`);
+	lines.push(` 🔐 APPROVALS${sectionCoverageSuffix(worstConf)}`);
 
 	for (const approval of allItems) {
 		const prefix = approval.isWarning ? "⚠️" : "✓";

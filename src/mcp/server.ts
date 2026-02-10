@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AnalyzerDeps } from "../analyzer";
+import type { AnalyzeMode } from "../analyzer-policy";
 import { renderHeading, renderResultBox } from "../cli/ui";
 import { loadConfig } from "../config";
 import { scanWithAnalysis } from "../scan";
@@ -88,17 +89,6 @@ function resolveStubDepsFromEnv(): AnalyzerDeps | null {
 	if (process.env.ASSAY_MCP_STUB_DEPS !== "1") return null;
 
 	return {
-		ai: {
-			analyzeRisk: async () => ({
-				analysis: {
-					risk_score: 0,
-					summary: "stub",
-					concerns: [],
-					model: "stub",
-					provider: "openai",
-				},
-			}),
-		},
 		defillama: {
 			matchProtocol: async () => null,
 		},
@@ -114,7 +104,7 @@ function resolveStubDepsFromEnv(): AnalyzerDeps | null {
 			detectProxy: async () => ({ is_proxy: false }),
 		},
 		sourcify: {
-			checkVerification: async () => ({ verified: false }),
+			checkVerification: async () => ({ verified: false, verificationKnown: true }),
 		},
 	};
 }
@@ -277,8 +267,9 @@ export async function runMcpServer(): Promise<void> {
 						}
 
 						const nextConfig = configWithNoSim(config, parsed.data.noSim);
+						const mode: AnalyzeMode = parsed.data.walletMode ? "wallet" : "default";
 						const analyzeOptions = {
-							mode: parsed.data.walletMode ? "wallet" : "default",
+							mode,
 							deps: stubDeps ?? undefined,
 						};
 						const depsEnabled = analyzeOptions.deps !== undefined;
@@ -329,8 +320,9 @@ export async function runMcpServer(): Promise<void> {
 							return;
 						}
 
+						const mode: AnalyzeMode = parsed.data.walletMode ? "wallet" : "default";
 						const analyzeOptions = {
-							mode: parsed.data.walletMode ? "wallet" : "default",
+							mode,
 							deps: stubDeps ?? undefined,
 						};
 						const depsEnabled = analyzeOptions.deps !== undefined;

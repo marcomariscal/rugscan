@@ -1,3 +1,4 @@
+import type { EIP1193RequestFn, Quantity, TestRpcSchema } from "viem";
 import { nowMs } from "../timing";
 
 export interface AnvilForkConfig {
@@ -6,30 +7,30 @@ export interface AnvilForkConfig {
 }
 
 export interface AnvilResetClient {
-	snapshot: () => Promise<unknown>;
-	revert: (args: { id: string }) => Promise<unknown>;
-	request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+	snapshot: () => Promise<Quantity>;
+	revert: (args: { id: Quantity }) => Promise<unknown>;
+	request: EIP1193RequestFn<TestRpcSchema<"anvil">>;
 }
 
 export interface WarmResetResult {
-	baselineSnapshotId: string;
+	baselineSnapshotId: Quantity;
 	usedAnvilReset: boolean;
 	ms: number;
 }
 
-function isNonEmptyString(value: unknown): value is string {
-	return typeof value === "string" && value.trim().length > 0;
+function isQuantityString(value: unknown): value is Quantity {
+	return typeof value === "string" && /^0x[0-9a-fA-F]+$/.test(value);
 }
 
-async function takeSnapshot(client: AnvilResetClient): Promise<string> {
+async function takeSnapshot(client: AnvilResetClient): Promise<Quantity> {
 	const value = await client.snapshot();
-	if (!isNonEmptyString(value)) {
+	if (!isQuantityString(value)) {
 		throw new Error("Anvil snapshot returned invalid id");
 	}
 	return value;
 }
 
-async function revertToSnapshot(client: AnvilResetClient, id: string): Promise<void> {
+async function revertToSnapshot(client: AnvilResetClient, id: Quantity): Promise<void> {
 	const result = await client.revert({ id });
 	if (typeof result === "boolean" && result === false) {
 		throw new Error("Anvil revert failed");
@@ -52,7 +53,7 @@ async function anvilReset(client: AnvilResetClient, fork: AnvilForkConfig): Prom
 export async function warmResetAnvilFork(options: {
 	client: AnvilResetClient;
 	fork: AnvilForkConfig;
-	baselineSnapshotId: string | null;
+	baselineSnapshotId: Quantity | null;
 }): Promise<WarmResetResult> {
 	const started = nowMs();
 	const client = options.client;

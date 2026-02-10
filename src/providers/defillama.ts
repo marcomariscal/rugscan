@@ -56,6 +56,30 @@ interface Protocol {
 	address?: string;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseProtocols(value: unknown): Protocol[] {
+	if (!Array.isArray(value)) return [];
+	const result: Protocol[] = [];
+	for (const entry of value) {
+		if (!isRecord(entry)) continue;
+		const name = entry.name;
+		const slug = entry.slug;
+		const tvl = entry.tvl;
+		const chains = entry.chains;
+		const address = entry.address;
+		if (typeof name !== "string" || typeof slug !== "string") continue;
+		if (typeof tvl !== "number") continue;
+		if (!Array.isArray(chains)) continue;
+		const chainNames = chains.filter((chain): chain is string => typeof chain === "string");
+		if (address !== undefined && typeof address !== "string") continue;
+		result.push({ name, slug, tvl, chains: chainNames, address });
+	}
+	return result;
+}
+
 let protocolCache: Protocol[] | null = null;
 let cacheTime = 0;
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
@@ -76,9 +100,10 @@ async function getProtocols(options?: ProviderRequestOptions): Promise<Protocol[
 			return protocolCache || [];
 		}
 
-		protocolCache = await response.json();
+		const protocols = parseProtocols(await response.json());
+		protocolCache = protocols;
 		cacheTime = now;
-		return protocolCache;
+		return protocols;
 	} catch {
 		return protocolCache || [];
 	}

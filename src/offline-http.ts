@@ -19,19 +19,25 @@ export function installOfflineHttpGuard(options: OfflineHttpGuardOptions): () =>
 	const allowLocalhost = options.allowLocalhost ?? true;
 	const allowed = options.allowedRpcUrls.map(normalizeHttpUrl);
 
-	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-		const url = extractUrlString(input);
-		if (url && isHttpUrl(url)) {
-			const normalized = normalizeHttpUrl(url);
-			if (allowLocalhost && isLocalhostUrl(normalized)) {
-				return await originalFetch(input, init);
+	const wrappedFetch = Object.assign(
+		async (...args: Parameters<typeof fetch>): ReturnType<typeof fetch> => {
+			const [input, init] = args;
+			const url = extractUrlString(input);
+			if (url && isHttpUrl(url)) {
+				const normalized = normalizeHttpUrl(url);
+				if (allowLocalhost && isLocalhostUrl(normalized)) {
+					return await originalFetch(input, init);
+				}
+				if (!allowed.some((candidate) => candidate === normalized)) {
+					throw new Error(`offline mode: blocked HTTP request to ${url}`);
+				}
 			}
-			if (!allowed.some((candidate) => candidate === normalized)) {
-				throw new Error(`offline mode: blocked HTTP request to ${url}`);
-			}
-		}
-		return await originalFetch(input, init);
-	};
+			return await originalFetch(input, init);
+		},
+		{ preconnect: originalFetch.preconnect },
+	);
+
+	globalThis.fetch = wrappedFetch;
 
 	return () => {
 		globalThis.fetch = originalFetch;
