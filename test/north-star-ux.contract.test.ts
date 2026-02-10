@@ -245,8 +245,7 @@ describe("north-star pre-sign UX (contract)", () => {
 				"🧾 CHECKS",
 				"💰 BALANCE CHANGES",
 				"🔐 APPROVALS",
-				"📊 RECOMMENDATION",
-				"👉 NEXT ACTION",
+				"👉 VERDICT",
 			];
 			let lastIndex = -1;
 			for (const heading of requiredHeadings) {

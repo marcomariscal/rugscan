@@ -507,7 +507,7 @@ function orderBalanceChanges(changes: string[]): string[] {
 }
 
 function sectionCoverageSuffix(level: SimulationConfidenceLevel | undefined): string {
-	if (!level) return "";
+	if (!level || level === "high") return "";
 	if (level === "none") return " (coverage: unavailable)";
 	return ` (coverage: ${level})`;
 }
@@ -687,10 +687,10 @@ function contractVerificationState(result: AnalysisResult): "verified" | "unveri
 function formatChecksContextLine(result: AnalysisResult): string {
 	const verificationState = contractVerificationState(result);
 	const ageLabel =
-		result.contract.age_days === undefined ? "age: unknown" : `age: ${result.contract.age_days}d`;
+		result.contract.age_days === undefined ? "age: —" : `age: ${result.contract.age_days}d`;
 	const txCountLabel =
 		result.contract.tx_count === undefined
-			? "txs: unknown"
+			? "txs: —"
 			: `txs: ${new Intl.NumberFormat("en-US").format(result.contract.tx_count)}`;
 	return ` Context: ${verificationState} · ${ageLabel} · ${txCountLabel}`;
 }
@@ -890,15 +890,30 @@ function renderPolicySection(
 	return lines;
 }
 
-function renderRiskSection(result: AnalysisResult, hasCalldata: boolean): string[] {
+function renderVerdictSection(
+	result: AnalysisResult,
+	hasCalldata: boolean,
+	policy?: PolicySummary,
+): string[] {
 	const simulationUncertain = simulationIsUncertain(result, hasCalldata);
 	const displayedRecommendation = recommendationForDisplay(result, hasCalldata);
 	const recommendation = recommendationStyle(displayedRecommendation);
 	const lines: string[] = [];
-	lines.push(` 📊 RECOMMENDATION: ${recommendation.color(recommendation.label)}`);
+	lines.push(
+		` 👉 VERDICT: ${recommendation.color(`${recommendation.icon} ${recommendation.label}`)}`,
+	);
 
 	if (simulationUncertain) {
 		lines.push(COLORS.warning(` ⚠️ INCONCLUSIVE: ${formatInconclusiveReason(result)}`));
+	}
+
+	const actionLine = buildNextActionLine(result, hasCalldata, policy);
+	if (actionLine.includes("BLOCK")) {
+		lines.push(COLORS.danger(` ${actionLine}`));
+	} else if (actionLine.includes("PROMPT")) {
+		lines.push(COLORS.warning(` ${actionLine}`));
+	} else {
+		lines.push(COLORS.ok(` ${actionLine}`));
 	}
 
 	return lines;
@@ -935,25 +950,7 @@ function buildNextActionLine(
 	return "SAFE to continue.";
 }
 
-function renderNextActionSection(
-	result: AnalysisResult,
-	hasCalldata: boolean,
-	policy?: PolicySummary,
-): string[] {
-	const lines: string[] = [];
-	lines.push(" 👉 NEXT ACTION");
-	const actionLine = ` Action: ${buildNextActionLine(result, hasCalldata, policy)}`;
-	if (actionLine.includes("BLOCK")) {
-		lines.push(COLORS.danger(actionLine));
-		return lines;
-	}
-	if (actionLine.includes("PROMPT")) {
-		lines.push(COLORS.warning(actionLine));
-		return lines;
-	}
-	lines.push(COLORS.ok(actionLine));
-	return lines;
-}
+// renderNextActionSection removed — merged into renderVerdictSection
 
 type PolicyEndpointRole = "to" | "recipient" | "spender" | "operator";
 
@@ -1006,15 +1003,13 @@ export function renderResultBox(
 				...(context?.policy ? [renderPolicySection(result, hasCalldata, context.policy)] : []),
 				renderBalanceSection(result, hasCalldata, actorLabel),
 				renderApprovalsSection(result, hasCalldata),
-				renderRiskSection(result, hasCalldata),
-				renderNextActionSection(result, hasCalldata, context?.policy),
+				renderVerdictSection(result, hasCalldata, context?.policy),
 			]
 		: [
 				renderRecommendationSection(result, hasCalldata, context?.policy),
 				renderChecksSection(result, verboseFindings),
 				...(context?.policy ? [renderPolicySection(result, hasCalldata, context.policy)] : []),
-				renderRiskSection(result, hasCalldata),
-				renderNextActionSection(result, hasCalldata, context?.policy),
+				renderVerdictSection(result, hasCalldata, context?.policy),
 			];
 
 	return renderUnifiedBox(headerLines, sections, context?.maxWidth);

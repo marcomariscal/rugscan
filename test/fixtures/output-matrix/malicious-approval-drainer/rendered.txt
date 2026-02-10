@@ -10,20 +10,18 @@ Tx scan on ethereum
 │  Why: Approval target is tied to known drainer activity                                │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │  🧾 CHECKS                                                                             │
-│  Context: verified · age: unknown · txs: unknown                                       │
+│  Context: verified · age: — · txs: —                                                   │
 │  ✓ Source verified                                                                     │
 │  ✓ Known protocol: USDC                                                                │
 │  🚨 Approval target is tied to known drainer activity [APPROVAL_TO_DANGEROUS_CONTRACT] │
 │  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL]                      │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES (coverage: high)                                                   │
+│  💰 BALANCE CHANGES                                                                    │
 │  - No balance changes detected                                                         │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS (coverage: high)                                                         │
+│  🔐 APPROVALS                                                                          │
 │  ⚠️ Allow 0x9999...9999 to spend UNLIMITED USDC (was 0)                                │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│  📊 RECOMMENDATION: DANGER                                                             │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│  👉 NEXT ACTION                                                                        │
-│  Action: BLOCK — high-risk findings detected.                                          │
+│  👉 VERDICT: 🚨 DANGER                                                                 │
+│  BLOCK — high-risk findings detected.                                                  │
 └────────────────────────────────────────────────────────────────────────────────────────┘

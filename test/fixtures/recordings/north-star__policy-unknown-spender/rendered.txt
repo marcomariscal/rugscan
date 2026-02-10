@@ -10,7 +10,7 @@ Tx scan on ethereum
 │  Why: Policy blocked a non-allowlisted endpoint in this transaction. │
 ├──────────────────────────────────────────────────────────────────────┤
 │  🧾 CHECKS                                                           │
-│  Context: verified · age: unknown · txs: unknown                     │
+│  Context: verified · age: — · txs: —                                 │
 │  ✓ Source verified                                                   │
 │  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL]    │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -20,14 +20,12 @@ Tx scan on ethereum
 │  ⚠️ Non-allowlisted spender: Unknown spender (0x9999...9999)         │
 │  Policy decision: BLOCK                                              │
 ├──────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES (coverage: high)                                 │
+│  💰 BALANCE CHANGES                                                  │
 │  - No balance changes detected                                       │
 ├──────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS (coverage: high)                                       │
+│  🔐 APPROVALS                                                        │
 │  ⚠️ Allow 0x9999...9999 to spend UNLIMITED USD Coin                  │
 ├──────────────────────────────────────────────────────────────────────┤
-│  📊 RECOMMENDATION: WARNING                                          │
-├──────────────────────────────────────────────────────────────────────┤
-│  👉 NEXT ACTION                                                      │
-│  Action: BLOCK — policy rules did not allow this transaction.        │
+│  👉 VERDICT: ⚠️ WARNING                                              │
+│  BLOCK — policy rules did not allow this transaction.                │
 └──────────────────────────────────────────────────────────────────────┘

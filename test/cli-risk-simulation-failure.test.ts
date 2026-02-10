@@ -35,14 +35,11 @@ describe("cli recommendation label with simulation failures", () => {
 		};
 
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
-		const recommendationLine = output
-			.split("\n")
-			.find((line) => line.includes("📊 RECOMMENDATION:"));
-		expect(recommendationLine).toBeDefined();
-		expect(recommendationLine).not.toContain("OK");
-		expect(recommendationLine).toContain("CAUTION");
-		expect(output).toContain("👉 NEXT ACTION");
-		expect(output).toContain("Action: BLOCK");
+		const verdictLine = output.split("\n").find((line) => line.includes("👉 VERDICT:"));
+		expect(verdictLine).toBeDefined();
+		expect(verdictLine).not.toContain("OK");
+		expect(verdictLine).toContain("CAUTION");
+		expect(output).toContain("BLOCK");
 		expect(output).not.toContain("- None detected");
 	});
 
@@ -52,14 +49,11 @@ describe("cli recommendation label with simulation failures", () => {
 		};
 
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
-		const recommendationLine = output
-			.split("\n")
-			.find((line) => line.includes("📊 RECOMMENDATION:"));
-		expect(recommendationLine).toBeDefined();
-		expect(recommendationLine).not.toContain("OK");
-		expect(recommendationLine).toContain("CAUTION");
-		expect(output).toContain("👉 NEXT ACTION");
-		expect(output).toContain("Action: BLOCK");
+		const verdictLine = output.split("\n").find((line) => line.includes("👉 VERDICT:"));
+		expect(verdictLine).toBeDefined();
+		expect(verdictLine).not.toContain("OK");
+		expect(verdictLine).toContain("CAUTION");
+		expect(output).toContain("BLOCK");
 		expect(output).not.toContain("- None detected");
 	});
 
@@ -75,14 +69,11 @@ describe("cli recommendation label with simulation failures", () => {
 		};
 
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
-		const recommendationLine = output
-			.split("\n")
-			.find((line) => line.includes("📊 RECOMMENDATION:"));
-		expect(recommendationLine).toBeDefined();
-		expect(recommendationLine).not.toContain("OK");
-		expect(recommendationLine).toContain("CAUTION");
-		expect(output).toContain("👉 NEXT ACTION");
-		expect(output).toContain("Action: BLOCK");
+		const verdictLine = output.split("\n").find((line) => line.includes("👉 VERDICT:"));
+		expect(verdictLine).toBeDefined();
+		expect(verdictLine).not.toContain("OK");
+		expect(verdictLine).toContain("CAUTION");
+		expect(output).toContain("BLOCK");
 		expect(output).toContain("Could not verify all balance changes; treat this as higher risk.");
 		expect(output).toContain("Approval coverage is incomplete; treat this as higher risk.");
 	});

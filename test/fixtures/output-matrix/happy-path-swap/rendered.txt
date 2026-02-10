@@ -10,19 +10,17 @@ Tx scan on ethereum
 │  Why: No high-risk findings; simulation and intent checks look consistent. │
 ├────────────────────────────────────────────────────────────────────────────┤
 │  🧾 CHECKS                                                                 │
-│  Context: verified · age: unknown · txs: unknown                           │
+│  Context: verified · age: — · txs: —                                       │
 │  ✓ Source verified                                                         │
 │  ✓ Known protocol: Uniswap                                                 │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES (coverage: high)                                       │
+│  💰 BALANCE CHANGES                                                        │
 │  - You sent 0.25 ETH                                                       │
 │  - You received 750 USDC                                                   │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS (coverage: high)                                             │
+│  🔐 APPROVALS                                                              │
 │  - None detected                                                           │
 ├────────────────────────────────────────────────────────────────────────────┤
-│  📊 RECOMMENDATION: OK                                                     │
-├────────────────────────────────────────────────────────────────────────────┤
-│  👉 NEXT ACTION                                                            │
-│  Action: SAFE to continue.                                                 │
+│  👉 VERDICT: ✅ OK                                                          │
+│  SAFE to continue.                                                         │
 └────────────────────────────────────────────────────────────────────────────┘

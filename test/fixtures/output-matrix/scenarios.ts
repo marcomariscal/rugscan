@@ -53,8 +53,8 @@ const MALICIOUS_PHISHING_CONTRACT: OutputMatrixScenario = {
 	},
 	keyAssertions: [
 		"Known phishing contract tied to wallet drain reports [KNOWN_PHISHING]",
-		"📊 RECOMMENDATION: DANGER",
-		"Action: BLOCK — high-risk findings detected.",
+		"👉 VERDICT: 🚨 DANGER",
+		"BLOCK — high-risk findings detected.",
 	],
 };
 
@@ -170,7 +170,7 @@ const UNVERIFIED_CONTRACT: OutputMatrixScenario = {
 	keyAssertions: [
 		"Context: unverified · age: 0d · txs: 3",
 		"⚠️ Source not verified (or unknown)",
-		"Action: PROMPT + verify spender/recipient and approval scope before signing.",
+		"PROMPT + verify spender/recipient and approval scope before signing.",
 	],
 };
 
@@ -303,7 +303,7 @@ const HAPPY_PATH_SWAP: OutputMatrixScenario = {
 		"Action: Swap 0.25 ETH → 750 USDC",
 		"You sent 0.25 ETH",
 		"You received 750 USDC",
-		"Action: SAFE to continue.",
+		"SAFE to continue.",
 	],
 };
 
