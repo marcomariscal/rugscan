@@ -22,7 +22,51 @@ async function runCli(args: string[]) {
 }
 
 describe("safe CLI output matrix", () => {
-	test("intricate Safe multisend fixture renders deterministic text summary", async () => {
+	test("intricate Safe multisend fixture renders user-facing summary (offline)", async () => {
+		const result = await runCli([
+			"safe",
+			"arbitrum",
+			SAFE_TX_HASH,
+			"--offline",
+			"--safe-tx-json",
+			SAFE_FIXTURE_PATH,
+		]);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stderr.trim()).toBe("");
+
+		const stdout = stripAnsi(result.stdout);
+		// Decision-summary framing (not raw plumbing)
+		expect(stdout).toContain("Safe scan on arbitrum");
+		expect(stdout).toContain("Multisend");
+		expect(stdout).toContain("2 calls");
+		// Per-call targets shown as short addresses (not raw hex dumps)
+		expect(stdout).toContain("Call 1");
+		expect(stdout).toContain("Call 2");
+		// Offline: explicit messaging about analysis availability
+		expect(stdout).toContain("analysis requires network");
+		// Raw plumbing NOT shown in default mode
+		expect(stdout).not.toContain("Kind:");
+		expect(stdout).not.toContain("Calls:");
+	});
+
+	test("Safe multisend offline with --verbose shows safeTxHash", async () => {
+		const result = await runCli([
+			"safe",
+			"arbitrum",
+			SAFE_TX_HASH,
+			"--offline",
+			"--safe-tx-json",
+			SAFE_FIXTURE_PATH,
+			"--verbose",
+		]);
+
+		expect(result.exitCode).toBe(0);
+		const stdout = stripAnsi(result.stdout);
+		expect(stdout).toContain(SAFE_TX_HASH);
+	});
+
+	test("Safe multisend --format json outputs raw structured data", async () => {
 		const result = await runCli([
 			"safe",
 			"arbitrum",
@@ -31,18 +75,15 @@ describe("safe CLI output matrix", () => {
 			"--safe-tx-json",
 			SAFE_FIXTURE_PATH,
 			"--format",
-			"text",
+			"json",
 		]);
 
 		expect(result.exitCode).toBe(0);
-		expect(result.stderr.trim()).toBe("");
-
-		const stdout = stripAnsi(result.stdout);
-		expect(stdout).toContain("Safe ingest on arbitrum");
-		expect(stdout).toContain(`SafeTxHash: ${SAFE_TX_HASH}`);
-		expect(stdout).toContain("Kind: multisend");
-		expect(stdout).toContain("Safe: 0xf3b46870658211414684e061bc1514213e80c49c");
-		expect(stdout).toContain("Calls: 2");
+		const parsed = JSON.parse(result.stdout);
+		expect(parsed.chain).toBe("arbitrum");
+		expect(parsed.safeTxHash).toBe(SAFE_TX_HASH);
+		expect(parsed.plan.kind).toBe("multisend");
+		expect(parsed.plan.callsToAnalyze.length).toBe(2);
 	});
 
 	test("broken Safe fixture surfaces parse failure in CLI output", async () => {
@@ -53,13 +94,11 @@ describe("safe CLI output matrix", () => {
 			"--offline",
 			"--safe-tx-json",
 			BROKEN_SAFE_FIXTURE_PATH,
-			"--format",
-			"text",
 		]);
 
 		expect(result.exitCode).toBe(1);
-		expect(result.stdout).toBe("");
-		expect(result.stderr).toContain("Safe ingest failed:");
+		// Heading is written to stdout before the error
+		expect(result.stderr).toContain("Safe scan failed:");
 		expect(result.stderr).toContain("Invalid Safe Transaction Service response");
 	});
 });
