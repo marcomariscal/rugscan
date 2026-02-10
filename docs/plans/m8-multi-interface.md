@@ -105,7 +105,7 @@ Notes:
 - `--address <address>`: explicit address input (optional if positional address is used)
 - `--calldata <json|@file|->`: unsigned tx simulation input
 - `--chain <chain>`: optional override for both address and calldata
-- `--fail-on <caution|warning|danger>`: exit code threshold (default: warning)
+- `--fail-on <caution|warning|danger>`: exit code threshold (default: caution)
 - `--output <file|->`: optional output path (default: stdout)
 - `--quiet`: suppress non-essential logs
 

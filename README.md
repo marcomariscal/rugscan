@@ -19,23 +19,24 @@ bun install
 
 ## 30-second use
 
-Scan an unsigned tx (example: ERC-20 approve). This disables simulation so it works without Foundry/Anvil:
+Scan an unsigned tx (example: **unlimited USDC approval** to an unknown spender):
 
 ```bash
-cat <<'JSON' | bun run src/cli/index.ts scan --calldata - --no-sim --fail-on caution
+cat <<'JSON' | bun run src/cli/index.ts scan --calldata -
 {
   "chain": "ethereum",
   "from": "0x1111111111111111111111111111111111111111",
   "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
   "value": "0",
-  "data": "0x095ea7b3000000000000000000000000e592427a0aece92de3edee1f18e0157c058615640000000000000000000000000000000000000000000000000000000000000000"
+  "data": "0x095ea7b3000000000000000000000000beef00000000000000000000000000000000beefffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 }
 JSON
 ```
 
 Notes:
 - `assay scan` has two modes: **address scan** (`assay scan <address>`) and **transaction scan** (`assay scan --calldata ...`).
-- `--fail-on` defaults to `warning`, so `caution` exits **0** by default. For strict gating, use `--fail-on caution`.
+- Simulation is optional; if Anvil isn’t available, Assay continues without it.
+- `--fail-on` defaults to `caution`.
 
 ## Docs (advanced modes)
 

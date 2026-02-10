@@ -150,8 +150,7 @@ Options:
   --value        Optional tx value (decimal or 0x hex)
   --data         Raw hex calldata (alternative to --calldata)
   --no-sim       Disable transaction simulation (Anvil)
-  --fail-on      Exit non-zero on recommendation >= threshold (default: warning)
-                 NOTE: "caution" exits 0 by default; use --fail-on caution for strict gating
+  --fail-on      Exit non-zero on recommendation >= threshold (default: caution)
   --output       Output file path or - for stdout (default: -)
   --quiet        Suppress non-essential logs
   --verbose      Show full findings list in text output (no cap)
@@ -758,7 +757,7 @@ function parseFormat(value: string | undefined): "text" | "json" | "sarif" {
 }
 
 function parseFailOn(value: string | undefined): Recommendation {
-	if (!value) return "warning";
+	if (!value) return "caution";
 	const normalized = value.toLowerCase();
 	if (normalized === "caution" || normalized === "warning" || normalized === "danger") {
 		return normalized;
