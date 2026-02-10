@@ -10,7 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
+  biome:
+    name: biome check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -25,7 +26,18 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
 
-      - name: Run build (typecheck)
-        run: bun run build
+  tsc:
+    name: tsc
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
-      - run: bun test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.6
+
+      - run: bun install --frozen-lockfile
+      - run: bun run build
