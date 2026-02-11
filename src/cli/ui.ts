@@ -1093,7 +1093,7 @@ function collectDetailedInconclusiveReasons(result: AnalysisResult): string[] {
 	if (simulation.balances.confidence !== "high") {
 		addReason("balance coverage incomplete");
 	}
-	if (simulation.approvals.confidence !== "high") {
+	if (shouldLabelApprovalCoverageIncomplete(result)) {
 		addReason("approval coverage incomplete");
 	}
 
@@ -1115,7 +1115,7 @@ function extractCoverageReasons(result: AnalysisResult): string[] {
 	if (simulation.balances.confidence !== "high") {
 		reasons.push("balance coverage incomplete");
 	}
-	if (simulation.approvals.confidence !== "high") {
+	if (shouldLabelApprovalCoverageIncomplete(result)) {
 		reasons.push("approval coverage incomplete");
 	}
 	if (reasons.length === 0) {
@@ -1175,6 +1175,17 @@ function sectionCoverageSuffix(level: SimulationConfidenceLevel | undefined): st
 	return " (incomplete)";
 }
 
+function balanceSectionCoverageSuffix(
+	level: SimulationConfidenceLevel | undefined,
+	approvalOnlyAction: boolean,
+): string {
+	const suffix = sectionCoverageSuffix(level);
+	if (approvalOnlyAction && suffix === " (incomplete)") {
+		return "";
+	}
+	return suffix;
+}
+
 function approvalDeltaFullyDecoded(
 	approval: BalanceSimulationResult["approvals"]["changes"][number],
 ): boolean {
@@ -1190,6 +1201,17 @@ function approvalDeltaFullyDecoded(
 	return false;
 }
 
+function shouldLabelApprovalCoverageIncomplete(result: AnalysisResult): boolean {
+	const simulation = result.simulation;
+	if (!simulation) return false;
+	if (simulation.approvals.confidence === "high") return false;
+	if (simulation.approvals.confidence === "none") return true;
+
+	const approvalChanges = simulation.approvals.changes;
+	if (approvalChanges.length === 0) return true;
+	return !approvalChanges.every((approval) => approvalDeltaFullyDecoded(approval));
+}
+
 function approvalsSectionCoverageSuffix(result: AnalysisResult): string {
 	const simulation = result.simulation;
 	if (!simulation) return "";
@@ -1199,13 +1221,7 @@ function approvalsSectionCoverageSuffix(result: AnalysisResult): string {
 		return confidenceSuffix;
 	}
 
-	const approvalChanges = simulation.approvals.changes;
-	if (approvalChanges.length === 0) {
-		return confidenceSuffix;
-	}
-
-	const allDecoded = approvalChanges.every((approval) => approvalDeltaFullyDecoded(approval));
-	return allDecoded ? "" : confidenceSuffix;
+	return shouldLabelApprovalCoverageIncomplete(result) ? confidenceSuffix : "";
 }
 
 function isApprovalOnlyAction(result: AnalysisResult, hasCalldata: boolean): boolean {
@@ -1246,7 +1262,7 @@ function renderBalanceSection(
 	const lines: string[] = [];
 	const confidence = result.simulation?.balances.confidence;
 	const approvalOnlyAction = isApprovalOnlyAction(result, hasCalldata);
-	lines.push(` 💰 BALANCE CHANGES${sectionCoverageSuffix(confidence)}`);
+	lines.push(` 💰 BALANCE CHANGES${balanceSectionCoverageSuffix(confidence, approvalOnlyAction)}`);
 
 	if (!hasCalldata) {
 		lines.push(COLORS.dim(" - Not available (no calldata)"));
@@ -1760,20 +1776,7 @@ function buildRecommendationWhy(
 ): string {
 	const simulationUncertain = simulationIsUncertain(result, hasCalldata);
 	if (simulationUncertain) {
-		const sim = result.simulation;
-		if (!sim) {
-			return "Simulation coverage incomplete. See verdict for specific blockers and next step.";
-		}
-		if (!sim.success) {
-			const failureReason =
-				typeof sim.revertReason === "string"
-					? userFacingSimulationFailureReason(sim.revertReason)
-					: "";
-			const detail = failureReason ? ` (${failureReason})` : "";
-			return `Simulation didn't complete${detail}. See verdict for specific blockers and next step.`;
-		}
-		const reason = formatInconclusiveReason(result);
-		return `Simulation coverage incomplete (${reason}). See verdict for specific blockers and next step.`;
+		return "Simulation coverage incomplete. See verdict for blockers and next step.";
 	}
 
 	if (policy) {

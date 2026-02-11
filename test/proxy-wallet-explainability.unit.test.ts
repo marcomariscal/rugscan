@@ -114,6 +114,10 @@ describe("proxy wallet explainability output", () => {
 
 		expect(output).not.toContain("INCONCLUSIVE:");
 		expect(output).toContain("RECOMMENDATION: ⛔ BLOCK (UNVERIFIED)");
+		expect(output).toContain(
+			"Why: Simulation coverage incomplete. See verdict for blockers and next step.",
+		);
+		expect(output).not.toContain("See verdict for specific blockers and next step.");
 		expect(output).toContain("VERDICT: ⛔ BLOCK (UNVERIFIED)");
 		expect(output).toContain(
 			"BLOCK — simulation coverage incomplete (balance coverage incomplete; approval coverage incomplete).",
@@ -168,6 +172,41 @@ describe("proxy wallet explainability output", () => {
 
 		expect(output).toContain("🔐 APPROVALS");
 		expect(output).not.toContain("🔐 APPROVALS (incomplete)");
+		expect(output).not.toContain("approval coverage incomplete");
+	});
+
+	test("suppresses balance incomplete header for approval-only flows with no balance delta", () => {
+		const analysis: AnalysisResult = {
+			...buildBaseAnalysis(),
+			intent: "Approve USDC allowance",
+			simulation: {
+				success: true,
+				balances: { changes: [], confidence: "low" },
+				approvals: {
+					changes: [
+						{
+							standard: "erc20",
+							token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+							owner: "0xfeed00000000000000000000000000000000beef",
+							spender: "0x000000000022d473030f116ddee9f6b43ac78ba3",
+							amount: 1n,
+							previousAmount: 0n,
+							scope: "token",
+							symbol: "USDC",
+							decimals: 6,
+						},
+					],
+					confidence: "high",
+				},
+				notes: [],
+			},
+		};
+
+		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, mode: "wallet" }));
+
+		expect(output).toContain("💰 BALANCE CHANGES");
+		expect(output).not.toContain("💰 BALANCE CHANGES (incomplete)");
+		expect(output).toContain("No balance changes expected (approval only).");
 	});
 
 	test("adds mitigation guidance when unlimited approvals are shown", () => {
