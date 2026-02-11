@@ -286,6 +286,30 @@ function recommendationStyle(recommendation: Recommendation) {
 	}
 }
 
+const SIMULATION_UNVERIFIED_BLOCK_STYLE = {
+	label: "BLOCK (UNVERIFIED)",
+	icon: "⛔",
+	color: COLORS.warning,
+};
+
+const SIMULATION_UNVERIFIED_NEXT_STEP =
+	"Next step: rerun with full coverage (disable fast mode) before signing.";
+
+function shouldUseSimulationUnverifiedBlock(result: AnalysisResult, hasCalldata: boolean): boolean {
+	return simulationIsUncertain(result, hasCalldata);
+}
+
+function recommendationStyleForResult(
+	recommendation: Recommendation,
+	result: AnalysisResult,
+	hasCalldata: boolean,
+) {
+	if (shouldUseSimulationUnverifiedBlock(result, hasCalldata)) {
+		return SIMULATION_UNVERIFIED_BLOCK_STYLE;
+	}
+	return recommendationStyle(recommendation);
+}
+
 const CHECKS_FINDINGS_CAP = 4;
 
 const FINDING_CODE_PRIORITY: Partial<Record<Finding["code"], number>> = {
@@ -1283,6 +1307,27 @@ function buildApprovalItems(result: AnalysisResult): RenderedApprovalItem[] {
 	return Array.from(items.values());
 }
 
+function isUnlimitedApproval(
+	approval: BalanceSimulationResult["approvals"]["changes"][number],
+): boolean {
+	if (approval.amount === undefined) return false;
+	if (approval.standard === "permit2") {
+		return approval.amount === MAX_UINT160;
+	}
+	if (approval.standard === "erc20") {
+		return approval.amount === MAX_UINT256;
+	}
+	return false;
+}
+
+function hasUnlimitedApprovalSignal(result: AnalysisResult): boolean {
+	if (result.findings.some((finding) => finding.code === "UNLIMITED_APPROVAL")) {
+		return true;
+	}
+	const simulationApprovals = result.simulation?.approvals.changes ?? [];
+	return simulationApprovals.some((approval) => isUnlimitedApproval(approval));
+}
+
 function formatApprovalAmount(amount: bigint, decimals?: number): string {
 	const dec = decimals ?? 18;
 	const divisor = 10n ** BigInt(dec);
@@ -1327,6 +1372,10 @@ function renderApprovalsSection(result: AnalysisResult, hasCalldata: boolean): s
 		if (approval.detail) {
 			lines.push(`   ${COLORS.warning(`(${approval.detail})`)}`);
 		}
+	}
+	if (hasUnlimitedApprovalSignal(result)) {
+		lines.push(COLORS.warning(" - Mitigation: set exact allowance needed for this transaction."));
+		lines.push(COLORS.warning(" - After signing, revoke approval when no longer needed."));
 	}
 	return lines;
 }
@@ -1738,10 +1787,13 @@ function renderRecommendationSection(
 	policy?: PolicySummary,
 ): string[] {
 	const displayedRecommendation = recommendationForDisplay(result, hasCalldata, policy);
-	const style = recommendationStyle(displayedRecommendation);
+	const style = recommendationStyleForResult(displayedRecommendation, result, hasCalldata);
 	const lines: string[] = [];
 	lines.push(` 🎯 RECOMMENDATION: ${style.color(`${style.icon} ${style.label}`)}`);
 	lines.push(` Why: ${buildRecommendationWhy(result, hasCalldata, policy)}`);
+	if (shouldUseSimulationUnverifiedBlock(result, hasCalldata)) {
+		lines.push(COLORS.warning(` ${SIMULATION_UNVERIFIED_NEXT_STEP}`));
+	}
 	return lines;
 }
 
@@ -1796,7 +1848,7 @@ function renderVerdictSection(
 ): string[] {
 	const simulationUncertain = simulationIsUncertain(result, hasCalldata);
 	const displayedRecommendation = recommendationForDisplay(result, hasCalldata, policy);
-	const recommendation = recommendationStyle(displayedRecommendation);
+	const recommendation = recommendationStyleForResult(displayedRecommendation, result, hasCalldata);
 	const lines: string[] = [];
 	lines.push(
 		` 👉 VERDICT: ${recommendation.color(`${recommendation.icon} ${recommendation.label}`)}`,
@@ -1809,11 +1861,18 @@ function renderVerdictSection(
 		lines.push(COLORS.warning(` ⚠️ INCONCLUSIVE: ${formatInconclusiveReason(result)}`));
 	}
 	if (actionLine.includes("BLOCK")) {
-		lines.push(COLORS.danger(` ${actionLine}`));
+		if (shouldUseSimulationUnverifiedBlock(result, hasCalldata)) {
+			lines.push(COLORS.warning(` ${actionLine}`));
+		} else {
+			lines.push(COLORS.danger(` ${actionLine}`));
+		}
 	} else if (actionLine.includes("PROMPT")) {
 		lines.push(COLORS.warning(` ${actionLine}`));
 	} else {
 		lines.push(COLORS.ok(` ${actionLine}`));
+	}
+	if (shouldUseSimulationUnverifiedBlock(result, hasCalldata)) {
+		lines.push(COLORS.warning(` ${SIMULATION_UNVERIFIED_NEXT_STEP}`));
 	}
 
 	return lines;

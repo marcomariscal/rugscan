@@ -132,6 +132,7 @@ const MALICIOUS_APPROVAL: OutputMatrixScenario = {
 		"Action: Allow 0x9999999999999999999999999999999999999999 to spend up to UNLIMITED USDC (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48)",
 		"🚨 Approval target is tied to known drainer activity [APPROVAL_TO_DANGEROUS_CONTRACT]",
 		"⚠️ Allow 0x9999999999999999999999999999999999999999 to spend UNLIMITED USDC (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48) (was 0)",
+		"Mitigation: set exact allowance needed for this transaction.",
 	],
 };
 
@@ -237,7 +238,9 @@ const WEIRD_INCONCLUSIVE_EDGE: OutputMatrixScenario = {
 	keyAssertions: [
 		"Simulation didn't complete (execution reverted: custom error 0x4e487b71)",
 		"wallet fast-mode enabled; trace fallback only.",
+		"👉 VERDICT: ⛔ BLOCK (UNVERIFIED)",
 		"BLOCK — simulation coverage incomplete",
+		"Next step: rerun with full coverage (disable fast mode) before signing.",
 	],
 };
 

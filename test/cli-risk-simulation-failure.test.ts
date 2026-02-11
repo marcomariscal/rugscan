@@ -38,8 +38,11 @@ describe("cli recommendation label with simulation failures", () => {
 		const verdictLine = output.split("\n").find((line) => line.includes("👉 VERDICT:"));
 		expect(verdictLine).toBeDefined();
 		expect(verdictLine).not.toContain("OK");
-		expect(verdictLine).toContain("DANGER");
+		expect(verdictLine).toContain("BLOCK (UNVERIFIED)");
 		expect(output).toContain("BLOCK");
+		expect(output).toContain(
+			"Next step: rerun with full coverage (disable fast mode) before signing.",
+		);
 		expect(output).not.toContain("- None detected");
 	});
 
@@ -52,8 +55,11 @@ describe("cli recommendation label with simulation failures", () => {
 		const verdictLine = output.split("\n").find((line) => line.includes("👉 VERDICT:"));
 		expect(verdictLine).toBeDefined();
 		expect(verdictLine).not.toContain("OK");
-		expect(verdictLine).toContain("DANGER");
+		expect(verdictLine).toContain("BLOCK (UNVERIFIED)");
 		expect(output).toContain("BLOCK");
+		expect(output).toContain(
+			"Next step: rerun with full coverage (disable fast mode) before signing.",
+		);
 		expect(output).not.toContain("- None detected");
 	});
 
@@ -72,7 +78,7 @@ describe("cli recommendation label with simulation failures", () => {
 		const verdictLine = output.split("\n").find((line) => line.includes("👉 VERDICT:"));
 		expect(verdictLine).toBeDefined();
 		expect(verdictLine).not.toContain("OK");
-		expect(verdictLine).toContain("DANGER");
+		expect(verdictLine).toContain("BLOCK (UNVERIFIED)");
 		expect(output).toContain("BLOCK");
 		expect(output).toContain(
 			"Balance changes couldn't be fully verified — treat with extra caution.",
@@ -81,6 +87,9 @@ describe("cli recommendation label with simulation failures", () => {
 		expect(output).not.toContain("INCONCLUSIVE:");
 		expect(output).toContain(
 			"BLOCK — simulation coverage incomplete (balance coverage incomplete; approval coverage incomplete).",
+		);
+		expect(output).toContain(
+			"Next step: rerun with full coverage (disable fast mode) before signing.",
 		);
 		expect(output).toContain("Unable to read pre-transaction approvals (missing previous block)");
 	});
