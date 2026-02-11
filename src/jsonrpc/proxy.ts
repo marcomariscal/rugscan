@@ -489,14 +489,46 @@ function resolveChainFromInputs(options: {
 	return null;
 }
 
-async function promptYesNo(question: string): Promise<boolean> {
+const PROMPT_TIMEOUT_MS = 60_000;
+
+async function promptYesNo(
+	question: string,
+	options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<boolean> {
+	const timeoutMs = options?.timeoutMs ?? PROMPT_TIMEOUT_MS;
 	const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
 	try {
 		const answer = await new Promise<string>((resolve) => {
+			// Resolve with empty string (→ false) on timeout, close, or abort
+			timeoutId = setTimeout(() => {
+				process.stdout.write("\nPrompt timed out — defaulting to block.\n");
+				resolve("");
+			}, timeoutMs);
+
+			rl.on("close", () => resolve(""));
+
+			if (options?.signal) {
+				if (options.signal.aborted) {
+					resolve("");
+					return;
+				}
+				options.signal.addEventListener(
+					"abort",
+					() => {
+						resolve("");
+						rl.close();
+					},
+					{ once: true },
+				);
+			}
+
 			rl.question(question, (value) => resolve(value));
 		});
 		return answer.trim().toLowerCase() === "y" || answer.trim().toLowerCase() === "yes";
 	} finally {
+		if (timeoutId) clearTimeout(timeoutId);
 		rl.close();
 	}
 }
@@ -556,15 +588,22 @@ function isoStampForFilename(date: Date): string {
 	return date.toISOString().replace(/[:.]/g, "-");
 }
 
-async function writeRecording(options: {
+interface RecordingStub {
+	dir: string;
+}
+
+/**
+ * Write an early recording stub (rpc + calldata + timestamps) before the scan
+ * starts. This guarantees at least the input is captured even when the scan
+ * times out, the client disconnects, or an unhandled error occurs.
+ */
+async function writeRecordingStub(options: {
 	recordDir: string;
 	chain: Chain;
 	method: string;
 	calldata: CalldataInput;
 	rpcRequest: JsonRpcRequest;
-	outcome: ProxyScanOutcome;
-	action: RiskAction;
-}): Promise<void> {
+}): Promise<RecordingStub> {
 	const now = new Date();
 	const base = [
 		isoStampForFilename(now),
@@ -585,14 +624,42 @@ async function writeRecording(options: {
 		chain: options.chain,
 		method: options.method,
 		calldata: options.calldata,
-		action: options.action,
-		recommendation: options.outcome.recommendation,
-		simulationSuccess: options.outcome.simulationSuccess,
+		status: "pending",
 	};
 
 	await Bun.write(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
 	await Bun.write(path.join(dir, "rpc.json"), JSON.stringify(options.rpcRequest, null, 2));
 	await Bun.write(path.join(dir, "calldata.json"), JSON.stringify(options.calldata, null, 2));
+
+	return { dir };
+}
+
+/**
+ * Enrich an existing recording stub with scan outcome data. Overwrites
+ * meta.json with final status. Safe to call multiple times.
+ */
+async function enrichRecording(options: {
+	stub: RecordingStub;
+	chain: Chain;
+	method: string;
+	calldata: CalldataInput;
+	outcome: ProxyScanOutcome;
+	action: RiskAction;
+}): Promise<void> {
+	const dir = options.stub.dir;
+
+	const meta = {
+		completedAt: new Date().toISOString(),
+		chain: options.chain,
+		method: options.method,
+		calldata: options.calldata,
+		action: options.action,
+		recommendation: options.outcome.recommendation,
+		simulationSuccess: options.outcome.simulationSuccess,
+		status: "complete",
+	};
+
+	await Bun.write(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
 
 	if (options.outcome.response) {
 		await Bun.write(
@@ -813,6 +880,23 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					return isNotification ? null : jsonRpcError(id, -32602, "Invalid transaction fields");
 				}
 
+				// Write recording stub early so input is captured even on scan
+				// timeout/crash/client disconnect.
+				let recordingStub: RecordingStub | undefined;
+				if (recordDir) {
+					try {
+						recordingStub = await writeRecordingStub({
+							recordDir,
+							chain,
+							method: entry.method,
+							calldata,
+							rpcRequest: entry,
+						});
+					} catch {
+						// Non-fatal: proceed without recording
+					}
+				}
+
 				let outcome: ProxyScanOutcome;
 				try {
 					const scanFn = options.scanFn
@@ -902,40 +986,43 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					action = isInteractive ? policy.onRisk : "block";
 				}
 
-				if (recordDir) {
-					const recording = writeRecording({
-						recordDir,
+				// Enrich recording with scan outcome (replaces the early stub's meta)
+				if (recordingStub) {
+					const enrichment = enrichRecording({
+						stub: recordingStub,
 						chain,
 						method: entry.method,
 						calldata,
-						rpcRequest: entry,
 						outcome,
 						action,
 					});
 					if (options.once) {
-						await recording;
+						await enrichment;
 					} else {
-						void recording.catch(() => undefined);
+						void enrichment.catch(() => undefined);
 					}
 				}
 
 				if (action === "prompt") {
 					const allowlistSummary = formatAllowlistSummary(allowlist);
+					const promptQuestion = `Forward transaction anyway? (recommendation=${outcome.recommendation}, simulation=${
+						outcome.simulationSuccess ? "ok" : "failed"
+					}${allowlistSummary}) [y/N] `;
 					if (isNotification) {
 						// No response channel. Default to blocking unless the user explicitly forwards.
-						const ok = await promptYesNo(
-							`Forward transaction anyway? (recommendation=${outcome.recommendation}, simulation=${
-								outcome.simulationSuccess ? "ok" : "failed"
-							}${allowlistSummary}) [y/N] `,
-						);
-						if (!ok) return null;
-					} else {
-						const ok = await promptYesNo(
-							`Forward transaction anyway? (recommendation=${outcome.recommendation}, simulation=${
-								outcome.simulationSuccess ? "ok" : "failed"
-							}${allowlistSummary}) [y/N] `,
-						);
+						const ok = await promptYesNo(promptQuestion, { signal: request.signal });
 						if (!ok) {
+							if (!quiet) {
+								process.stdout.write("Transaction blocked by user.\n");
+							}
+							return null;
+						}
+					} else {
+						const ok = await promptYesNo(promptQuestion, { signal: request.signal });
+						if (!ok) {
+							if (!quiet) {
+								process.stdout.write("Transaction blocked by user.\n");
+							}
 							return jsonRpcError(
 								id,
 								4001,
@@ -947,6 +1034,9 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				}
 
 				if (action === "block") {
+					if (!quiet) {
+						process.stdout.write("Transaction blocked by policy.\n");
+					}
 					return isNotification
 						? null
 						: jsonRpcError(
