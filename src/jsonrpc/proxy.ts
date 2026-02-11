@@ -496,35 +496,35 @@ async function promptYesNo(
 	options?: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<boolean> {
 	const timeoutMs = options?.timeoutMs ?? PROMPT_TIMEOUT_MS;
+	if (options?.signal?.aborted) return false;
 	const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 	let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
 	try {
 		const answer = await new Promise<string>((resolve) => {
-			// Resolve with empty string (→ false) on timeout, close, or abort
+			const onAbort = () => {
+				resolve("");
+				rl.close();
+			};
+
 			timeoutId = setTimeout(() => {
 				process.stdout.write("\nPrompt timed out — defaulting to block.\n");
 				resolve("");
+				rl.close();
 			}, timeoutMs);
 
 			rl.on("close", () => resolve(""));
 
 			if (options?.signal) {
-				if (options.signal.aborted) {
-					resolve("");
-					return;
-				}
-				options.signal.addEventListener(
-					"abort",
-					() => {
-						resolve("");
-						rl.close();
-					},
-					{ once: true },
-				);
+				options.signal.addEventListener("abort", onAbort, { once: true });
 			}
 
-			rl.question(question, (value) => resolve(value));
+			rl.question(question, (value) => {
+				if (options?.signal) {
+					options.signal.removeEventListener("abort", onAbort);
+				}
+				resolve(value);
+			});
 		});
 		return answer.trim().toLowerCase() === "y" || answer.trim().toLowerCase() === "yes";
 	} finally {
@@ -575,6 +575,12 @@ function applyUpstreamRpcOverrides(options: {
 	};
 }
 
+export type RecordingStatus = "pending" | "forwarded" | "blocked" | "error" | "aborted";
+
+export interface RecordingHandle {
+	dir: string;
+}
+
 function sanitizeFilenamePart(value: string): string {
 	return value
 		.toLowerCase()
@@ -588,87 +594,94 @@ function isoStampForFilename(date: Date): string {
 	return date.toISOString().replace(/[:.]/g, "-");
 }
 
-interface RecordingStub {
-	dir: string;
-}
-
-/**
- * Write an early recording stub (rpc + calldata + timestamps) before the scan
- * starts. This guarantees at least the input is captured even when the scan
- * times out, the client disconnects, or an unhandled error occurs.
- */
-async function writeRecordingStub(options: {
+async function initRecording(options: {
 	recordDir: string;
 	chain: Chain;
 	method: string;
 	calldata: CalldataInput;
 	rpcRequest: JsonRpcRequest;
-}): Promise<RecordingStub> {
-	const now = new Date();
-	const base = [
-		isoStampForFilename(now),
-		sanitizeFilenamePart(options.method),
-		sanitizeFilenamePart(options.chain),
-		sanitizeFilenamePart(options.calldata.to),
-		sanitizeFilenamePart(options.calldata.from ?? "unknown"),
-		crypto.randomUUID().slice(0, 8),
-	]
-		.filter(Boolean)
-		.join("__");
+	quiet?: boolean;
+}): Promise<RecordingHandle | null> {
+	try {
+		const now = new Date();
+		const base = [
+			isoStampForFilename(now),
+			sanitizeFilenamePart(options.method),
+			sanitizeFilenamePart(options.chain),
+			sanitizeFilenamePart(options.calldata.to),
+			sanitizeFilenamePart(options.calldata.from ?? "unknown"),
+			crypto.randomUUID().slice(0, 8),
+		]
+			.filter(Boolean)
+			.join("__");
 
-	const dir = path.join(options.recordDir, base);
-	await mkdir(dir, { recursive: true });
+		const dir = path.join(options.recordDir, base);
+		await mkdir(dir, { recursive: true });
 
-	const meta = {
-		createdAt: now.toISOString(),
-		chain: options.chain,
-		method: options.method,
-		calldata: options.calldata,
-		status: "pending",
-	};
+		const meta = {
+			createdAt: now.toISOString(),
+			chain: options.chain,
+			method: options.method,
+			calldata: options.calldata,
+			status: "pending" as RecordingStatus,
+		};
 
-	await Bun.write(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
-	await Bun.write(path.join(dir, "rpc.json"), JSON.stringify(options.rpcRequest, null, 2));
-	await Bun.write(path.join(dir, "calldata.json"), JSON.stringify(options.calldata, null, 2));
+		await Bun.write(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
+		await Bun.write(path.join(dir, "rpc.json"), JSON.stringify(options.rpcRequest, null, 2));
+		await Bun.write(path.join(dir, "calldata.json"), JSON.stringify(options.calldata, null, 2));
 
-	return { dir };
+		return { dir };
+	} catch (error) {
+		if (!options.quiet) {
+			const message = error instanceof Error ? error.message : String(error);
+			process.stderr.write(`Warning: failed to write early recording: ${message}\n`);
+		}
+		return null;
+	}
 }
 
-/**
- * Enrich an existing recording stub with scan outcome data. Overwrites
- * meta.json with final status. Safe to call multiple times.
- */
-async function enrichRecording(options: {
-	stub: RecordingStub;
-	chain: Chain;
-	method: string;
-	calldata: CalldataInput;
-	outcome: ProxyScanOutcome;
-	action: RiskAction;
+async function finalizeRecording(options: {
+	handle: RecordingHandle;
+	outcome?: ProxyScanOutcome;
+	action?: RiskAction;
+	status: RecordingStatus;
+	quiet?: boolean;
 }): Promise<void> {
-	const dir = options.stub.dir;
+	try {
+		const metaPath = path.join(options.handle.dir, "meta.json");
+		const existingRaw = await Bun.file(metaPath).text();
+		const existing: unknown = JSON.parse(existingRaw);
+		if (!isRecord(existing)) return;
 
-	const meta = {
-		completedAt: new Date().toISOString(),
-		chain: options.chain,
-		method: options.method,
-		calldata: options.calldata,
-		action: options.action,
-		recommendation: options.outcome.recommendation,
-		simulationSuccess: options.outcome.simulationSuccess,
-		status: "complete",
-	};
+		const updated: Record<string, unknown> = {
+			...existing,
+			status: options.status,
+			completedAt: new Date().toISOString(),
+		};
+		if (options.action !== undefined) {
+			updated.action = options.action;
+		}
+		if (options.outcome) {
+			updated.recommendation = options.outcome.recommendation;
+			updated.simulationSuccess = options.outcome.simulationSuccess;
+		}
 
-	await Bun.write(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
+		await Bun.write(metaPath, JSON.stringify(updated, null, 2));
 
-	if (options.outcome.response) {
-		await Bun.write(
-			path.join(dir, "analyzeResponse.json"),
-			JSON.stringify(options.outcome.response, null, 2),
-		);
-	}
-	if (options.outcome.renderedText) {
-		await Bun.write(path.join(dir, "rendered.txt"), options.outcome.renderedText);
+		if (options.outcome?.response) {
+			await Bun.write(
+				path.join(options.handle.dir, "analyzeResponse.json"),
+				JSON.stringify(options.outcome.response, null, 2),
+			);
+		}
+		if (options.outcome?.renderedText) {
+			await Bun.write(path.join(options.handle.dir, "rendered.txt"), options.outcome.renderedText);
+		}
+	} catch (error) {
+		if (!options.quiet) {
+			const message = error instanceof Error ? error.message : String(error);
+			process.stderr.write(`Warning: failed to finalize recording: ${message}\n`);
+		}
 	}
 }
 
@@ -805,6 +818,7 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 
 			const handleSingle = async (
 				entry: unknown,
+				requestSignal?: AbortSignal,
 			): Promise<JsonRpcSuccess | JsonRpcFailure | null> => {
 				if (!isJsonRpcRequest(entry)) {
 					return jsonRpcError(null, -32600, "Invalid Request");
@@ -862,6 +876,19 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					return isNotification ? null : jsonRpcError(id, -32602, "Unable to resolve chain");
 				}
 
+				// Phase 1: Write early recording before scan (captures at least rpc/calldata/meta).
+				let recording: RecordingHandle | null = null;
+				if (recordDir) {
+					recording = await initRecording({
+						recordDir,
+						chain,
+						method: entry.method,
+						calldata,
+						rpcRequest: entry,
+						quiet,
+					});
+				}
+
 				const config = await configPromise;
 				const scanConfig = applyUpstreamRpcOverrides({
 					config,
@@ -880,24 +907,8 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					return isNotification ? null : jsonRpcError(id, -32602, "Invalid transaction fields");
 				}
 
-				// Write recording stub early so input is captured even on scan
-				// timeout/crash/client disconnect.
-				let recordingStub: RecordingStub | undefined;
-				if (recordDir) {
-					try {
-						recordingStub = await writeRecordingStub({
-							recordDir,
-							chain,
-							method: entry.method,
-							calldata,
-							rpcRequest: entry,
-						});
-					} catch {
-						// Non-fatal: proceed without recording
-					}
-				}
-
 				let outcome: ProxyScanOutcome;
+				let scanErrored = false;
 				try {
 					const scanFn = options.scanFn
 						? options.scanFn
@@ -936,12 +947,40 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 
 					outcome = await queued;
 				} catch (error) {
+					scanErrored = true;
 					const message = error instanceof Error ? error.message : "scan failed";
 					outcome = {
 						recommendation: "caution",
 						simulationSuccess: false,
 						renderedText: quiet ? undefined : `Scan failed: ${message}`,
 					};
+				}
+
+				// Detect client disconnect after scan completes.
+				if (requestSignal?.aborted) {
+					if (!quiet) {
+						process.stderr.write("Client disconnected during scan. Blocking by default.\n");
+					}
+					if (recording) {
+						await finalizeRecording({
+							handle: recording,
+							outcome,
+							action: "block",
+							status: "aborted",
+							quiet,
+						});
+					}
+					return isNotification
+						? null
+						: jsonRpcError(
+								id,
+								4001,
+								"Transaction blocked by assay",
+								buildProxyBlockData(
+									outcome,
+									evaluateAllowlist({ calldata, config: scanConfig, outcome }),
+								),
+							);
 				}
 
 				timings.add("proxy.total", nowMs() - entryStarted);
@@ -986,56 +1025,49 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					action = isInteractive ? policy.onRisk : "block";
 				}
 
-				// Enrich recording with scan outcome (replaces the early stub's meta)
-				if (recordingStub) {
-					const enrichment = enrichRecording({
-						stub: recordingStub,
-						chain,
-						method: entry.method,
-						calldata,
-						outcome,
-						action,
-					});
-					if (options.once) {
-						await enrichment;
-					} else {
-						void enrichment.catch(() => undefined);
-					}
-				}
-
 				if (action === "prompt") {
 					const allowlistSummary = formatAllowlistSummary(allowlist);
-					const promptQuestion = `Forward transaction anyway? (recommendation=${outcome.recommendation}, simulation=${
-						outcome.simulationSuccess ? "ok" : "failed"
-					}${allowlistSummary}) [y/N] `;
-					if (isNotification) {
-						// No response channel. Default to blocking unless the user explicitly forwards.
-						const ok = await promptYesNo(promptQuestion, { signal: request.signal });
-						if (!ok) {
-							if (!quiet) {
-								process.stdout.write("Transaction blocked by user.\n");
-							}
-							return null;
+					const ok = await promptYesNo(
+						`Forward transaction anyway? (recommendation=${outcome.recommendation}, simulation=${
+							outcome.simulationSuccess ? "ok" : "failed"
+						}${allowlistSummary}) [y/N] `,
+						{ signal: requestSignal },
+					);
+					if (!ok) {
+						if (!quiet) {
+							process.stdout.write("Blocked transaction.\n");
 						}
-					} else {
-						const ok = await promptYesNo(promptQuestion, { signal: request.signal });
-						if (!ok) {
-							if (!quiet) {
-								process.stdout.write("Transaction blocked by user.\n");
-							}
-							return jsonRpcError(
-								id,
-								4001,
-								"Transaction blocked by assay",
-								buildProxyBlockData(outcome, allowlist),
-							);
+						if (recording) {
+							await finalizeRecording({
+								handle: recording,
+								outcome,
+								action: "block",
+								status: "blocked",
+								quiet,
+							});
 						}
+						if (isNotification) return null;
+						return jsonRpcError(
+							id,
+							4001,
+							"Transaction blocked by assay",
+							buildProxyBlockData(outcome, allowlist),
+						);
 					}
 				}
 
 				if (action === "block") {
 					if (!quiet) {
-						process.stdout.write("Transaction blocked by policy.\n");
+						process.stdout.write("Blocked transaction.\n");
+					}
+					if (recording) {
+						await finalizeRecording({
+							handle: recording,
+							outcome,
+							action: "block",
+							status: "blocked",
+							quiet,
+						});
 					}
 					return isNotification
 						? null
@@ -1045,6 +1077,17 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 								"Transaction blocked by assay",
 								buildProxyBlockData(outcome, allowlist),
 							);
+				}
+
+				// Scan errored but action resolved to forward — mark recording as error.
+				if (recording) {
+					await finalizeRecording({
+						handle: recording,
+						outcome,
+						action,
+						status: scanErrored ? "error" : "forwarded",
+						quiet,
+					});
 				}
 
 				const upstreamResponse = await forwardToUpstream(
@@ -1061,11 +1104,12 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				return upstreamJson;
 			};
 
+			const requestSignal = request.signal;
 			let responsePayload: unknown;
 			if (Array.isArray(body)) {
 				const responses: Array<JsonRpcSuccess | JsonRpcFailure> = [];
 				for (const entry of body) {
-					const res = await handleSingle(entry);
+					const res = await handleSingle(entry, requestSignal);
 					if (!res) continue;
 					responses.push(res);
 				}
@@ -1074,7 +1118,7 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				}
 				responsePayload = responses;
 			} else {
-				const res = await handleSingle(body);
+				const res = await handleSingle(body, requestSignal);
 				if (!res) {
 					return new Response(null, { status: 204, headers: corsHeaders() });
 				}
