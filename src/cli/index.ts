@@ -30,9 +30,13 @@ import {
 
 const VALID_CHAINS: Chain[] = ["ethereum", "base", "arbitrum", "optimism", "polygon"];
 
-/** Return the terminal width when running interactively, undefined otherwise. */
+const MAX_RENDER_WIDTH = 120;
+
+/** Return bounded terminal width for readable text output. */
 function terminalWidth(): number | undefined {
-	return process.stdout.columns || undefined;
+	const columns = process.stdout.columns;
+	if (!columns || columns <= 0) return undefined;
+	return Math.min(columns, MAX_RENDER_WIDTH);
 }
 
 type OptionSpec = { takesValue: boolean };

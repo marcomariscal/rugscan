@@ -731,11 +731,13 @@ async function defaultScanFn(
 	if (!options.quiet) {
 		const renderStarted = nowMs();
 		const scanLabel = input.calldata ? "Transaction" : "Address";
+		const maxWidth = process.stdout.columns ? Math.min(process.stdout.columns, 120) : 120;
 		renderedText = `${renderHeading(`${scanLabel} scan on ${options.chain}`)}\n\n${renderResultBox(
 			analysis,
 			{
 				hasCalldata: Boolean(input.calldata),
 				sender: input.calldata?.from,
+				maxWidth,
 			},
 		)}\n`;
 		options.timings.add("proxy.render", nowMs() - renderStarted);

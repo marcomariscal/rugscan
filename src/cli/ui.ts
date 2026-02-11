@@ -720,10 +720,18 @@ function formatCompactTokenLabel(token: string, symbol?: string): string {
 	return shortenAddress(token);
 }
 
-function formatCompactSpenderLabel(spender: string, chain: Chain): string {
-	const known = (KNOWN_SPENDERS[chain] ?? []).find(
+function knownSpenderForChain(spender: string, chain: Chain) {
+	return (KNOWN_SPENDERS[chain] ?? []).find(
 		(entry) => entry.address.toLowerCase() === spender.toLowerCase(),
 	);
+}
+
+function hasKnownSpender(spender: string, chain: Chain): boolean {
+	return knownSpenderForChain(spender, chain) !== undefined;
+}
+
+function formatCompactSpenderLabel(spender: string, chain: Chain): string {
+	const known = knownSpenderForChain(spender, chain);
 	if (known) {
 		return `${known.name} (${shortenAddress(spender)})`;
 	}
@@ -998,7 +1006,7 @@ function formatSimulationCoverageBlockReason(result: AnalysisResult): string {
 		)
 		.slice(0, 2);
 	const suffix = notes.length > 0 ? ` Contributing notes: ${notes.join("; ")}.` : "";
-	return `BLOCK — simulation coverage incomplete (${coverage}). This block happened because balance/approval coverage is incomplete.${suffix}`;
+	return `BLOCK — simulation coverage incomplete (${coverage}). See INCONCLUSIVE reason above.${suffix}`;
 }
 
 function formatBalanceChangeLine(changes: string[]): string {
@@ -1860,6 +1868,23 @@ function aggregateErc20(
 	return results;
 }
 
+function joinApprovalDetail(...parts: Array<string | undefined>): string | undefined {
+	const merged = parts.filter(
+		(part): part is string => typeof part === "string" && part.length > 0,
+	);
+	if (merged.length === 0) return undefined;
+	return merged.join("; ");
+}
+
+function isUnlimitedApprovalAmount(
+	approval: BalanceSimulationResult["approvals"]["changes"][number],
+): boolean {
+	if (approval.amount === undefined) return false;
+	return approval.standard === "permit2"
+		? approval.amount === MAX_UINT160
+		: approval.amount === MAX_UINT256;
+}
+
 function formatSimulationApproval(
 	approval: BalanceSimulationResult["approvals"]["changes"][number],
 	chain: Chain,
@@ -1874,6 +1899,9 @@ function formatSimulationApproval(
 		? `${cleanLabel(approval.symbol)} (${approval.token})`
 		: approval.token;
 	const prefix = approval.standard === "permit2" ? "PERMIT2 " : "";
+	const unknownSpenderHint = hasKnownSpender(approval.spender, chain)
+		? undefined
+		: "unrecognized spender — verify in Explorer Links";
 
 	if (approval.scope === "all") {
 		const approved = approval.approved !== false;
@@ -1888,7 +1916,10 @@ function formatSimulationApproval(
 			: `${prefix}Revoke ${spenderLabel} operator access for ALL ${tokenLabel}`;
 		return {
 			text: previous ? `${action} (was ${previous})` : action,
-			detail: previous === undefined ? "previous operator approval unknown" : undefined,
+			detail: joinApprovalDetail(
+				previous === undefined ? "previous operator approval unknown" : undefined,
+				approved ? unknownSpenderHint : undefined,
+			),
 			isWarning: approved,
 			key: `${approval.token.toLowerCase()}|${approval.spender.toLowerCase()}|all|${approved}`,
 		};
@@ -1908,7 +1939,10 @@ function formatSimulationApproval(
 			: `${prefix}Approve ${tokenLabel} #${approval.tokenId.toString()} for ${spenderLabel}`;
 		return {
 			text: previousSpender ? `${action} (was ${previousSpender})` : action,
-			detail: previousSpender ? undefined : "previous approved spender unknown",
+			detail: joinApprovalDetail(
+				previousSpender ? undefined : "previous approved spender unknown",
+				revoking ? undefined : unknownSpenderHint,
+			),
 			isWarning: !revoking,
 			key: `${approval.token.toLowerCase()}|${approval.spender.toLowerCase()}|${approval.tokenId.toString()}`,
 		};
@@ -1926,7 +1960,10 @@ function formatSimulationApproval(
 		const action = `${prefix}Allow ${spenderLabel} to spend UNKNOWN ${tokenLabel}`;
 		return {
 			text: previousLabel ? `${action} (was ${previousLabel})` : action,
-			detail: previousLabel === undefined ? "allowance amount unknown" : undefined,
+			detail: joinApprovalDetail(
+				previousLabel === undefined ? "allowance amount unknown" : undefined,
+				unknownSpenderHint,
+			),
 			isWarning: true,
 			key: `${approval.token.toLowerCase()}|${approval.spender.toLowerCase()}|amount|unknown`,
 		};
@@ -1943,9 +1980,16 @@ function formatSimulationApproval(
 	}
 
 	const action = `${prefix}Allow ${spenderLabel} to spend ${amountLabel} ${tokenLabel}`;
+	const unlimitedHint = isUnlimitedApprovalAmount(approval)
+		? "consider bounded approval instead of UNLIMITED"
+		: undefined;
 	return {
 		text: previousLabel ? `${action} (was ${previousLabel})` : action,
-		detail: previousLabel ? undefined : "previous allowance unknown",
+		detail: joinApprovalDetail(
+			previousLabel ? undefined : "previous allowance unknown",
+			unknownSpenderHint,
+			unlimitedHint,
+		),
 		isWarning: true,
 		key: `${approval.token.toLowerCase()}|${approval.spender.toLowerCase()}|amount|${amountLabel}`,
 	};
@@ -2028,9 +2072,7 @@ function formatTokenLabel(token: string, symbol?: string): string {
 }
 
 function formatSpenderLabel(spender: string, chain: Chain): string {
-	const known = (KNOWN_SPENDERS[chain] ?? []).find(
-		(entry) => entry.address.toLowerCase() === spender.toLowerCase(),
-	);
+	const known = knownSpenderForChain(spender, chain);
 	if (known) {
 		return `${known.name} (${spender})`;
 	}

@@ -116,9 +116,7 @@ describe("proxy wallet explainability output", () => {
 			"INCONCLUSIVE: balance coverage incomplete; approval coverage incomplete",
 		);
 		expect(output).toContain("BLOCK — simulation coverage incomplete");
-		expect(output).toContain(
-			"This block happened because balance/approval coverage is incomplete.",
-		);
+		expect(output).toContain("See INCONCLUSIVE reason above.");
 		expect(output).toContain("upstream RPC returned truncated trace results");
 	});
 
@@ -183,6 +181,41 @@ describe("proxy wallet explainability output", () => {
 		expect(output).toContain("⚠️ Proxy / upgradeable (code can change)");
 		expect(output).not.toContain("[UPGRADEABLE]");
 		expect(output).not.toContain("[PROXY]");
+	});
+
+	test("adds actionable guidance for unknown unlimited spender approvals", () => {
+		const base = buildBaseAnalysis();
+		if (!base.simulation) {
+			throw new Error("expected base simulation fixture");
+		}
+
+		const unknownSpender = "0xd016d8b479b95a39b69d0f68a8e2f2f6f5ad5722";
+		const analysis: AnalysisResult = {
+			...base,
+			simulation: {
+				...base.simulation,
+				approvals: {
+					changes: [
+						{
+							standard: "erc20",
+							token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+							owner: "0xfeed00000000000000000000000000000000beef",
+							spender: unknownSpender,
+							amount: MAX_UINT256,
+							scope: "token",
+							symbol: "USDC",
+							decimals: 6,
+						},
+					],
+					confidence: "high",
+				},
+			},
+		};
+
+		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, mode: "default" }));
+		expect(output).toContain("unrecognized spender — verify in Explorer Links");
+		expect(output).toContain("consider bounded approval instead of UNLIMITED");
+		expect(output).toContain(`Spender: https://etherscan.io/address/${unknownSpender}`);
 	});
 
 	test("suppresses dust balance noise and reports no net balance change", () => {
