@@ -78,8 +78,9 @@ describe("cli recommendation label with simulation failures", () => {
 			"Balance changes couldn't be fully verified — treat with extra caution.",
 		);
 		expect(output).toContain("Couldn't verify all approvals — treat with extra caution.");
+		expect(output).not.toContain("INCONCLUSIVE:");
 		expect(output).toContain(
-			"INCONCLUSIVE: balance coverage incomplete; approval coverage incomplete",
+			"BLOCK — simulation coverage incomplete (balance coverage incomplete; approval coverage incomplete).",
 		);
 		expect(output).toContain("Unable to read pre-transaction approvals (missing previous block)");
 	});
@@ -109,15 +110,17 @@ describe("cli recommendation label with simulation failures", () => {
 		};
 
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
-		expect(output).toContain("+2 more (use --verbose)");
+		expect(output).toContain("+1 more (use --verbose)");
 
 		const phishingIndex = output.indexOf("KNOWN_PHISHING");
 		const unverifiedIndex = output.indexOf("UNVERIFIED");
-		const upgradeableIndex = output.indexOf("UPGRADEABLE");
+		const newContractIndex = output.indexOf("NEW_CONTRACT");
+		expect(output).toContain("⚠️ Proxy / upgradeable (code can change)");
+		expect(output).not.toContain("[UPGRADEABLE]");
 		expect(phishingIndex).toBeGreaterThanOrEqual(0);
 		expect(unverifiedIndex).toBeGreaterThanOrEqual(0);
-		expect(upgradeableIndex).toBeGreaterThanOrEqual(0);
+		expect(newContractIndex).toBeGreaterThanOrEqual(0);
 		expect(phishingIndex).toBeLessThan(unverifiedIndex);
-		expect(unverifiedIndex).toBeLessThan(upgradeableIndex);
+		expect(unverifiedIndex).toBeLessThan(newContractIndex);
 	});
 });

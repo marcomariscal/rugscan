@@ -298,9 +298,10 @@ describe("north-star pre-sign UX (contract)", () => {
 				}
 			}
 
-			// 4) INCONCLUSIVE semantics (simulation uncertain => explicit line)
+			// 4) Simulation-incomplete semantics (single non-redundant verdict line)
 			if (simulationUncertain) {
-				expect(normalizedActual).toContain("INCONCLUSIVE");
+				expect(normalizedActual).toContain("BLOCK — simulation coverage incomplete");
+				expect(normalizedActual).not.toContain("⚠️ INCONCLUSIVE:");
 			} else {
 				expect(normalizedActual).not.toContain("INCONCLUSIVE");
 			}

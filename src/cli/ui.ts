@@ -49,6 +49,22 @@ const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const BALANCE_AMOUNT_FRACTION_DIGITS = 4;
 const MIN_BOX_WIDTH_FOR_BORDERS = 56;
 
+type KnownProtocolApprovalEntity = {
+	protocol: string;
+	entity: string;
+};
+
+const KNOWN_PROTOCOL_APPROVAL_ENTITIES: Partial<
+	Record<Chain, Record<string, KnownProtocolApprovalEntity>>
+> = {
+	ethereum: {
+		"0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2": {
+			protocol: "Aave V3",
+			entity: "Pool",
+		},
+	},
+};
+
 type RenderMode = "default" | "wallet";
 
 function stripAnsi(input: string): string {
@@ -540,6 +556,71 @@ function formatProtocolDisplay(result: AnalysisResult): string {
 	return index === -1 ? protocol : protocol.slice(0, index);
 }
 
+function normalizeProtocolKey(protocol: string): string {
+	return protocol.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function formatEntityAddressPreview(address: string): string {
+	if (!isAddress(address)) return address;
+	const normalized = address.toLowerCase();
+	return `${normalized.slice(0, 6)}…${normalized.slice(-3)}`;
+}
+
+function resolveContractProtocolLabel(result: AnalysisResult): string | null {
+	const value = Reflect.get(result.contract, "protocol");
+	if (typeof value !== "string") return null;
+	const cleaned = cleanLabel(value);
+	return cleaned.length > 0 ? cleaned : null;
+}
+
+function protocolResolutionCandidates(result: AnalysisResult): string[] {
+	const candidates: string[] = [];
+	const seen = new Set<string>();
+	const add = (value: string | null | undefined) => {
+		if (!value) return;
+		const cleaned = cleanLabel(value);
+		if (cleaned.length === 0) return;
+		const key = normalizeProtocolKey(cleaned);
+		if (key.length === 0 || seen.has(key)) return;
+		seen.add(key);
+		candidates.push(cleaned);
+	};
+
+	add(result.protocolMatch?.name);
+	add(protocolFromKnownProtocolFinding(result.findings));
+	add(result.protocol);
+	add(resolveContractProtocolLabel(result));
+
+	if (candidates.length === 0) {
+		const fallback = formatProtocolDisplay(result);
+		if (fallback !== "Unknown") {
+			add(fallback);
+		}
+	}
+
+	return candidates;
+}
+
+function resolveKnownProtocolApprovalEntity(
+	result: AnalysisResult,
+	address: string,
+): string | null {
+	const chainBook = KNOWN_PROTOCOL_APPROVAL_ENTITIES[result.contract.chain];
+	if (!chainBook) return null;
+	if (!isAddress(address)) return null;
+
+	const entry = chainBook[address.toLowerCase()];
+	if (!entry) return null;
+
+	const entryProtocolKey = normalizeProtocolKey(entry.protocol);
+	const protocolMatches = protocolResolutionCandidates(result).some(
+		(candidate) => normalizeProtocolKey(candidate) === entryProtocolKey,
+	);
+	if (!protocolMatches) return null;
+
+	return `${entry.protocol}: ${entry.entity}`;
+}
+
 function formatContractLabel(contract: AnalysisResult["contract"]): string {
 	const address = contract.address;
 	if (contract.is_proxy && contract.proxy_name) {
@@ -665,7 +746,7 @@ function improveApprovalIntentFromSimulation(result: AnalysisResult, base: strin
 	);
 	if (!approval) return null;
 
-	const spenderLabel = formatSpenderLabel(approval.spender, result.contract.chain);
+	const spenderLabel = formatSpenderLabel(approval.spender, result.contract.chain, result);
 	const tokenLabel = formatTokenLabel(approval.token, approval.symbol);
 	const amountLabel = formatApprovalAmountLabel(approval);
 
@@ -720,7 +801,14 @@ function formatCompactTokenLabel(token: string, symbol?: string): string {
 	return shortenAddress(token);
 }
 
-function formatCompactSpenderLabel(spender: string, chain: Chain): string {
+function formatCompactSpenderLabel(spender: string, chain: Chain, result?: AnalysisResult): string {
+	if (result) {
+		const protocolEntity = resolveKnownProtocolApprovalEntity(result, spender);
+		if (protocolEntity) {
+			return `${protocolEntity} (${formatEntityAddressPreview(spender)})`;
+		}
+	}
+
 	const known = (KNOWN_SPENDERS[chain] ?? []).find(
 		(entry) => entry.address.toLowerCase() === spender.toLowerCase(),
 	);
@@ -785,6 +873,7 @@ function buildReadableApprovalActionLabel(
 		const spenderLabel = formatCompactSpenderLabel(
 			simulationApproval.spender,
 			result.contract.chain,
+			result,
 		);
 		const amountLabel = formatApprovalAmountLabel(simulationApproval);
 		const verb = simulationApproval.standard === "permit2" ? "Permit2 approve" : "Approve";
@@ -797,7 +886,7 @@ function buildReadableApprovalActionLabel(
 		findDecodedArgValue(decoded, "amount") ?? findDecodedArgValue(decoded, "value");
 	const spenderLabel =
 		typeof spenderValue === "string" && isAddress(spenderValue)
-			? formatCompactSpenderLabel(spenderValue, result.contract.chain)
+			? formatCompactSpenderLabel(spenderValue, result.contract.chain, result)
 			: "unknown";
 	const amount = parseBigIntValue(amountValue);
 	const amountLabel =
@@ -998,7 +1087,7 @@ function formatSimulationCoverageBlockReason(result: AnalysisResult): string {
 		)
 		.slice(0, 2);
 	const suffix = notes.length > 0 ? ` Contributing notes: ${notes.join("; ")}.` : "";
-	return `BLOCK — simulation coverage incomplete (${coverage}). This block happened because balance/approval coverage is incomplete.${suffix}`;
+	return `BLOCK — simulation coverage incomplete (${coverage}).${suffix}`;
 }
 
 function formatBalanceChangeLine(changes: string[]): string {
@@ -1116,7 +1205,7 @@ function buildApprovalItems(result: AnalysisResult): RenderedApprovalItem[] {
 
 	if (simulation && simulation.approvals.changes.length > 0) {
 		for (const approval of simulation.approvals.changes) {
-			const item = formatSimulationApproval(approval, result.contract.chain);
+			const item = formatSimulationApproval(result, approval);
 			items.set(item.key.toLowerCase(), { ...item, source: "simulation" });
 		}
 	}
@@ -1130,7 +1219,9 @@ function buildApprovalItems(result: AnalysisResult): RenderedApprovalItem[] {
 		if (finding.code !== "UNLIMITED_APPROVAL") continue;
 		const details = finding.details;
 		const spender = details && typeof details.spender === "string" ? details.spender : undefined;
-		const spenderLabel = spender ? spender : "unknown";
+		const spenderLabel = spender
+			? formatSpenderLabel(spender, result.contract.chain, result)
+			: "unknown";
 		const key = `${tokenFallback.toLowerCase()}|${spenderLabel.toLowerCase()}|calldata`;
 		items.set(key, {
 			text: `Allow ${spenderLabel} to spend UNLIMITED ${tokenFallback}`,
@@ -1235,11 +1326,19 @@ function isChecksNoiseFinding(finding: Finding): boolean {
 	);
 }
 
+function hasProxyUpgradeableSignal(result: AnalysisResult): boolean {
+	if (result.contract.is_proxy) return true;
+	return result.findings.some(
+		(finding) => finding.code === "PROXY" || finding.code === "UPGRADEABLE",
+	);
+}
+
 function collectChecksFindings(result: AnalysisResult): Finding[] {
 	const deduped = new Map<string, Finding>();
+	const showProxyLine = hasProxyUpgradeableSignal(result);
 	for (const finding of result.findings) {
 		if (isChecksNoiseFinding(finding)) continue;
-		if (result.contract.is_proxy && (finding.code === "PROXY" || finding.code === "UPGRADEABLE")) {
+		if (showProxyLine && (finding.code === "PROXY" || finding.code === "UPGRADEABLE")) {
 			continue;
 		}
 		const existing = deduped.get(finding.code);
@@ -1272,7 +1371,7 @@ function renderChecksSection(
 		lines.push(COLORS.warning(" ⚠️ Source not verified (or unknown)"));
 	}
 
-	if (result.contract.is_proxy) {
+	if (hasProxyUpgradeableSignal(result)) {
 		lines.push(COLORS.warning(" ⚠️ Proxy / upgradeable (code can change)"));
 	}
 
@@ -1619,11 +1718,12 @@ function renderVerdictSection(
 		` 👉 VERDICT: ${recommendation.color(`${recommendation.icon} ${recommendation.label}`)}`,
 	);
 
-	if (simulationUncertain) {
+	const actionLine = buildNextActionLine(result, hasCalldata, policy);
+	const shouldRenderInconclusiveLine =
+		simulationUncertain && !actionLine.startsWith("BLOCK — simulation coverage incomplete");
+	if (shouldRenderInconclusiveLine) {
 		lines.push(COLORS.warning(` ⚠️ INCONCLUSIVE: ${formatInconclusiveReason(result)}`));
 	}
-
-	const actionLine = buildNextActionLine(result, hasCalldata, policy);
 	if (actionLine.includes("BLOCK")) {
 		lines.push(COLORS.danger(` ${actionLine}`));
 	} else if (actionLine.includes("PROMPT")) {
@@ -1861,15 +1961,15 @@ function aggregateErc20(
 }
 
 function formatSimulationApproval(
+	result: AnalysisResult,
 	approval: BalanceSimulationResult["approvals"]["changes"][number],
-	chain: Chain,
 ): {
 	text: string;
 	detail?: string;
 	isWarning: boolean;
 	key: string;
 } {
-	const spenderLabel = formatSpenderLabel(approval.spender, chain);
+	const spenderLabel = formatSpenderLabel(approval.spender, result.contract.chain, result);
 	const tokenLabel = approval.symbol
 		? `${cleanLabel(approval.symbol)} (${approval.token})`
 		: approval.token;
@@ -1901,7 +2001,7 @@ function formatSimulationApproval(
 	) {
 		const revoking = isZeroAddress(approval.spender);
 		const previousSpender = approval.previousSpender
-			? formatSpenderLabel(approval.previousSpender, chain)
+			? formatSpenderLabel(approval.previousSpender, result.contract.chain, result)
 			: undefined;
 		const action = revoking
 			? `${prefix}Revoke ${tokenLabel} #${approval.tokenId.toString()} approval`
@@ -2027,7 +2127,14 @@ function formatTokenLabel(token: string, symbol?: string): string {
 	return token;
 }
 
-function formatSpenderLabel(spender: string, chain: Chain): string {
+function formatSpenderLabel(spender: string, chain: Chain, result?: AnalysisResult): string {
+	if (result) {
+		const protocolEntity = resolveKnownProtocolApprovalEntity(result, spender);
+		if (protocolEntity) {
+			return `${protocolEntity} (${formatEntityAddressPreview(spender)})`;
+		}
+	}
+
 	const known = (KNOWN_SPENDERS[chain] ?? []).find(
 		(entry) => entry.address.toLowerCase() === spender.toLowerCase(),
 	);

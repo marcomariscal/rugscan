@@ -112,12 +112,9 @@ describe("proxy wallet explainability output", () => {
 
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, mode: "wallet" }));
 
+		expect(output).not.toContain("INCONCLUSIVE:");
 		expect(output).toContain(
-			"INCONCLUSIVE: balance coverage incomplete; approval coverage incomplete",
-		);
-		expect(output).toContain("BLOCK — simulation coverage incomplete");
-		expect(output).toContain(
-			"This block happened because balance/approval coverage is incomplete.",
+			"BLOCK — simulation coverage incomplete (balance coverage incomplete; approval coverage incomplete).",
 		);
 		expect(output).toContain("upstream RPC returned truncated trace results");
 	});
@@ -159,7 +156,7 @@ describe("proxy wallet explainability output", () => {
 		}
 	});
 
-	test("dedupes proxy-related checks so warnings are not repeated", () => {
+	test("dedupes verified/proxy checks in default + wallet output", () => {
 		const analysis: AnalysisResult = {
 			...buildBaseAnalysis(),
 			contract: {
@@ -170,6 +167,11 @@ describe("proxy wallet explainability output", () => {
 				implementation: "0x1111111111111111111111111111111111111111",
 			},
 			findings: [
+				{
+					level: "safe",
+					code: "VERIFIED",
+					message: "Source code verified: FiatTokenProxy",
+				},
 				{ level: "info", code: "PROXY", message: "Proxy detected (eip1967)" },
 				{
 					level: "warning",
@@ -179,7 +181,30 @@ describe("proxy wallet explainability output", () => {
 			],
 		};
 
-		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
+		for (const mode of ["default", "wallet"] as const) {
+			const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, mode }));
+			expect(output).toContain("✓ Source verified");
+			expect(output).toContain("⚠️ Proxy / upgradeable (code can change)");
+			expect(output).not.toContain("[VERIFIED]");
+			expect(output).not.toContain("[UPGRADEABLE]");
+			expect(output).not.toContain("[PROXY]");
+		}
+	});
+
+	test("uses canonical proxy line when proxy findings exist without contract flag", () => {
+		const analysis: AnalysisResult = {
+			...buildBaseAnalysis(),
+			findings: [
+				{ level: "info", code: "PROXY", message: "Proxy detected (eip1967)" },
+				{
+					level: "warning",
+					code: "UPGRADEABLE",
+					message: "Upgradeable proxy (eip1967) - code can change",
+				},
+			],
+		};
+
+		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, mode: "wallet" }));
 		expect(output).toContain("⚠️ Proxy / upgradeable (code can change)");
 		expect(output).not.toContain("[UPGRADEABLE]");
 		expect(output).not.toContain("[PROXY]");

@@ -237,7 +237,6 @@ const WEIRD_INCONCLUSIVE_EDGE: OutputMatrixScenario = {
 	keyAssertions: [
 		"Simulation didn't complete (execution reverted: custom error 0x4e487b71)",
 		"wallet fast-mode enabled; trace fallback only.",
-		"⚠️ INCONCLUSIVE: simulation didn't complete (execution reverted: custom error 0x4e487b71); balance coverage incomplete; approval coverage incomplete",
 		"BLOCK — simulation coverage incomplete",
 	],
 };
@@ -407,8 +406,8 @@ const INTRICATE_DEFI_ACTION: OutputMatrixScenario = {
 	keyAssertions: [
 		"Contract: WrappedTokenGatewayV3 (0x893411580e590d62ddbca8a703d61cc4a8c7b2b9) → WrappedTokenGatewayV3Impl (0x31f3eb672c4f6f8e64f2af6f5919f6f63f8e0f8f)",
 		"⚠️ Proxy / upgradeable (code can change)",
-		"⚠️ Allow 0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2 to spend 5,000 USDC (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48) (was 1,000)",
-		"✓ Revoke 0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2 spending of GHO (0x40d16fc0246a1f6811aebae6de4f4d3ef5f4377f) (was 250)",
+		"⚠️ Allow Aave V3: Pool (0x8787…4e2) to spend 5,000 USDC (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48) (was 1,000)",
+		"✓ Revoke Aave V3: Pool (0x8787…4e2) spending of GHO (0x40d16fc0246a1f6811aebae6de4f4d3ef5f4377f) (was 250)",
 	],
 };
 
