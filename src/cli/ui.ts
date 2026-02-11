@@ -296,6 +296,8 @@ const SIMULATION_COVERAGE_NEXT_STEP_LINE =
 const UNLIMITED_APPROVAL_MITIGATION_LINE =
 	"Mitigation: prefer exact allowance and revoke existing approvals when appropriate.";
 
+const APPROVAL_ONLY_BALANCE_LINE = "No balance changes expected (approval only).";
+
 const CHECKS_FINDINGS_CAP = 4;
 
 const FINDING_CODE_PRIORITY: Partial<Record<Finding["code"], number>> = {
@@ -1173,6 +1175,60 @@ function sectionCoverageSuffix(level: SimulationConfidenceLevel | undefined): st
 	return " (incomplete)";
 }
 
+function approvalDeltaFullyDecoded(
+	approval: BalanceSimulationResult["approvals"]["changes"][number],
+): boolean {
+	if (approval.scope === "all") {
+		return approval.previousApproved !== undefined;
+	}
+	if (approval.standard === "erc20" || approval.standard === "permit2") {
+		return approval.amount !== undefined && approval.previousAmount !== undefined;
+	}
+	if (approval.tokenId !== undefined) {
+		return approval.previousSpender !== undefined;
+	}
+	return false;
+}
+
+function approvalsSectionCoverageSuffix(result: AnalysisResult): string {
+	const simulation = result.simulation;
+	if (!simulation) return "";
+
+	const confidenceSuffix = sectionCoverageSuffix(simulation.approvals.confidence);
+	if (confidenceSuffix !== " (incomplete)") {
+		return confidenceSuffix;
+	}
+
+	const approvalChanges = simulation.approvals.changes;
+	if (approvalChanges.length === 0) {
+		return confidenceSuffix;
+	}
+
+	const allDecoded = approvalChanges.every((approval) => approvalDeltaFullyDecoded(approval));
+	return allDecoded ? "" : confidenceSuffix;
+}
+
+function isApprovalOnlyAction(result: AnalysisResult, hasCalldata: boolean): boolean {
+	if (!hasCalldata) return false;
+	const decoded = findDecodedCallContext(result.findings);
+	if (decoded && decodedCallLooksLikeApproval(decoded)) return true;
+
+	if (typeof result.intent === "string") {
+		const normalizedIntent = result.intent.toLowerCase();
+		if (normalizedIntent.startsWith("approve") || normalizedIntent.includes("approval")) {
+			return true;
+		}
+	}
+
+	const simulation = result.simulation;
+	if (!simulation) return false;
+	if (simulation.approvals.changes.length === 0) return false;
+	if (simulation.nativeDiff !== undefined && simulation.nativeDiff !== 0n) return false;
+	const hasNonZeroBalanceChanges =
+		buildBalanceChangeItems(simulation, result.contract.chain).length > 0;
+	return !hasNonZeroBalanceChanges;
+}
+
 function simulationIsUncertain(result: AnalysisResult, hasCalldata: boolean): boolean {
 	if (!hasCalldata) return false;
 	const simulation = result.simulation;
@@ -1189,6 +1245,7 @@ function renderBalanceSection(
 ): string[] {
 	const lines: string[] = [];
 	const confidence = result.simulation?.balances.confidence;
+	const approvalOnlyAction = isApprovalOnlyAction(result, hasCalldata);
 	lines.push(` 💰 BALANCE CHANGES${sectionCoverageSuffix(confidence)}`);
 
 	if (!hasCalldata) {
@@ -1196,6 +1253,10 @@ function renderBalanceSection(
 		return lines;
 	}
 	if (!result.simulation) {
+		if (approvalOnlyAction) {
+			lines.push(COLORS.dim(` - ${APPROVAL_ONLY_BALANCE_LINE}`));
+			return lines;
+		}
 		lines.push(COLORS.warning(" - Simulation data unavailable — treat with extra caution."));
 		return lines;
 	}
@@ -1217,6 +1278,10 @@ function renderBalanceSection(
 			lines.push(COLORS.warning(formatBalanceChangeLine(ordered)));
 			return lines;
 		}
+		if (approvalOnlyAction) {
+			lines.push(COLORS.dim(` - ${APPROVAL_ONLY_BALANCE_LINE}`));
+			return lines;
+		}
 		lines.push(COLORS.warning(" - Balance changes unknown"));
 		return lines;
 	}
@@ -1225,6 +1290,8 @@ function renderBalanceSection(
 	if (changes.length === 0) {
 		if (result.simulation.balances.confidence === "high") {
 			lines.push(COLORS.dim(" - No net balance change detected"));
+		} else if (approvalOnlyAction) {
+			lines.push(COLORS.dim(` - ${APPROVAL_ONLY_BALANCE_LINE}`));
 		} else {
 			lines.push(
 				COLORS.warning(" - Balance changes couldn't be fully verified — treat with extra caution."),
@@ -1307,8 +1374,7 @@ function formatApprovalAmount(amount: bigint, decimals?: number): string {
 
 function renderApprovalsSection(result: AnalysisResult, hasCalldata: boolean): string[] {
 	const lines: string[] = [];
-	const confidence = result.simulation?.approvals.confidence;
-	lines.push(` 🔐 APPROVALS${sectionCoverageSuffix(confidence)}`);
+	lines.push(` 🔐 APPROVALS${approvalsSectionCoverageSuffix(result)}`);
 	if (!hasCalldata) {
 		lines.push(COLORS.dim(" - Not available (no calldata)"));
 		return lines;
@@ -1696,7 +1762,7 @@ function buildRecommendationWhy(
 	if (simulationUncertain) {
 		const sim = result.simulation;
 		if (!sim) {
-			return "Simulation didn't run, so balance and approval effects couldn't be fully verified.";
+			return "Simulation coverage incomplete. See verdict for specific blockers and next step.";
 		}
 		if (!sim.success) {
 			const failureReason =
@@ -1704,10 +1770,10 @@ function buildRecommendationWhy(
 					? userFacingSimulationFailureReason(sim.revertReason)
 					: "";
 			const detail = failureReason ? ` (${failureReason})` : "";
-			return `Simulation didn't complete${detail}, so balance and approval effects couldn't be fully verified.`;
+			return `Simulation didn't complete${detail}. See verdict for specific blockers and next step.`;
 		}
 		const reason = formatInconclusiveReason(result);
-		return `Simulation results were incomplete (${reason}), so balance and approval effects couldn't be fully verified.`;
+		return `Simulation coverage incomplete (${reason}). See verdict for specific blockers and next step.`;
 	}
 
 	if (policy) {
@@ -2580,9 +2646,14 @@ function buildAggregateSafeBalanceSection(
 function buildAggregateSafeApprovalSection(calls: SafeCallResult[]): string[] {
 	const allItems: RenderedApprovalItem[] = [];
 	const seen = new Set<string>();
+	const decodedApprovals: BalanceSimulationResult["approvals"]["changes"] = [];
 
 	for (const call of calls) {
 		if (!call.analysis) continue;
+		const simulationApprovals = call.analysis.simulation?.approvals.changes;
+		if (simulationApprovals) {
+			decodedApprovals.push(...simulationApprovals);
+		}
 		const items = buildApprovalItems(call.analysis);
 		for (const item of items) {
 			const key = item.key.toLowerCase();
@@ -2595,8 +2666,13 @@ function buildAggregateSafeApprovalSection(calls: SafeCallResult[]): string[] {
 	if (allItems.length === 0) return [];
 
 	const worstConf = worstConfidenceOf(calls, (s) => s.approvals.confidence);
+	const confidenceSuffix = sectionCoverageSuffix(worstConf);
+	const showIncompleteSuffix =
+		confidenceSuffix !== " (incomplete)" ||
+		decodedApprovals.length === 0 ||
+		!decodedApprovals.every((approval) => approvalDeltaFullyDecoded(approval));
 	const lines: string[] = [];
-	lines.push(` 🔐 APPROVALS${sectionCoverageSuffix(worstConf)}`);
+	lines.push(` 🔐 APPROVALS${showIncompleteSuffix ? confidenceSuffix : ""}`);
 
 	for (const approval of allItems) {
 		const prefix = approval.isWarning ? "⚠️" : "✓";

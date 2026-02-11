@@ -124,6 +124,52 @@ describe("proxy wallet explainability output", () => {
 		expect(output).toContain("upstream RPC returned truncated trace results");
 	});
 
+	test("uses approval-only balance copy for approve flows when simulation data is missing", () => {
+		const analysis: AnalysisResult = {
+			...buildBaseAnalysis(),
+			intent: "Approve USDC allowance",
+			simulation: undefined,
+		};
+
+		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, mode: "wallet" }));
+
+		expect(output).toContain("No balance changes expected (approval only).");
+		expect(output).not.toContain("Simulation data unavailable — treat with extra caution.");
+	});
+
+	test("does not mark approvals incomplete when approval deltas include previous values", () => {
+		const analysis: AnalysisResult = {
+			...buildBaseAnalysis(),
+			recommendation: "ok",
+			simulation: {
+				success: true,
+				balances: { changes: [], confidence: "high" },
+				approvals: {
+					changes: [
+						{
+							standard: "erc20",
+							token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+							owner: "0xfeed00000000000000000000000000000000beef",
+							spender: "0x000000000022d473030f116ddee9f6b43ac78ba3",
+							amount: MAX_UINT256,
+							previousAmount: 0n,
+							scope: "token",
+							symbol: "USDC",
+							decimals: 6,
+						},
+					],
+					confidence: "low",
+				},
+				notes: ["Unable to read pre-transaction approvals for one slot."],
+			},
+		};
+
+		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, mode: "wallet" }));
+
+		expect(output).toContain("🔐 APPROVALS");
+		expect(output).not.toContain("🔐 APPROVALS (incomplete)");
+	});
+
 	test("adds mitigation guidance when unlimited approvals are shown", () => {
 		const analysis = buildBaseAnalysis();
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, mode: "wallet" }));
