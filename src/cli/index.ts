@@ -694,6 +694,7 @@ async function runProxy(args: string[]) {
 								{
 									hasCalldata: Boolean(input.calldata),
 									sender: input.calldata?.from,
+									mode: "wallet",
 									verbose,
 									maxWidth: terminalWidth(),
 								},

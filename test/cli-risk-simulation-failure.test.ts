@@ -79,8 +79,9 @@ describe("cli recommendation label with simulation failures", () => {
 		);
 		expect(output).toContain("Couldn't verify all approvals — treat with extra caution.");
 		expect(output).toContain(
-			"INCONCLUSIVE: Unable to read pre-transaction approvals (missing previous block)",
+			"INCONCLUSIVE: balance coverage incomplete; approval coverage incomplete",
 		);
+		expect(output).toContain("Unable to read pre-transaction approvals (missing previous block)");
 	});
 
 	test("checks findings are severity-ordered and capped by default", () => {

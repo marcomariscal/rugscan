@@ -1,31 +1,36 @@
 Transaction scan on ethereum
 
-┌───────────────────────────────────────────────────────────────────────────────────────────┐
-│  Chain: ethereum                                                                          │
-│  Protocol: USDC                                                                           │
-│  Action: Approve USDC allowance                                                           │
-│  Contract: USD Coin (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48)                          │
-├───────────────────────────────────────────────────────────────────────────────────────────┤
-│  🎯 RECOMMENDATION: ⚠️ WARNING                                                            │
-│  Why: Policy blocked a non-allowlisted endpoint in this transaction.                      │
-├───────────────────────────────────────────────────────────────────────────────────────────┤
-│  🧾 CHECKS                                                                                │
-│  Context: verified · age: — · txs: —                                                      │
-│  ✓ Source verified                                                                        │
-│  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL]                         │
-├───────────────────────────────────────────────────────────────────────────────────────────┤
-│  🛡️ POLICY / ALLOWLIST                                                                   │
-│  ✓ Allowed protocol (soft): USDC                                                          │
-│  ✓ Allowlisted to: USD Coin (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48)                  │
-│  ⚠️ Non-allowlisted spender: Unknown spender (0x9999999999999999999999999999999999999999) │
-│  Policy decision: BLOCK                                                                   │
-├───────────────────────────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES                                                                       │
-│  - No balance changes detected                                                            │
-├───────────────────────────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS                                                                             │
-│  ⚠️ Allow 0x9999999999999999999999999999999999999999 to spend UNLIMITED USD Coin          │
-├───────────────────────────────────────────────────────────────────────────────────────────┤
-│  👉 VERDICT: ⚠️ WARNING                                                                   │
-│  BLOCK — policy rules did not allow this transaction.                                     │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  Chain: ethereum                                                                                                               │
+│  Protocol: USDC                                                                                                                │
+│  Action: Approve · token: USD Coin (0xa0b8...eb48) · spender: 0x9999...9999 · amount: UNKNOWN · call: approve(address,uint256) │
+│  Decoded: approve(address,uint256) · selector 0x095ea7b3                                                                       │
+│  Contract: USD Coin (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48)                                                               │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  🎯 RECOMMENDATION: ⚠️ WARNING                                                                                                 │
+│  Why: Policy blocked a non-allowlisted endpoint in this transaction.                                                           │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  🧾 CHECKS                                                                                                                     │
+│  Context: verified · age: — · txs: — · metadata: skipped in wallet mode for latency                                            │
+│  ✓ Source verified                                                                                                             │
+│  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL]                                                              │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  🔗 EXPLORER LINKS                                                                                                             │
+│  - Contract, Allowlisted to: https://etherscan.io/address/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48                           │
+│  - Spender, Action spender, Non-allowlisted spender: https://etherscan.io/address/0x9999999999999999999999999999999999999999   │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  🛡️ POLICY / ALLOWLIST                                                                                                        │
+│  ✓ Allowed protocol (soft): USDC                                                                                               │
+│  ✓ Allowlisted to: USD Coin (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48)                                                       │
+│  ⚠️ Non-allowlisted spender: Unknown spender (0x9999999999999999999999999999999999999999)                                      │
+│  Policy decision: BLOCK                                                                                                        │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  💰 BALANCE CHANGES                                                                                                            │
+│  - No balance changes detected                                                                                                 │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  🔐 APPROVALS                                                                                                                  │
+│  ⚠️ Allow 0x9999999999999999999999999999999999999999 to spend UNLIMITED USD Coin                                               │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  👉 VERDICT: ⚠️ WARNING                                                                                                        │
+│  BLOCK — policy rules did not allow this transaction.                                                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

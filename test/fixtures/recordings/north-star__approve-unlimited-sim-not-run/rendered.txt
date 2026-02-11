@@ -1,27 +1,27 @@
 Transaction scan on ethereum
 
-┌───────────────────────────────────────────────────────────────────────────────────────────────┐
-│  Chain: ethereum                                                                              │
-│  Protocol: USDC                                                                               │
-│  Action: Approve USDC allowance                                                               │
-│  Contract: USD Coin (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48)                              │
-├───────────────────────────────────────────────────────────────────────────────────────────────┤
-│  🎯 RECOMMENDATION: ⚡ CAUTION                                                                 │
-│  Why: Simulation didn't run, so balance and approval effects couldn't be fully verified.      │
-├───────────────────────────────────────────────────────────────────────────────────────────────┤
-│  🧾 CHECKS                                                                                    │
-│  Context: verified · age: — · txs: —                                                          │
-│  ✓ Source verified                                                                            │
-│  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL]                             │
-├───────────────────────────────────────────────────────────────────────────────────────────────┤
-│  💰 BALANCE CHANGES                                                                           │
-│  - Simulation data unavailable — treat with extra caution.                                    │
-├───────────────────────────────────────────────────────────────────────────────────────────────┤
-│  🔐 APPROVALS                                                                                 │
-│  - Some approvals detected, but others may be missing:                                        │
-│  ⚠️ Allow 0x0000000000000000000000000000000000000002 to spend UNLIMITED USD Coin              │
-├───────────────────────────────────────────────────────────────────────────────────────────────┤
-│  👉 VERDICT: ⚡ CAUTION                                                                        │
-│  ⚠️ INCONCLUSIVE: simulation data unavailable                                                 │
-│  BLOCK — couldn't fully verify this transaction; check spender, recipient, and amounts first. │
-└───────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  Chain: ethereum                                                                                                                            │
+│  Protocol: USDC                                                                                                                             │
+│  Action: Approve USDC allowance                                                                                                             │
+│  Contract: USD Coin (0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48)                                                                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  🎯 RECOMMENDATION: ⚡ CAUTION                                                                                                               │
+│  Why: Simulation didn't run, so balance and approval effects couldn't be fully verified.                                                    │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  🧾 CHECKS                                                                                                                                  │
+│  Context: verified · age: — · txs: —                                                                                                        │
+│  ✓ Source verified                                                                                                                          │
+│  ⚠️ Unlimited token approval (max allowance) [UNLIMITED_APPROVAL]                                                                           │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  💰 BALANCE CHANGES                                                                                                                         │
+│  - Simulation data unavailable — treat with extra caution.                                                                                  │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  🔐 APPROVALS                                                                                                                               │
+│  - Some approvals detected, but others may be missing:                                                                                      │
+│  ⚠️ Allow 0x0000000000000000000000000000000000000002 to spend UNLIMITED USD Coin                                                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  👉 VERDICT: ⚡ CAUTION                                                                                                                      │
+│  ⚠️ INCONCLUSIVE: simulation data unavailable                                                                                               │
+│  BLOCK — simulation coverage incomplete (simulation data unavailable). This block happened because balance/approval coverage is incomplete. │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

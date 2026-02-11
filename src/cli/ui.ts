@@ -1,5 +1,6 @@
 import pc from "picocolors";
 import { KNOWN_SPENDERS } from "../approvals/known-spenders";
+import { getChainConfig } from "../chains";
 import { MAX_UINT160, MAX_UINT256 } from "../constants";
 import type {
 	AnalysisResult,
@@ -43,6 +44,10 @@ const NATIVE_SYMBOLS: Record<Chain, string> = {
 	optimism: "ETH",
 	polygon: "MATIC",
 };
+
+const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+
+type RenderMode = "default" | "wallet";
 
 function stripAnsi(input: string): string {
 	// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape sequence
@@ -481,6 +486,58 @@ function resolveActionLabel(result: AnalysisResult): string {
 	return base;
 }
 
+type DecodedCallContext = {
+	signature?: string;
+	selector?: string;
+	functionName?: string;
+	args?: unknown;
+	argNames?: string[];
+};
+
+function findDecodedCallContext(findings: Finding[]): DecodedCallContext | null {
+	for (const finding of findings) {
+		if (finding.code !== "CALLDATA_DECODED") continue;
+		if (!finding.details || !isRecord(finding.details)) continue;
+
+		const details = finding.details;
+		const context: DecodedCallContext = {};
+
+		if (typeof details.signature === "string" && details.signature.length > 0) {
+			context.signature = details.signature;
+		}
+		if (typeof details.selector === "string" && details.selector.length > 0) {
+			context.selector = details.selector;
+		}
+		if (typeof details.functionName === "string" && details.functionName.length > 0) {
+			context.functionName = details.functionName;
+		}
+		if ("args" in details) {
+			context.args = details.args;
+		}
+		if (Array.isArray(details.argNames)) {
+			const argNames: string[] = [];
+			for (const name of details.argNames) {
+				if (typeof name === "string" && name.length > 0) {
+					argNames.push(name);
+				}
+			}
+			if (argNames.length > 0) {
+				context.argNames = argNames;
+			}
+		}
+
+		if (
+			context.signature ||
+			context.selector ||
+			context.functionName ||
+			context.args !== undefined
+		) {
+			return context;
+		}
+	}
+	return null;
+}
+
 /**
  * Turn raw Solidity-style signatures (e.g. "execute(bytes,bytes[],uint256)")
  * into human-friendly labels (e.g. "Execute"). Used for Safe multisend per-call
@@ -566,6 +623,130 @@ function findDecodedSignature(findings: Finding[]): string | null {
 	return null;
 }
 
+function isAddress(value: string): boolean {
+	return ADDRESS_REGEX.test(value);
+}
+
+function formatCompactTokenLabel(token: string, symbol?: string): string {
+	if (symbol && symbol.trim().length > 0) {
+		return `${cleanLabel(symbol)} (${shortenAddress(token)})`;
+	}
+	return shortenAddress(token);
+}
+
+function formatCompactSpenderLabel(spender: string, chain: Chain): string {
+	const known = (KNOWN_SPENDERS[chain] ?? []).find(
+		(entry) => entry.address.toLowerCase() === spender.toLowerCase(),
+	);
+	if (known) {
+		return `${known.name} (${shortenAddress(spender)})`;
+	}
+	return shortenAddress(spender);
+}
+
+function parseBigIntValue(value: unknown): bigint | null {
+	if (typeof value === "bigint") return value;
+	if (typeof value === "number") {
+		if (!Number.isFinite(value)) return null;
+		return BigInt(Math.trunc(value));
+	}
+	if (typeof value !== "string") return null;
+	if (value.length === 0) return null;
+	try {
+		return BigInt(value);
+	} catch {
+		return null;
+	}
+}
+
+function findDecodedArgValue(context: DecodedCallContext, name: string): unknown {
+	const args = context.args;
+	if (isRecord(args)) {
+		return args[name];
+	}
+	if (!Array.isArray(args)) return undefined;
+	if (!context.argNames) return undefined;
+	const index = context.argNames.indexOf(name);
+	if (index === -1) return undefined;
+	return args[index];
+}
+
+function decodedCallLooksLikeApproval(context: DecodedCallContext): boolean {
+	const signature = context.signature?.toLowerCase() ?? "";
+	const functionName = context.functionName?.toLowerCase() ?? "";
+	return (
+		signature.startsWith("approve(") ||
+		signature.startsWith("permit(") ||
+		functionName.startsWith("approve") ||
+		functionName.startsWith("permit")
+	);
+}
+
+function buildReadableApprovalActionLabel(
+	result: AnalysisResult,
+	decoded: DecodedCallContext | null,
+): string | null {
+	const simulationApproval = result.simulation?.approvals.changes.find(
+		(approval) =>
+			(approval.standard === "erc20" || approval.standard === "permit2") &&
+			approval.scope !== "all",
+	);
+	const signature = decoded?.signature;
+	const callSuffix = signature ? ` · call: ${signature}` : "";
+
+	if (simulationApproval) {
+		const tokenLabel = formatCompactTokenLabel(simulationApproval.token, simulationApproval.symbol);
+		const spenderLabel = formatCompactSpenderLabel(
+			simulationApproval.spender,
+			result.contract.chain,
+		);
+		const amountLabel = formatApprovalAmountLabel(simulationApproval);
+		const verb = simulationApproval.standard === "permit2" ? "Permit2 approve" : "Approve";
+		return `${verb} · token: ${tokenLabel} · spender: ${spenderLabel} · amount: ${amountLabel}${callSuffix}`;
+	}
+
+	if (!decoded || !decodedCallLooksLikeApproval(decoded)) return null;
+	const spenderValue = findDecodedArgValue(decoded, "spender");
+	const amountValue =
+		findDecodedArgValue(decoded, "amount") ?? findDecodedArgValue(decoded, "value");
+	const spenderLabel =
+		typeof spenderValue === "string" && isAddress(spenderValue)
+			? formatCompactSpenderLabel(spenderValue, result.contract.chain)
+			: "unknown";
+	const amount = parseBigIntValue(amountValue);
+	const amountLabel =
+		amount === null
+			? "UNKNOWN"
+			: amount === MAX_UINT160 || amount === MAX_UINT256
+				? "UNLIMITED"
+				: formatTokenAmount(amount, undefined);
+	const tokenLabel = formatCompactTokenLabel(result.contract.address, result.contract.name);
+	const verb = decoded.functionName?.toLowerCase().startsWith("permit") ? "Permit" : "Approve";
+	return `${verb} · token: ${tokenLabel} · spender: ${spenderLabel} · amount: ${amountLabel}${callSuffix}`;
+}
+
+function resolveReadableActionLabel(result: AnalysisResult): string {
+	const decoded = findDecodedCallContext(result.findings);
+	const readableApproval = buildReadableApprovalActionLabel(result, decoded);
+	if (readableApproval) return readableApproval;
+	return resolveActionLabel(result);
+}
+
+function formatDecodedCallContextLine(decoded: DecodedCallContext | null): string | null {
+	if (!decoded) return null;
+	const signature = decoded.signature ?? decoded.functionName;
+	if (signature && decoded.selector) {
+		return ` Decoded: ${signature} · selector ${decoded.selector}`;
+	}
+	if (signature) {
+		return ` Decoded: ${signature}`;
+	}
+	if (decoded.selector) {
+		return ` Decoded selector: ${decoded.selector}`;
+	}
+	return null;
+}
+
 function cleanReasonPhrase(input: string): string {
 	return cleanLabel(input).replace(/[.]+$/g, "");
 }
@@ -620,22 +801,49 @@ function collectDetailedInconclusiveReasons(result: AnalysisResult): string[] {
 	return reasons;
 }
 
-function formatInconclusiveReason(result: AnalysisResult): string {
+function extractCoverageReasons(result: AnalysisResult): string[] {
 	const simulation = result.simulation;
-	if (!simulation) {
-		return "simulation data unavailable";
-	}
-	if (!simulation.success) {
-		const details = collectDetailedInconclusiveReasons(result).slice(0, 2);
-		const suffix = details.length > 0 ? `; ${details.join("; ")}` : "";
-		return `simulation didn't complete${simulation.revertReason ? ` (${simulation.revertReason})` : ""}${suffix}`;
-	}
+	if (!simulation) return ["simulation data unavailable"];
 
-	const detailed = collectDetailedInconclusiveReasons(result);
-	if (detailed.length > 0) {
-		return detailed.slice(0, 2).join("; ");
+	const reasons: string[] = [];
+	if (!simulation.success) {
+		reasons.push(
+			`simulation didn't complete${simulation.revertReason ? ` (${simulation.revertReason})` : ""}`,
+		);
 	}
-	return "simulation data incomplete";
+	if (simulation.balances.confidence !== "high") {
+		reasons.push("balance coverage incomplete");
+	}
+	if (simulation.approvals.confidence !== "high") {
+		reasons.push("approval coverage incomplete");
+	}
+	if (reasons.length === 0) {
+		reasons.push("simulation data incomplete");
+	}
+	return reasons;
+}
+
+function formatInconclusiveReason(result: AnalysisResult): string {
+	const reasons = [...extractCoverageReasons(result)];
+	const extras = collectDetailedInconclusiveReasons(result).filter(
+		(reason) =>
+			!reasons.some((coverageReason) => coverageReason.toLowerCase() === reason.toLowerCase()),
+	);
+	const details = [...reasons, ...extras].slice(0, 3);
+	return details.join("; ");
+}
+
+function formatSimulationCoverageBlockReason(result: AnalysisResult): string {
+	const coverage = extractCoverageReasons(result).join("; ");
+	const notes = collectDetailedInconclusiveReasons(result)
+		.filter(
+			(reason) =>
+				reason.toLowerCase() !== "balance coverage incomplete" &&
+				reason.toLowerCase() !== "approval coverage incomplete",
+		)
+		.slice(0, 2);
+	const suffix = notes.length > 0 ? ` Contributing notes: ${notes.join("; ")}.` : "";
+	return `BLOCK — simulation coverage incomplete (${coverage}). This block happened because balance/approval coverage is incomplete.${suffix}`;
 }
 
 function formatBalanceChangeLine(changes: string[]): string {
@@ -834,15 +1042,19 @@ function contractVerificationState(result: AnalysisResult): "verified" | "unveri
 	return hasUnverifiedFinding ? "unverified" : "unknown";
 }
 
-function formatChecksContextLine(result: AnalysisResult): string {
+function formatChecksContextLine(result: AnalysisResult, mode: RenderMode): string {
 	const verificationState = contractVerificationState(result);
-	const ageLabel =
-		result.contract.age_days === undefined ? "age: —" : `age: ${result.contract.age_days}d`;
-	const txCountLabel =
-		result.contract.tx_count === undefined
-			? "txs: —"
-			: `txs: ${new Intl.NumberFormat("en-US").format(result.contract.tx_count)}`;
-	return ` Context: ${verificationState} · ${ageLabel} · ${txCountLabel}`;
+	const ageMissing = result.contract.age_days === undefined;
+	const txCountMissing = result.contract.tx_count === undefined;
+	const ageLabel = ageMissing ? "age: —" : `age: ${result.contract.age_days}d`;
+	const txCountLabel = txCountMissing
+		? "txs: —"
+		: `txs: ${new Intl.NumberFormat("en-US").format(result.contract.tx_count)}`;
+	const metadataReason =
+		mode === "wallet" && (ageMissing || txCountMissing)
+			? " · metadata: skipped in wallet mode for latency"
+			: "";
+	return ` Context: ${verificationState} · ${ageLabel} · ${txCountLabel}${metadataReason}`;
 }
 
 function isChecksNoiseFinding(finding: Finding): boolean {
@@ -868,11 +1080,15 @@ function collectChecksFindings(result: AnalysisResult): Finding[] {
 	return Array.from(deduped.values()).sort(compareFindingsBySignal);
 }
 
-function renderChecksSection(result: AnalysisResult, verboseFindings: boolean): string[] {
+function renderChecksSection(
+	result: AnalysisResult,
+	verboseFindings: boolean,
+	mode: RenderMode,
+): string[] {
 	const lines: string[] = [];
 	lines.push(" 🧾 CHECKS");
 
-	const contextLine = formatChecksContextLine(result);
+	const contextLine = formatChecksContextLine(result, mode);
 	const verificationState = contractVerificationState(result);
 	if (verificationState === "verified") {
 		lines.push(COLORS.dim(contextLine));
@@ -906,6 +1122,173 @@ function renderChecksSection(result: AnalysisResult, verboseFindings: boolean): 
 		lines.push(COLORS.dim(` +${hiddenCount} more (use --verbose)`));
 	}
 
+	return lines;
+}
+
+type ExplorerLinkAccumulator = {
+	labels: Set<string>;
+	rank: number;
+};
+
+function addExplorerLink(
+	links: Map<string, ExplorerLinkAccumulator>,
+	address: string,
+	label: string,
+	rank: number,
+): void {
+	if (!isAddress(address)) return;
+	const normalizedAddress = address.toLowerCase();
+	const normalizedLabel = cleanLabel(label);
+	if (normalizedLabel.length === 0) return;
+	const existing = links.get(normalizedAddress);
+	if (existing) {
+		existing.labels.add(normalizedLabel);
+		existing.rank = Math.min(existing.rank, rank);
+		return;
+	}
+	links.set(normalizedAddress, {
+		labels: new Set([normalizedLabel]),
+		rank,
+	});
+}
+
+function collectAddressValues(value: unknown, collector: Set<string>): void {
+	if (typeof value === "string") {
+		if (isAddress(value)) {
+			collector.add(value);
+		}
+		return;
+	}
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			collectAddressValues(item, collector);
+		}
+		return;
+	}
+	if (!isRecord(value)) return;
+	for (const item of Object.values(value)) {
+		collectAddressValues(item, collector);
+	}
+}
+
+function decodedArgRoleLabel(argName: string): string {
+	const normalized = argName.toLowerCase();
+	if (normalized.includes("spender")) return "Action spender";
+	if (normalized.includes("token")) return "Action token";
+	if (normalized.includes("recipient") || normalized === "to") return "Action recipient";
+	if (normalized.includes("operator")) return "Action operator";
+	if (normalized.includes("owner") || normalized.includes("from")) return "Action owner";
+	return `Action ${argName}`;
+}
+
+function collectDecodedActionLinks(
+	links: Map<string, ExplorerLinkAccumulator>,
+	decoded: DecodedCallContext,
+): void {
+	if (decoded.args === undefined) return;
+
+	if (isRecord(decoded.args)) {
+		for (const [argName, value] of Object.entries(decoded.args)) {
+			const found = new Set<string>();
+			collectAddressValues(value, found);
+			for (const address of found) {
+				addExplorerLink(links, address, decodedArgRoleLabel(argName), 4);
+			}
+		}
+		return;
+	}
+
+	if (!Array.isArray(decoded.args)) return;
+	for (let index = 0; index < decoded.args.length; index += 1) {
+		const value = decoded.args[index];
+		const argName = decoded.argNames?.[index] ?? `arg${index}`;
+		const found = new Set<string>();
+		collectAddressValues(value, found);
+		for (const address of found) {
+			addExplorerLink(links, address, decodedArgRoleLabel(argName), 4);
+		}
+	}
+}
+
+function buildExplorerLinkEntries(
+	result: AnalysisResult,
+	policy?: PolicySummary,
+): Array<{
+	address: string;
+	labels: string[];
+}> {
+	const links = new Map<string, ExplorerLinkAccumulator>();
+
+	addExplorerLink(links, result.contract.address, "Contract", 0);
+	if (result.contract.implementation) {
+		addExplorerLink(links, result.contract.implementation, "Implementation", 1);
+	}
+	if (result.contract.beacon) {
+		addExplorerLink(links, result.contract.beacon, "Beacon", 1);
+	}
+
+	for (const approval of result.simulation?.approvals.changes ?? []) {
+		addExplorerLink(links, approval.token, "Token", 2);
+		addExplorerLink(links, approval.spender, "Spender", 3);
+	}
+
+	for (const change of result.simulation?.balances.changes ?? []) {
+		if (change.address) {
+			addExplorerLink(links, change.address, "Balance token", 5);
+		}
+	}
+
+	for (const finding of result.findings) {
+		if (!finding.details || !isRecord(finding.details)) continue;
+		if (finding.code === "UNLIMITED_APPROVAL") {
+			const spender = finding.details.spender;
+			if (typeof spender === "string") {
+				addExplorerLink(links, spender, "Spender", 3);
+			}
+		}
+	}
+
+	const decoded = findDecodedCallContext(result.findings);
+	if (decoded) {
+		collectDecodedActionLinks(links, decoded);
+	}
+
+	for (const endpoint of policy?.allowlisted ?? []) {
+		addExplorerLink(links, endpoint.address, `Allowlisted ${endpoint.role}`, 6);
+	}
+	for (const endpoint of policy?.nonAllowlisted ?? []) {
+		addExplorerLink(links, endpoint.address, `Non-allowlisted ${endpoint.role}`, 6);
+	}
+
+	return Array.from(links.entries())
+		.map(([address, value]) => ({
+			address,
+			labels: Array.from(value.labels),
+			rank: value.rank,
+		}))
+		.sort((a, b) => {
+			if (a.rank !== b.rank) {
+				return a.rank - b.rank;
+			}
+			return a.address.localeCompare(b.address);
+		})
+		.map(({ address, labels }) => ({ address, labels }));
+}
+
+function renderExplorerLinksSection(
+	result: AnalysisResult,
+	hasCalldata: boolean,
+	policy?: PolicySummary,
+): string[] {
+	if (!hasCalldata) return [];
+	const links = buildExplorerLinkEntries(result, policy);
+	if (links.length === 0) return [];
+
+	const explorerBase = getChainConfig(result.contract.chain).etherscanUrl;
+	const lines: string[] = [" 🔗 EXPLORER LINKS"];
+	for (const link of links) {
+		lines.push(` - ${link.labels.join(", ")}: ${explorerBase}/address/${link.address}`);
+	}
 	return lines;
 }
 
@@ -1084,7 +1467,7 @@ function buildNextActionLine(
 	policy?: PolicySummary,
 ): string {
 	if (simulationIsUncertain(result, hasCalldata)) {
-		return "BLOCK — couldn't fully verify this transaction; check spender, recipient, and amounts first.";
+		return formatSimulationCoverageBlockReason(result);
 	}
 
 	if (policy) {
@@ -1144,6 +1527,7 @@ export function renderResultBox(
 		hasCalldata?: boolean;
 		sender?: string;
 		policy?: PolicySummary;
+		mode?: RenderMode;
 		verbose?: boolean;
 		/** When set, long lines word-wrap to fit within this terminal width. */
 		maxWidth?: number;
@@ -1153,17 +1537,28 @@ export function renderResultBox(
 	const actorLabel: "You" | "Sender" = context?.sender ? "You" : "Sender";
 	const protocol = formatProtocolDisplay(result);
 	const verboseFindings = context?.verbose ?? false;
+	const renderMode: RenderMode =
+		context?.mode === "wallet" || context?.policy?.mode === "wallet" ? "wallet" : "default";
 	const protocolSuffix =
 		result.protocolMatch?.slug && result.protocolMatch.slug !== protocol
 			? COLORS.dim(` (${result.protocolMatch.slug})`)
 			: "";
-	const action = hasCalldata ? resolveActionLabel(result) : "N/A";
+	const action = hasCalldata
+		? renderMode === "wallet"
+			? resolveReadableActionLabel(result)
+			: resolveActionLabel(result)
+		: "N/A";
+	const decodedLine =
+		hasCalldata && renderMode === "wallet"
+			? formatDecodedCallContextLine(findDecodedCallContext(result.findings))
+			: null;
 	const contractLabel = formatContractLabel(result.contract);
 
 	const headerLines = [
 		` Chain: ${result.contract.chain}`,
 		` Protocol: ${protocol}${protocolSuffix}`,
 		...(hasCalldata ? [` Action: ${action}`] : []),
+		...(decodedLine ? [decodedLine] : []),
 		` Contract: ${contractLabel}`,
 	];
 
@@ -1186,6 +1581,13 @@ export function renderResultBox(
 			sections.push(renderApprovalsSection(result, hasCalldata));
 		}
 
+		if (renderMode === "wallet") {
+			const explorerLinks = renderExplorerLinksSection(result, hasCalldata, context?.policy);
+			if (explorerLinks.length > 0) {
+				sections.push(explorerLinks);
+			}
+		}
+
 		// Compact verdict: just the answer, no section header
 		const verdictLabel = hasCalldata ? "SAFE to continue." : "No issues found.";
 		sections.push([COLORS.ok(` ✅ ${verdictLabel}`)]);
@@ -1194,10 +1596,13 @@ export function renderResultBox(
 	}
 
 	// Full detail: assessment quality is degraded or --verbose requested
+	const explorerLinks =
+		renderMode === "wallet" ? renderExplorerLinksSection(result, hasCalldata, context?.policy) : [];
 	const sections = hasCalldata
 		? [
 				renderRecommendationSection(result, hasCalldata, context?.policy),
-				renderChecksSection(result, verboseFindings),
+				renderChecksSection(result, verboseFindings, renderMode),
+				...(explorerLinks.length > 0 ? [explorerLinks] : []),
 				...(context?.policy ? [renderPolicySection(result, hasCalldata, context.policy)] : []),
 				renderBalanceSection(result, hasCalldata, actorLabel),
 				renderApprovalsSection(result, hasCalldata),
@@ -1205,7 +1610,7 @@ export function renderResultBox(
 			]
 		: [
 				renderRecommendationSection(result, hasCalldata, context?.policy),
-				renderChecksSection(result, verboseFindings),
+				renderChecksSection(result, verboseFindings, renderMode),
 				...(context?.policy ? [renderPolicySection(result, hasCalldata, context.policy)] : []),
 				renderVerdictSection(result, hasCalldata, context?.policy),
 			];
