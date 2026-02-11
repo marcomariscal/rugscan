@@ -46,6 +46,8 @@ const NATIVE_SYMBOLS: Record<Chain, string> = {
 };
 
 const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const BALANCE_AMOUNT_FRACTION_DIGITS = 4;
+const MIN_BOX_WIDTH_FOR_BORDERS = 56;
 
 type RenderMode = "default" | "wallet";
 
@@ -72,6 +74,39 @@ function padRight(input: string, width: number): string {
 	const length = visibleLength(input);
 	if (length >= width) return input;
 	return `${input}${" ".repeat(width - length)}`;
+}
+
+/**
+ * Clip an ANSI-colored string to at most `maxVisible` visible columns.
+ * Inserts a reset at the clip boundary.
+ */
+function clipVisible(input: string, maxVisible: number): string {
+	if (visibleLength(input) <= maxVisible) return input;
+	let vis = 0;
+	let i = 0;
+	while (i < input.length && vis < maxVisible) {
+		if (input[i] === "\x1b") {
+			const tail = input.slice(i);
+			// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape sequence
+			const m = tail.match(/^\x1b\[[0-9;]*m/);
+			if (m) {
+				i += m[0].length;
+				continue;
+			}
+		}
+		vis++;
+		i++;
+	}
+	return `${input.slice(0, i)}\x1b[0m`;
+}
+
+/**
+ * Fit a content line into a box row: pad if narrow, clip if too wide.
+ */
+function fitBoxContent(input: string, width: number): string {
+	const length = visibleLength(input);
+	if (length <= width) return padRight(input, width);
+	return clipVisible(input, width);
 }
 
 class Spinner {
@@ -285,7 +320,7 @@ function formatFindingLine(finding: Finding): string {
 					? { icon: "✓", color: COLORS.ok }
 					: { icon: "ℹ️", color: COLORS.dim };
 
-	const message = `${style.icon} ${finding.message}`;
+	const message = `${style.icon} ${cleanLabel(finding.message)}`;
 	const code = COLORS.dim(`[${finding.code}]`);
 	return `${style.color(message)} ${code}`.trimEnd();
 }
@@ -309,7 +344,16 @@ function wrapBoxLine(input: string, maxWidth: number): string[] {
 	const lines: string[] = [];
 	let remaining = input;
 
+	// Safety: limit iterations to prevent infinite loops when a single token
+	// exceeds maxWidth (the continuation indent can make the remainder grow).
+	const maxIterations =
+		Math.ceil(visibleLength(remaining) / Math.max(maxWidth - contIndent.length, 1)) + 10;
+	let iterations = 0;
+
 	while (visibleLength(remaining) > maxWidth) {
+		iterations++;
+		if (iterations > maxIterations) break;
+
 		let visPos = 0;
 		let lastSpaceByte = -1;
 		let activeAnsi = "";
@@ -334,8 +378,12 @@ function wrapBoxLine(input: string, maxWidth: number): string[] {
 			i++;
 		}
 
+		// If no space found, force a hard break at i to avoid infinite loop
 		const breakByte = lastSpaceByte > 0 ? lastSpaceByte : i;
 		const skipByte = lastSpaceByte > 0 ? lastSpaceByte + 1 : i;
+
+		// Don't break if we made zero progress (shouldn't happen but safety check)
+		if (skipByte === 0) break;
 
 		// Close any open ANSI sequence on this fragment
 		lines.push(`${remaining.slice(0, breakByte)}\x1b[0m`);
@@ -356,7 +404,39 @@ function wrapAllLines(lines: string[], maxContentWidth: number | undefined): str
 	return lines.flatMap((line) => wrapBoxLine(line, maxContentWidth));
 }
 
+function shouldUsePlainLayout(maxWidth?: number): boolean {
+	return maxWidth !== undefined && maxWidth < MIN_BOX_WIDTH_FOR_BORDERS;
+}
+
+function plainDivider(maxWidth?: number): string {
+	const target = maxWidth ?? 48;
+	const width = Math.max(12, Math.min(target, 48));
+	return "─".repeat(width);
+}
+
+function renderPlainSections(
+	headerLines: string[],
+	sections: string[][],
+	maxWidth?: number,
+): string {
+	const wrappedHeaders = wrapAllLines(headerLines, maxWidth);
+	const wrappedSections = sections.map((section) => wrapAllLines(section, maxWidth));
+	const lines: string[] = [...wrappedHeaders];
+	const divider = plainDivider(maxWidth);
+
+	for (const section of wrappedSections) {
+		lines.push(divider);
+		lines.push(...section);
+	}
+
+	return lines.join("\n");
+}
+
 function renderBox(title: string, sections: string[][], maxWidth?: number): string {
+	if (shouldUsePlainLayout(maxWidth)) {
+		return renderPlainSections([title], sections, maxWidth);
+	}
+
 	// Box chrome takes 4 visible columns: "│ " (2) + " │" (2)
 	const contentMax = maxWidth !== undefined ? maxWidth - 4 : undefined;
 
@@ -364,7 +444,8 @@ function renderBox(title: string, sections: string[][], maxWidth?: number): stri
 	const wrappedSections = sections.map((s) => wrapAllLines(s, contentMax));
 
 	const allLines = [...wrappedTitle, ...wrappedSections.flat()];
-	const width = allLines.reduce((max, line) => Math.max(max, visibleLength(line)), 0);
+	const naturalWidth = allLines.reduce((max, line) => Math.max(max, visibleLength(line)), 0);
+	const width = contentMax !== undefined ? Math.min(naturalWidth, contentMax) : naturalWidth;
 	const horizontal = "─".repeat(width + 2);
 
 	const top = `┌${horizontal}┐`;
@@ -373,12 +454,12 @@ function renderBox(title: string, sections: string[][], maxWidth?: number): stri
 
 	const lines: string[] = [top];
 	for (const t of wrappedTitle) {
-		lines.push(`│ ${padRight(t, width)} │`);
+		lines.push(`│ ${fitBoxContent(t, width)} │`);
 	}
 	wrappedSections.forEach((section, index) => {
 		lines.push(divider);
 		for (const line of section) {
-			lines.push(`│ ${padRight(line, width)} │`);
+			lines.push(`│ ${fitBoxContent(line, width)} │`);
 		}
 		if (index === wrappedSections.length - 1) {
 			return;
@@ -389,6 +470,10 @@ function renderBox(title: string, sections: string[][], maxWidth?: number): stri
 }
 
 function renderUnifiedBox(headerLines: string[], sections: string[][], maxWidth?: number): string {
+	if (shouldUsePlainLayout(maxWidth)) {
+		return renderPlainSections(headerLines, sections, maxWidth);
+	}
+
 	// Box chrome takes 4 visible columns: "│ " (2) + " │" (2)
 	const contentMax = maxWidth !== undefined ? maxWidth - 4 : undefined;
 
@@ -396,7 +481,8 @@ function renderUnifiedBox(headerLines: string[], sections: string[][], maxWidth?
 	const wrappedSections = sections.map((s) => wrapAllLines(s, contentMax));
 
 	const allLines = [...wrappedHeaders, ...wrappedSections.flat()];
-	const width = allLines.reduce((max, line) => Math.max(max, visibleLength(line)), 0);
+	const naturalWidth = allLines.reduce((max, line) => Math.max(max, visibleLength(line)), 0);
+	const width = contentMax !== undefined ? Math.min(naturalWidth, contentMax) : naturalWidth;
 	const horizontal = "─".repeat(width + 2);
 
 	const top = `┌${horizontal}┐`;
@@ -405,12 +491,12 @@ function renderUnifiedBox(headerLines: string[], sections: string[][], maxWidth?
 
 	const lines: string[] = [top];
 	for (const line of wrappedHeaders) {
-		lines.push(`│ ${padRight(line, width)} │`);
+		lines.push(`│ ${fitBoxContent(line, width)} │`);
 	}
 	wrappedSections.forEach((section) => {
 		lines.push(divider);
 		for (const line of section) {
-			lines.push(`│ ${padRight(line, width)} │`);
+			lines.push(`│ ${fitBoxContent(line, width)} │`);
 		}
 	});
 	lines.push(bottom);
@@ -732,19 +818,88 @@ function resolveReadableActionLabel(result: AnalysisResult): string {
 	return resolveActionLabel(result);
 }
 
-function formatDecodedCallContextLine(decoded: DecodedCallContext | null): string | null {
-	if (!decoded) return null;
-	const signature = decoded.signature ?? decoded.functionName;
-	if (signature && decoded.selector) {
-		return ` Decoded: ${signature} · selector ${decoded.selector}`;
+function decodedArgEntries(context: DecodedCallContext): Array<[string, unknown]> {
+	if (context.args === undefined) return [];
+	if (isRecord(context.args)) {
+		return Object.entries(context.args);
 	}
-	if (signature) {
-		return ` Decoded: ${signature}`;
+	if (!Array.isArray(context.args)) return [];
+
+	const entries: Array<[string, unknown]> = [];
+	for (let index = 0; index < context.args.length; index += 1) {
+		const value = context.args[index];
+		const name = context.argNames?.[index] ?? `arg${index}`;
+		entries.push([name, value]);
 	}
-	if (decoded.selector) {
-		return ` Decoded selector: ${decoded.selector}`;
+	return entries;
+}
+
+function summarizeDecodedArgValue(value: unknown): string | null {
+	if (typeof value === "string") {
+		if (isAddress(value)) {
+			return shortenAddress(value);
+		}
+		const cleaned = cleanLabel(value);
+		if (cleaned.length === 0) return null;
+		return cleaned.length > 24 ? `${cleaned.slice(0, 21)}…` : cleaned;
+	}
+	if (typeof value === "number") {
+		if (!Number.isFinite(value)) return null;
+		return value.toString();
+	}
+	if (typeof value === "bigint") {
+		return value.toString();
+	}
+	if (typeof value === "boolean") {
+		return value ? "true" : "false";
+	}
+	if (Array.isArray(value)) {
+		return `[${value.length} item${value.length === 1 ? "" : "s"}]`;
+	}
+	if (isRecord(value)) {
+		return "{…}";
 	}
 	return null;
+}
+
+function formatDecodedArgsPreview(decoded: DecodedCallContext, maxArgs = 3): string | null {
+	const entries = decodedArgEntries(decoded);
+	if (entries.length === 0) return null;
+
+	const preview: string[] = [];
+	for (const [name, value] of entries) {
+		if (preview.length >= maxArgs) break;
+		const summarized = summarizeDecodedArgValue(value);
+		if (!summarized) continue;
+		preview.push(`${name}=${summarized}`);
+	}
+	if (preview.length === 0) return null;
+	if (entries.length > preview.length) {
+		preview.push(`+${entries.length - preview.length} more`);
+	}
+	return preview.join(", ");
+}
+
+function formatDecodedCallContextLine(decoded: DecodedCallContext | null): string | null {
+	if (!decoded) return null;
+
+	const parts: string[] = [];
+	const signature = decoded.signature ?? decoded.functionName;
+	if (signature) {
+		parts.push(signature);
+	}
+
+	const argsPreview = formatDecodedArgsPreview(decoded);
+	if (argsPreview) {
+		parts.push(`args: ${argsPreview}`);
+	}
+
+	if (decoded.selector) {
+		parts.push(`selector ${decoded.selector}`);
+	}
+
+	if (parts.length === 0) return null;
+	return ` Decoded: ${parts.join(" · ")}`;
 }
 
 function cleanReasonPhrase(input: string): string {
@@ -921,7 +1076,7 @@ function renderBalanceSection(
 	const changes = buildBalanceChangeItems(result.simulation, result.contract.chain);
 	if (changes.length === 0) {
 		if (result.simulation.balances.confidence === "high") {
-			lines.push(COLORS.dim(" - No balance changes detected"));
+			lines.push(COLORS.dim(" - No net balance change detected"));
 		} else {
 			lines.push(
 				COLORS.warning(" - Balance changes couldn't be fully verified — treat with extra caution."),
@@ -1052,10 +1207,20 @@ function formatChecksContextLine(result: AnalysisResult, mode: RenderMode): stri
 	const txCountLabel = txCountMissing
 		? "txs: —"
 		: `txs: ${new Intl.NumberFormat("en-US").format(txCount)}`;
-	const metadataReason =
-		mode === "wallet" && (ageMissing || txCountMissing)
-			? " · metadata: skipped in wallet mode for latency"
-			: "";
+
+	let metadataReason = "";
+	if (ageMissing || txCountMissing) {
+		if (mode === "wallet") {
+			metadataReason = " · metadata: skipped in fast mode for latency";
+		} else if (ageMissing && txCountMissing) {
+			metadataReason = " · metadata: contract age/tx history unavailable from providers";
+		} else if (ageMissing) {
+			metadataReason = " · metadata: contract age unavailable from providers";
+		} else {
+			metadataReason = " · metadata: tx history unavailable from providers";
+		}
+	}
+
 	return ` Context: ${verificationState} · ${ageLabel} · ${txCountLabel}${metadataReason}`;
 }
 
@@ -1074,6 +1239,9 @@ function collectChecksFindings(result: AnalysisResult): Finding[] {
 	const deduped = new Map<string, Finding>();
 	for (const finding of result.findings) {
 		if (isChecksNoiseFinding(finding)) continue;
+		if (result.contract.is_proxy && (finding.code === "PROXY" || finding.code === "UPGRADEABLE")) {
+			continue;
+		}
 		const existing = deduped.get(finding.code);
 		if (!existing || compareFindingsBySignal(finding, existing) < 0) {
 			deduped.set(finding.code, finding);
@@ -1354,6 +1522,10 @@ function buildRecommendationWhy(
 		}
 	}
 
+	if (result.contract.is_proxy) {
+		return "Proxy / upgradeable contract detected — code can change post-deploy, so trust assumptions matter.";
+	}
+
 	const topFinding = collectChecksFindings(result)[0];
 	if (topFinding) {
 		if (topFinding.code === "UPGRADEABLE") {
@@ -1550,10 +1722,9 @@ export function renderResultBox(
 			? resolveReadableActionLabel(result)
 			: resolveActionLabel(result)
 		: "N/A";
-	const decodedLine =
-		hasCalldata && renderMode === "wallet"
-			? formatDecodedCallContextLine(findDecodedCallContext(result.findings))
-			: null;
+	const decodedLine = hasCalldata
+		? formatDecodedCallContextLine(findDecodedCallContext(result.findings))
+		: null;
 	const contractLabel = formatContractLabel(result.contract);
 
 	const headerLines = [
@@ -1586,11 +1757,9 @@ export function renderResultBox(
 			sections.push(renderApprovalsSection(result, hasCalldata));
 		}
 
-		if (renderMode === "wallet") {
-			const explorerLinks = renderExplorerLinksSection(result, hasCalldata, context?.policy);
-			if (explorerLinks.length > 0) {
-				sections.push(explorerLinks);
-			}
+		const explorerLinks = renderExplorerLinksSection(result, hasCalldata, context?.policy);
+		if (explorerLinks.length > 0) {
+			sections.push(explorerLinks);
 		}
 
 		// Compact verdict: just the answer, no section header
@@ -1601,8 +1770,7 @@ export function renderResultBox(
 	}
 
 	// Full detail: assessment quality is degraded or --verbose requested
-	const explorerLinks =
-		renderMode === "wallet" ? renderExplorerLinksSection(result, hasCalldata, context?.policy) : [];
+	const explorerLinks = renderExplorerLinksSection(result, hasCalldata, context?.policy);
 	const sections = hasCalldata
 		? [
 				renderRecommendationSection(result, hasCalldata, context?.policy),
@@ -1626,13 +1794,19 @@ export function renderResultBox(
 function buildBalanceChangeItems(simulation: BalanceSimulationResult, chain: Chain): string[] {
 	const items: string[] = [];
 	if (simulation.nativeDiff && simulation.nativeDiff !== 0n) {
-		items.push(formatSignedAmount(simulation.nativeDiff, 18, nativeSymbol(chain)));
+		const nativeItem = formatSignedAmount(simulation.nativeDiff, 18, nativeSymbol(chain));
+		if (nativeItem) {
+			items.push(nativeItem);
+		}
 	}
 
 	const erc20Net = aggregateErc20(simulation.balances.changes);
 	for (const change of erc20Net) {
 		const symbol = change.symbol ?? change.address;
-		items.push(formatSignedAmount(change.amount, change.decimals, symbol));
+		const item = formatSignedAmount(change.amount, change.decimals, symbol);
+		if (item) {
+			items.push(item);
+		}
 	}
 
 	for (const change of simulation.balances.changes) {
@@ -1800,13 +1974,26 @@ function formatNftChange(change: AssetChange): string | null {
 	return `${sign} ${label}${tokenId}`;
 }
 
-function formatSignedAmount(amount: bigint, decimals: number | undefined, symbol: string): string {
+function isDustDisplayAmount(amount: bigint, decimals: number | undefined): boolean {
+	if (amount === 0n) return true;
+	if (decimals === undefined) return false;
+	if (decimals <= BALANCE_AMOUNT_FRACTION_DIGITS) return false;
+	const threshold = 10n ** BigInt(decimals - BALANCE_AMOUNT_FRACTION_DIGITS);
+	return amount < threshold;
+}
+
+function formatSignedAmount(
+	amount: bigint,
+	decimals: number | undefined,
+	symbol: string,
+): string | null {
 	const sign = amount < 0n ? "-" : "+";
 	const absolute = amount < 0n ? -amount : amount;
+	if (isDustDisplayAmount(absolute, decimals)) return null;
 	const formatted =
 		decimals === undefined
 			? formatNumberString(absolute.toString())
-			: formatNumberString(formatFixed(absolute, decimals), 4);
+			: formatNumberString(formatFixed(absolute, decimals), BALANCE_AMOUNT_FRACTION_DIGITS);
 	return `${sign} ${formatted} ${symbol}`;
 }
 
@@ -2126,12 +2313,18 @@ function buildAggregateSafeBalanceSection(
 
 	const items: string[] = [];
 	if (nativeDiff !== 0n) {
-		items.push(formatSignedAmount(nativeDiff, 18, nativeSymbol(chain)));
+		const nativeItem = formatSignedAmount(nativeDiff, 18, nativeSymbol(chain));
+		if (nativeItem) {
+			items.push(nativeItem);
+		}
 	}
 	const erc20Net = aggregateErc20(allChanges);
 	for (const change of erc20Net) {
 		const symbol = change.symbol ?? shortenAddress(change.address);
-		items.push(formatSignedAmount(change.amount, change.decimals, symbol));
+		const item = formatSignedAmount(change.amount, change.decimals, symbol);
+		if (item) {
+			items.push(item);
+		}
 	}
 	for (const change of allChanges) {
 		if (change.assetType === "erc20") continue;
@@ -2140,7 +2333,7 @@ function buildAggregateSafeBalanceSection(
 	}
 
 	if (items.length === 0 && !anyFailed && !anyMissing) {
-		lines.push(COLORS.dim(" - No balance changes detected"));
+		lines.push(COLORS.dim(" - No net balance change detected"));
 		return lines;
 	}
 

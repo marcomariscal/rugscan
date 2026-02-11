@@ -126,4 +126,29 @@ describe("box width-aware wrapping", () => {
 		// When maxWidth is larger than content, output should be identical
 		expect(clamped).toBe(wide);
 	});
+
+	test("falls back to non-box layout in very narrow terminals", () => {
+		const analysis: AnalysisResult = {
+			...baseAnalysis(),
+			recommendation: "warning",
+			simulation: {
+				success: false,
+				revertReason: "execution reverted: transferFrom failed",
+				balances: { changes: [], confidence: "low" },
+				approvals: { changes: [], confidence: "low" },
+				notes: ["Simulation failed"],
+			},
+		};
+
+		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, maxWidth: 50 }));
+		expect(output).toContain("🎯 RECOMMENDATION");
+		// Plain layout: no box chrome characters
+		expect(output).not.toContain("┌");
+		expect(output).not.toContain("│");
+		// Most lines should fit; URLs without spaces are allowed to overflow
+		const lines = output.split("\n").filter((l) => l.length > 0);
+		const fittingLines = lines.filter((l) => l.length <= 50);
+		// At least 80% of lines should fit (URLs are the exception)
+		expect(fittingLines.length / lines.length).toBeGreaterThan(0.8);
+	});
 });
