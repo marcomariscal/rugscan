@@ -266,6 +266,15 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "execute",
 	},
+	// === Pass 20: Flashloan path (scaffold → real promotion) ===
+	{
+		flow: "Aave V3 flashLoanSimple (borrow + callback + repay)",
+		fixturePath: "fixtures/txs/aave-v3-pool-flashloansimple-eded750a.json",
+		nativeDiff: "zero",
+		intentIncludes: "flashloan",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "flashLoanSimple",
+	},
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -550,24 +559,11 @@ const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
 	// Universal Router command-stream multi-step path — PROMOTED to real lane (Pass 18b)
 	// Proxy admin upgrade via ProxyAdmin.upgrade() — PROMOTED to real lane (Pass 19)
 	// EIP-4337 EntryPoint v0.7 handleOps — PROMOTED to real lane (Pass 19)
-	{
-		lane: "Flashloan path",
-		placeholderFixturePath: "fixtures/txs/flashloan-path-TODO.json",
-		skipReason: "No flashloan replay fixture committed yet for Aave/Balancer-style callbacks.",
-		acceptanceCriteria: [
-			"Fixture decodes flashLoan/flashLoanSimple entrypoint",
-			"Intent explicitly states flashloan semantics (borrow + callback + repay)",
-			"Simulation/finding set flags transient borrow and repayment assumptions",
-		],
-	},
+	// Flashloan path — PROMOTED to real lane (Pass 20)
 ];
 
 describe("scaffold lane markers (TODO fixtures)", () => {
-	for (const scaffold of SCAFFOLD_LANES) {
-		alwaysTest(`[scaffold] ${scaffold.lane}`, () => {
-			expect(scaffold.placeholderFixturePath).toContain("TODO");
-			expect(scaffold.skipReason.length).toBeGreaterThan(0);
-			expect(scaffold.acceptanceCriteria.length).toBeGreaterThan(0);
-		});
-	}
+	alwaysTest("all scaffold lanes promoted — no remaining TODOs", () => {
+		expect(SCAFFOLD_LANES.length).toBe(0);
+	});
 });

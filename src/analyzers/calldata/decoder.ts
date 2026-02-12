@@ -246,6 +246,15 @@ const LOCAL_SELECTOR_FALLBACKS: Record<string, LocalSelectorFallback> = {
 		signature: "unwrapWETH9(uint256,address)",
 		functionName: "unwrapWETH9",
 	},
+	// Aave flashloan entrypoints
+	"0x42b0b77c": {
+		signature: "flashLoanSimple(address,address,uint256,bytes,uint16)",
+		functionName: "flashLoanSimple",
+	},
+	"0xab9c4b5d": {
+		signature: "flashLoan(address,address[],uint256[],uint256[],address,bytes,uint16)",
+		functionName: "flashLoan",
+	},
 	// Safe
 	"0x6a761202": {
 		signature:

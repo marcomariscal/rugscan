@@ -41,6 +41,26 @@ describe("intent templates", () => {
 		expect(intent).toBe("Borrow 2500 0x0000000000000000000000000000000000000010 from Aave");
 	});
 
+	test("builds Aave flashLoanSimple intent with borrow + callback + repay semantics", () => {
+		const call: DecodedCall = {
+			selector: "0x42b0b77c",
+			signature: "flashLoanSimple(address,address,uint256,bytes,uint16)",
+			functionName: "flashLoanSimple",
+			source: "local-selector",
+			args: [
+				"0x6e3873408b4814b2da53d46cb7c4a9ea322e778e",
+				"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+				"4068055555555555556",
+				"0x",
+				0,
+			],
+		};
+
+		const intent = buildIntent(call, {});
+		expect(intent).toContain("Aave flashloan");
+		expect(intent).toContain("borrow + callback + repay");
+	});
+
 	test("formats known token amounts using decimals", () => {
 		const call: DecodedCall = {
 			selector: "0x095ea7b3",

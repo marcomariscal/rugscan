@@ -216,6 +216,34 @@ describe("calldata analysis", () => {
 		}
 	});
 
+	test("uses local selector fallback for Aave flashLoanSimple", async () => {
+		let calls = 0;
+		globalThis.fetch = async () => {
+			calls += 1;
+			throw new Error("network fetch should not be called in local selector fallback test");
+		};
+
+		const result = await analyzeCalldata(
+			{
+				to: "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+				data: "0x42b0b77c",
+			},
+			undefined,
+			{ offline: true },
+		);
+
+		expect(calls).toBe(0);
+		const decoded = result.findings.find((finding) => finding.code === "CALLDATA_DECODED");
+		expect(decoded).toBeDefined();
+		if (decoded?.details && isRecord(decoded.details)) {
+			expect(decoded.details.source).toBe("local-selector");
+			expect(decoded.details.signature).toBe(
+				"flashLoanSimple(address,address,uint256,bytes,uint16)",
+			);
+			expect(decoded.details.functionName).toBe("flashLoanSimple");
+		}
+	});
+
 	test("falls back to 4byte signature lookup", async () => {
 		let calls = 0;
 		globalThis.fetch = async () => {

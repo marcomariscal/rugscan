@@ -509,6 +509,42 @@ const aaveGatewayRepayEth: IntentTemplate = {
 	render: () => "Repay ETH to Aave",
 };
 
+const aaveFlashLoan: IntentTemplate = {
+	id: "aave-flashloan",
+	match: (call) => call.functionName === "flashLoanSimple" || call.functionName === "flashLoan",
+	render: (call) => {
+		if (call.functionName === "flashLoanSimple") {
+			const receiver = formatValue(readArg(call, "receiverAddress", 0));
+			const assetAddress = formatValue(readArg(call, "asset", 1));
+			const amount = formatTokenAmountForAddress(
+				readArg(call, "amount", 2),
+				assetAddress ?? undefined,
+			);
+			const asset = tokenLabelForAddress(assetAddress ?? undefined);
+			if (amount) {
+				return `Aave flashloan: borrow ${amount} ${asset} to ${receiver ?? "receiver"} (borrow + callback + repay)`;
+			}
+			return `Aave flashloan via ${receiver ?? "receiver"} (borrow + callback + repay)`;
+		}
+
+		const assets = readArg(call, "assets", 1);
+		const amounts = readArg(call, "amounts", 2);
+		if (Array.isArray(assets) && assets.length > 0) {
+			const firstAsset = formatValue(assets[0]);
+			const firstAmount = Array.isArray(amounts) ? amounts[0] : undefined;
+			const formattedAmount = formatTokenAmountForAddress(firstAmount, firstAsset ?? undefined);
+			const token = tokenLabelForAddress(firstAsset ?? undefined);
+			const assetCount = assets.length;
+			if (formattedAmount) {
+				return `Aave flashloan: borrow ${formattedAmount} ${token} (${assetCount} asset${assetCount === 1 ? "" : "s"}, callback + repay)`;
+			}
+			return `Aave flashloan (${assetCount} asset${assetCount === 1 ? "" : "s"}, borrow + callback + repay)`;
+		}
+
+		return "Aave flashloan (borrow + callback + repay)";
+	},
+};
+
 const uniswapUniversalRouterExecute: IntentTemplate = {
 	id: "uniswap-universal-router-execute",
 	match: (call) =>
@@ -902,6 +938,7 @@ export const INTENT_TEMPLATES: IntentTemplate[] = [
 	aaveGatewayWithdrawEth,
 	aaveGatewayBorrowEth,
 	aaveGatewayRepayEth,
+	aaveFlashLoan,
 	uniswapUniversalRouterExecute,
 	routerMulticall,
 	safeExecTransaction,
