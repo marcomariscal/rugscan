@@ -32,7 +32,14 @@ function stripAnsi(input: string): string {
 }
 
 async function runCli(args: string[], envOverrides: Record<string, string | undefined> = {}) {
-	const env = { ...process.env, ...envOverrides };
+	const env = {
+		...process.env,
+		// Capture output as the user would see it in a color-enabled terminal.
+		FORCE_COLOR: "1",
+		TERM: process.env.TERM ?? "xterm-256color",
+		NO_COLOR: undefined,
+		...envOverrides,
+	};
 	const proc = Bun.spawn(["bun", "run", "src/cli/index.ts", ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
@@ -49,19 +56,16 @@ describe("safe CLI flow matrix e2e", () => {
 		"Safe multisend offline JSON output has correct plan structure",
 		async () => {
 			const fixturePath = path.join(import.meta.dir, SAFE_ARB1_FIXTURE);
-			const result = await runCli(
-				[
-					"safe",
-					"arbitrum",
-					SAFE_ARB1_TX_HASH,
-					"--offline",
-					"--safe-tx-json",
-					fixturePath,
-					"--format",
-					"json",
-				],
-				{ NO_COLOR: "1" },
-			);
+			const result = await runCli([
+				"safe",
+				"arbitrum",
+				SAFE_ARB1_TX_HASH,
+				"--offline",
+				"--safe-tx-json",
+				fixturePath,
+				"--format",
+				"json",
+			]);
 
 			expect(result.exitCode).toBe(0);
 			const parsed: unknown = JSON.parse(result.stdout);
@@ -111,13 +115,19 @@ describe("safe CLI flow matrix e2e", () => {
 		"Safe multisend offline text output renders decision summary",
 		async () => {
 			const fixturePath = path.join(import.meta.dir, SAFE_ARB1_FIXTURE);
-			const result = await runCli(
-				["safe", "arbitrum", SAFE_ARB1_TX_HASH, "--offline", "--safe-tx-json", fixturePath],
-				{ NO_COLOR: "1" },
-			);
+			const result = await runCli([
+				"safe",
+				"arbitrum",
+				SAFE_ARB1_TX_HASH,
+				"--offline",
+				"--safe-tx-json",
+				fixturePath,
+			]);
 
 			expect(result.exitCode).toBe(0);
-			const stdout = stripAnsi(result.stdout);
+			const rawStdout = result.stdout;
+			expect(rawStdout.length).toBeGreaterThan(0);
+			const stdout = stripAnsi(rawStdout);
 			expect(stdout).toContain("Safe scan on arbitrum");
 			expect(stdout).toContain("Multisend");
 			expect(stdout).toContain("2 calls");
@@ -135,10 +145,15 @@ describe("safe CLI flow matrix e2e", () => {
 			}
 
 			const fixturePath = path.join(import.meta.dir, SAFE_ARB1_FIXTURE);
-			const result = await runCli(
-				["safe", "arbitrum", SAFE_ARB1_TX_HASH, "--safe-tx-json", fixturePath, "--format", "json"],
-				{ NO_COLOR: "1" },
-			);
+			const result = await runCli([
+				"safe",
+				"arbitrum",
+				SAFE_ARB1_TX_HASH,
+				"--safe-tx-json",
+				fixturePath,
+				"--format",
+				"json",
+			]);
 
 			// May exit 0 (ok) or 2 (danger findings from unverified sub-call)
 			expect(result.exitCode === 0 || result.exitCode === 2).toBe(true);
