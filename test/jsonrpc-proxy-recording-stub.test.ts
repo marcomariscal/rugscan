@@ -88,11 +88,11 @@ describe("jsonrpc proxy - recording stub", () => {
 			expect(files.has("calldata.json")).toBe(true);
 			expect(files.has("meta.json")).toBe(true);
 
-			// Meta should have been enriched to "complete" even on error path
+			// Scan failures in non-interactive mode hard-block, so recording finalizes as "blocked"
 			const meta = JSON.parse(await readFile(path.join(bundleDir, "meta.json"), "utf-8"));
 			expect(isRecord(meta)).toBe(true);
 			if (isRecord(meta)) {
-				expect(meta.status).toBe("complete");
+				expect(meta.status).toBe("blocked");
 				expect(meta.recommendation).toBe("caution");
 			}
 

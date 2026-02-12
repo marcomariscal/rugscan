@@ -8,7 +8,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 describe("jsonrpc proxy - block feedback", () => {
-	test("prints 'Transaction blocked by policy.' when not quiet", async () => {
+	test("prints 'Blocked transaction.' when not quiet", async () => {
 		const upstream = Bun.serve({
 			port: 0,
 			fetch: async (request) => {
@@ -86,7 +86,7 @@ describe("jsonrpc proxy - block feedback", () => {
 
 			// Verify that the block feedback was printed to stdout
 			const allOutput = writes.join("");
-			expect(allOutput).toContain("Transaction blocked by policy.");
+			expect(allOutput).toContain("Blocked transaction.");
 		} finally {
 			process.stdout.write = originalWrite;
 			proxy.stop(true);
