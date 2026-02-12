@@ -404,6 +404,26 @@ const erc721SetApprovalForAll: IntentTemplate = {
 	},
 };
 
+const ownableTransferOwnership: IntentTemplate = {
+	id: "ownable-transfer-ownership",
+	match: (call) =>
+		call.functionName === "transferOwnership" && call.signature === "transferOwnership(address)",
+	render: (call) => {
+		const newOwner = formatValue(readArg(call, "newOwner", 0));
+		if (newOwner) {
+			return `Transfer contract ownership to ${newOwner}`;
+		}
+		return "Transfer contract ownership";
+	},
+};
+
+const ownableAcceptOwnership: IntentTemplate = {
+	id: "ownable-accept-ownership",
+	match: (call) =>
+		call.functionName === "acceptOwnership" && call.signature === "acceptOwnership()",
+	render: () => "Accept pending contract ownership",
+};
+
 const aaveBorrow: IntentTemplate = {
 	id: "aave-borrow",
 	match: (call) => call.functionName === "borrow",
@@ -450,8 +470,24 @@ const aaveWithdraw: IntentTemplate = {
 
 const aaveGatewayDepositEth: IntentTemplate = {
 	id: "aave-gateway-deposit-eth",
-	match: (call) => call.functionName === "depositETH",
+	match: (call) =>
+		call.functionName === "depositETH" &&
+		(call.selector === "0x474cf53d" || call.signature === "depositETH(address,address,uint16)"),
 	render: () => "Supply ETH to Aave",
+};
+
+const optimismStandardBridgeDepositEth: IntentTemplate = {
+	id: "optimism-standard-bridge-deposit-eth",
+	match: (call) =>
+		call.functionName === "depositETH" &&
+		(call.selector === "0xb1a1a882" || call.signature === "depositETH(uint32,bytes)"),
+	render: (call) => {
+		const l2Gas = formatValue(readArg(call, "l2Gas", 0));
+		if (l2Gas) {
+			return `Bridge ETH to Optimism (L2 gas ${l2Gas})`;
+		}
+		return "Bridge ETH to Optimism";
+	},
 };
 
 const aaveGatewayWithdrawEth: IntentTemplate = {
@@ -832,11 +868,14 @@ export const INTENT_TEMPLATES: IntentTemplate[] = [
 	erc20TransferFrom,
 	erc721SafeTransfer,
 	erc721SetApprovalForAll,
+	ownableTransferOwnership,
+	ownableAcceptOwnership,
 	aaveBorrow,
 	aaveRepay,
 	aaveSupply,
 	aaveWithdraw,
 	aaveGatewayDepositEth,
+	optimismStandardBridgeDepositEth,
 	aaveGatewayWithdrawEth,
 	aaveGatewayBorrowEth,
 	aaveGatewayRepayEth,

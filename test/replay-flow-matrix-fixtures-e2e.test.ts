@@ -200,6 +200,25 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "handleOps",
 	},
+	// === Pass 17: Ownership mutation + canonical L2 bridge (non-CCTP) ===
+	// Lane 7: Ownership transfer / role mutation
+	{
+		flow: "Ownable transferOwnership (GMNFT)",
+		fixturePath: "fixtures/txs/ownership-transfer-gmnft-0f66c130.json",
+		nativeDiff: "zero",
+		intentIncludes: "Transfer contract ownership",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "transferOwnership",
+	},
+	// Lane 8: Canonical L2 bridge deposit (non-CCTP) — Optimism Standard Bridge
+	{
+		flow: "Bridge: Optimism Standard Bridge depositETH (canonical L2, non-CCTP)",
+		fixturePath: "fixtures/txs/bridge-optimism-deposit-eth-45c8b3d7.json",
+		nativeDiff: "negative",
+		intentIncludes: "Bridge ETH to Optimism",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "depositETH",
+	},
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -481,17 +500,9 @@ describe("Permit off-chain signature matrix scaffold", () => {
  * strengthen coverage once fixtures become available.
  */
 const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
-	{
-		lane: "Ownership transfer / role mutation",
-		placeholderFixturePath: "fixtures/txs/ownership-role-mutation-TODO.json",
-		skipReason:
-			"No canonical fixture captured yet for transferOwnership/acceptOwnership/grantRole/revokeRole paths.",
-		acceptanceCriteria: [
-			"Fixture includes transferOwnership/acceptOwnership or grantRole/revokeRole calldata",
-			"Decoded functionName confirms ownership/role mutation selector",
-			"Intent text clearly states ownership or privileged role change",
-		],
-	},
+	// Ownership transfer / role mutation — PROMOTED to real lane (Pass 17)
+	// Canonical L2 bridge deposit (non-CCTP) — PROMOTED to real lane (Pass 17)
+	// Bridge: Optimism Standard Bridge depositETH — PROMOTED to real lane (Pass 17)
 	{
 		lane: "Marketplace order fulfillment (Seaport-style)",
 		placeholderFixturePath: "fixtures/txs/seaport-fulfill-order-TODO.json",
@@ -515,17 +526,6 @@ const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
 		],
 	},
 	{
-		lane: "Canonical L2 bridge deposit/withdraw (non-CCTP)",
-		placeholderFixturePath: "fixtures/txs/bridge-canonical-l2-deposit-withdraw-TODO.json",
-		skipReason:
-			"No canonical L2 bridge fixture committed yet (Optimism/Arbitrum standard bridge paths).",
-		acceptanceCriteria: [
-			"Fixture decodes to canonical bridge deposit/withdraw selector (non-CCTP)",
-			"Intent states canonical bridge direction (deposit vs withdraw)",
-			"Native/token diff direction aligns with bridge movement semantics",
-		],
-	},
-	{
 		lane: "Safe module enable / execTransactionFromModule",
 		placeholderFixturePath: "fixtures/txs/safe-module-enable-exectxfrommodule-TODO.json",
 		skipReason: "No real fixture recorded for Safe module enablement/module-executed call path.",
@@ -543,17 +543,6 @@ const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
 			"Fixture decodes flashLoan/flashLoanSimple entrypoint",
 			"Intent explicitly states flashloan semantics (borrow + callback + repay)",
 			"Simulation/finding set flags transient borrow and repayment assumptions",
-		],
-	},
-	{
-		lane: "Bridge: Optimism Standard Bridge depositETH",
-		placeholderFixturePath: "fixtures/txs/bridge-optimism-deposit-eth-TODO.json",
-		skipReason: "No mainnet fixture recorded yet for Optimism Standard Bridge depositETH path.",
-		acceptanceCriteria: [
-			"Real mainnet tx fixture with depositETH calldata to 0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
-			"nativeDiff: negative (ETH sent to bridge)",
-			"Decoded functionName: depositETH",
-			"Intent includes 'Bridge' or 'Optimism'",
 		],
 	},
 	{
