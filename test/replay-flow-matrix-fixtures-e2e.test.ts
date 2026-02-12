@@ -99,6 +99,14 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		requireVerifiedName: "AggregationRouterV4",
 	},
 	{
+		flow: "1inch AggregationRouterV6 swap",
+		fixturePath: "fixtures/txs/1inch-aggregation-router-v6-swap.json",
+		nativeDiff: "zero",
+		intentIncludes: "1inch aggregated swap",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "swap",
+	},
+	{
 		flow: "Gnosis Safe execTransaction (USDT approve via Permit2)",
 		fixturePath: "fixtures/txs/gnosis-safe-exec-usdt-approve-ed42563e.json",
 		nativeDiff: "zero",

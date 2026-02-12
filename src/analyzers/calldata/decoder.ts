@@ -258,6 +258,11 @@ const LOCAL_SELECTOR_FALLBACKS: Record<string, LocalSelectorFallback> = {
 			"swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)",
 		functionName: "swap",
 	},
+	"0x07ed2379": {
+		signature:
+			"swap(address,address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)",
+		functionName: "swap",
+	},
 };
 
 const MAX_NESTED_DECODE_DEPTH = 2;

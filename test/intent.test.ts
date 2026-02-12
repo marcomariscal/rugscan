@@ -119,6 +119,23 @@ describe("intent templates", () => {
 		expect(intent).toBe("Safe exec → USDT approve(Permit2, 3,600)");
 	});
 
+	test("humanizes 1inch aggregated swap action", () => {
+		const call: DecodedCall = {
+			selector: "0x07ed2379",
+			signature:
+				"swap(address,address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)",
+			functionName: "swap",
+			source: "local-selector",
+			args: [],
+		};
+
+		const intent = buildIntent(call, {
+			contractAddress: "0x111111125421ca6dc452d289314280a0f8842a65",
+			contractName: "AggregationRouterV6",
+		});
+		expect(intent).toBe("1inch aggregated swap");
+	});
+
 	test("humanizes 1inch uniswapV3Swap action", () => {
 		const call: DecodedCall = {
 			selector: "0xe449022e",

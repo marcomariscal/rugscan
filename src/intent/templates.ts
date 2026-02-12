@@ -427,6 +427,14 @@ const safeExecTransaction: IntentTemplate = {
 	},
 };
 
+const oneInchSwap: IntentTemplate = {
+	id: "1inch-swap",
+	match: (call) =>
+		call.functionName === "swap" &&
+		(call.selector === "0x12aa3caf" || call.selector === "0x07ed2379"),
+	render: () => "1inch aggregated swap",
+};
+
 const oneInchUniswapV3Swap: IntentTemplate = {
 	id: "1inch-uniswap-v3-swap",
 	match: (call) => call.functionName === "uniswapV3Swap",
@@ -654,6 +662,7 @@ export const INTENT_TEMPLATES: IntentTemplate[] = [
 	uniswapUniversalRouterExecute,
 	routerMulticall,
 	safeExecTransaction,
+	oneInchSwap,
 	oneInchUniswapV3Swap,
 	uniswapV2ExactTokensForTokens,
 	uniswapV2TokensForExactTokens,
