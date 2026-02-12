@@ -1,7 +1,9 @@
 import pc from "picocolors";
+import { decodeKnownCalldata } from "../analyzers/calldata/decoder";
 import { KNOWN_SPENDERS } from "../approvals/known-spenders";
 import { getChainConfig } from "../chains";
 import { MAX_UINT160, MAX_UINT256 } from "../constants";
+import { buildIntent } from "../intent";
 import { getKnownTokenMetadata } from "../tokens/known";
 import type {
 	AnalysisResult,
@@ -952,7 +954,39 @@ function decodedArgEntries(context: DecodedCallContext): Array<[string, unknown]
 	return entries;
 }
 
-function summarizeDecodedArgValue(value: unknown): string | null {
+type DecodedPreviewContext = {
+	contractAddress?: string;
+};
+
+function decodedArgLooksLikeAmount(argName: string): boolean {
+	const normalized = argName.toLowerCase();
+	return normalized.includes("amount") || normalized === "value" || normalized === "wad";
+}
+
+function formatDecodedAmountWithKnownToken(
+	value: unknown,
+	argName: string,
+	context: DecodedPreviewContext,
+): string | null {
+	if (!decodedArgLooksLikeAmount(argName)) return null;
+	const amount = parseBigIntValue(value);
+	if (amount === null) return null;
+	if (amount === MAX_UINT256 || amount === MAX_UINT160) return "MAX_UINT256";
+	const metadata = getKnownTokenMetadata(context.contractAddress);
+	if (!metadata) return null;
+	return `${formatTokenAmount(amount, metadata.decimals)} ${metadata.symbol}`;
+}
+
+function summarizeDecodedArgValue(
+	value: unknown,
+	argName: string,
+	context: DecodedPreviewContext,
+): string | null {
+	const tokenAmount = formatDecodedAmountWithKnownToken(value, argName, context);
+	if (tokenAmount) {
+		return tokenAmount;
+	}
+
 	if (typeof value === "string") {
 		if (isAddress(value)) {
 			return shortenAddress(value);
@@ -980,14 +1014,18 @@ function summarizeDecodedArgValue(value: unknown): string | null {
 	return null;
 }
 
-function formatDecodedArgsPreview(decoded: DecodedCallContext, maxArgs = 3): string | null {
+function formatDecodedArgsPreview(
+	decoded: DecodedCallContext,
+	context: DecodedPreviewContext,
+	maxArgs = 3,
+): string | null {
 	const entries = decodedArgEntries(decoded);
 	if (entries.length === 0) return null;
 
 	const preview: string[] = [];
 	for (const [name, value] of entries) {
 		if (preview.length >= maxArgs) break;
-		const summarized = summarizeDecodedArgValue(value);
+		const summarized = summarizeDecodedArgValue(value, name, context);
 		if (!summarized) continue;
 		preview.push(`${name}=${summarized}`);
 	}
@@ -998,7 +1036,10 @@ function formatDecodedArgsPreview(decoded: DecodedCallContext, maxArgs = 3): str
 	return preview.join(", ");
 }
 
-function formatDecodedCallContextLine(decoded: DecodedCallContext | null): string | null {
+function formatDecodedCallContextLine(
+	decoded: DecodedCallContext | null,
+	context: DecodedPreviewContext,
+): string | null {
 	if (!decoded) return null;
 
 	const parts: string[] = [];
@@ -1007,7 +1048,7 @@ function formatDecodedCallContextLine(decoded: DecodedCallContext | null): strin
 		parts.push(signature);
 	}
 
-	const argsPreview = formatDecodedArgsPreview(decoded);
+	const argsPreview = formatDecodedArgsPreview(decoded, context);
 	if (argsPreview) {
 		parts.push(`args: ${argsPreview}`);
 	}
@@ -2086,7 +2127,9 @@ export function renderResultBox(
 			: resolveActionLabel(result)
 		: "N/A";
 	const decodedLine = hasCalldata
-		? formatDecodedCallContextLine(findDecodedCallContext(result.findings))
+		? formatDecodedCallContextLine(findDecodedCallContext(result.findings), {
+				contractAddress: result.contract.address,
+			})
 		: null;
 	const contractLabel = formatContractLabel(result.contract);
 
@@ -2509,6 +2552,8 @@ export function renderApprovalBox(
 
 export interface SafeCallResult {
 	to: string;
+	data?: string;
+	operation?: number;
 	analysis?: AnalysisResult;
 	error?: string;
 }
@@ -2523,28 +2568,72 @@ function worstRecommendation(recommendations: Recommendation[]): Recommendation 
 	return order[worst] ?? "ok";
 }
 
-function resolveCallActionLabel(
-	analysis: AnalysisResult | undefined,
-	hasCalldata: boolean,
-): string {
-	if (!analysis || !hasCalldata) return "";
-	const label = resolveActionLabel(analysis);
-	if (label === "Unknown action") return "";
-	return humanizeActionLabel(label);
+function callOperationSuffix(operation: number | undefined): string {
+	return operation === 1 ? " [DELEGATECALL]" : "";
+}
+
+function resolveSafeTargetLabel(call: SafeCallResult, chain: Chain): string {
+	const analyzedAddress = call.analysis?.contract?.address ?? call.to;
+	const analyzedName = call.analysis?.contract?.name;
+	if (analyzedName) {
+		return `${cleanLabel(analyzedName)} (${shortenAddress(analyzedAddress)})`;
+	}
+
+	const tokenMetadata = getKnownTokenMetadata(call.to);
+	if (tokenMetadata) {
+		return `${tokenMetadata.symbol} (${shortenAddress(call.to)})`;
+	}
+
+	const knownSpender = (KNOWN_SPENDERS[chain] ?? []).find(
+		(entry) => entry.address.toLowerCase() === call.to.toLowerCase(),
+	);
+	if (knownSpender) {
+		return `${knownSpender.name} (${shortenAddress(call.to)})`;
+	}
+
+	return shortenAddress(call.to);
+}
+
+function resolveOfflineCallActionLabel(call: SafeCallResult): string {
+	if (!call.data || call.data === "0x") return "";
+	const decoded = decodeKnownCalldata(call.data);
+	if (!decoded) return "";
+
+	const tokenMetadata = getKnownTokenMetadata(call.to);
+	const intent = buildIntent(decoded, {
+		contractAddress: call.to,
+		contractName: tokenMetadata?.symbol,
+	});
+	if (intent) {
+		return intent;
+	}
+
+	const signature = decoded.signature ?? decoded.functionName;
+	return humanizeActionLabel(signature);
+}
+
+function resolveCallActionLabel(call: SafeCallResult, hasCalldata: boolean): string {
+	if (!hasCalldata) return "";
+	if (call.analysis) {
+		const label = resolveActionLabel(call.analysis);
+		if (label === "Unknown action") return "";
+		return humanizeActionLabel(label);
+	}
+	return resolveOfflineCallActionLabel(call);
 }
 
 function formatCallSummaryLines(
 	index: number,
 	call: SafeCallResult,
 	hasCalldata: boolean,
+	chain: Chain,
 ): string[] {
 	const { analysis } = call;
-	const target = analysis?.contract?.name
-		? cleanLabel(analysis.contract.name)
-		: shortenAddress(call.to);
-	const action = resolveCallActionLabel(analysis, hasCalldata);
+	const target = resolveSafeTargetLabel(call, chain);
+	const action = resolveCallActionLabel(call, hasCalldata);
 	const intent = action ? ` · ${action}` : "";
-	const headerLine = ` Call ${index + 1} → ${target}${intent}`;
+	const operation = callOperationSuffix(call.operation);
+	const headerLine = ` Call ${index + 1}${operation} → ${target}${intent}`;
 
 	if (!analysis) {
 		const reason = call.error ? ` (${call.error})` : "";
@@ -2558,21 +2647,25 @@ function formatCallSummaryLines(
 }
 
 /** Single-line per-call row: target · action  badge */
-function formatCallOneLiner(index: number, call: SafeCallResult, hasCalldata: boolean): string {
+function formatCallOneLiner(
+	index: number,
+	call: SafeCallResult,
+	hasCalldata: boolean,
+	chain: Chain,
+): string {
 	const { analysis } = call;
-	const target = analysis?.contract?.name
-		? cleanLabel(analysis.contract.name)
-		: shortenAddress(call.to);
-	const action = resolveCallActionLabel(analysis, hasCalldata);
+	const target = resolveSafeTargetLabel(call, chain);
+	const action = resolveCallActionLabel(call, hasCalldata);
 	const intent = action ? ` · ${action}` : "";
+	const operation = callOperationSuffix(call.operation);
 
 	if (!analysis) {
 		const reason = call.error ? COLORS.dim(` (${call.error})`) : "";
-		return ` Call ${index + 1} → ${target}${intent}${reason}`;
+		return ` Call ${index + 1}${operation} → ${target}${intent}${reason}`;
 	}
 
 	const style = recommendationStyle(analysis.recommendation);
-	return ` Call ${index + 1} → ${target}${intent}  ${style.color(style.icon)}`;
+	return ` Call ${index + 1}${operation} → ${target}${intent}  ${style.color(style.icon)}`;
 }
 
 /** Real-time progress line emitted as each call completes during parallel analysis. */
@@ -2580,26 +2673,26 @@ export function renderCallProgressLine(
 	index: number,
 	result: SafeCallResult,
 	totalCalls: number,
+	chain: Chain,
 ): string {
 	const { analysis } = result;
-	const target = analysis?.contract?.name
-		? cleanLabel(analysis.contract.name)
-		: shortenAddress(result.to);
-	const action = resolveCallActionLabel(analysis, true);
+	const target = resolveSafeTargetLabel(result, chain);
+	const action = resolveCallActionLabel(result, true);
 	const intent = action ? ` · ${action}` : "";
 	const label = `Call ${index + 1}/${totalCalls}`;
+	const operation = callOperationSuffix(result.operation);
 
 	if (result.error) {
 		const short = result.error.length > 50 ? `${result.error.slice(0, 50)}…` : result.error;
-		return `  ${COLORS.danger("✗")} ${label} → ${target}${intent}  ${COLORS.dim(`(${short})`)}`;
+		return `  ${COLORS.danger("✗")} ${label}${operation} → ${target}${intent}  ${COLORS.dim(`(${short})`)}`;
 	}
 
 	if (!analysis) {
-		return `  ${COLORS.dim("◌")} ${label} → ${target}${intent}`;
+		return `  ${COLORS.dim("◌")} ${label}${operation} → ${target}${intent}`;
 	}
 
 	const style = recommendationStyle(analysis.recommendation);
-	return `  ${COLORS.ok("✓")} ${label} → ${target}${intent}  ${style.color(style.icon)}`;
+	return `  ${COLORS.ok("✓")} ${label}${operation} → ${target}${intent}  ${style.color(style.icon)}`;
 }
 
 function buildSafeOverallWhy(calls: SafeCallResult[]): string {
@@ -2827,13 +2920,13 @@ export function renderSafeSummaryBox(options: {
 	if (verbose) {
 		const callLines: string[] = [];
 		for (let i = 0; i < calls.length; i++) {
-			const lines = formatCallSummaryLines(i, calls[i], true);
+			const lines = formatCallSummaryLines(i, calls[i], true, chain);
 			if (i > 0) callLines.push("");
 			callLines.push(...lines);
 		}
 		sections.push(callLines);
 	} else {
-		const callLines = calls.map((c, i) => formatCallOneLiner(i, c, true));
+		const callLines = calls.map((c, i) => formatCallOneLiner(i, c, true, chain));
 		sections.push(callLines);
 	}
 

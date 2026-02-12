@@ -118,4 +118,24 @@ describe("intent templates", () => {
 		const intent = buildIntent(call, {});
 		expect(intent).toBe("Safe exec → USDT approve(Permit2, 3,600)");
 	});
+
+	test("humanizes 1inch uniswapV3Swap action", () => {
+		const call: DecodedCall = {
+			selector: "0xe449022e",
+			signature: "uniswapV3Swap(uint256,uint256,uint256[])",
+			functionName: "uniswapV3Swap",
+			source: "contract-abi",
+			args: {
+				amount: "310000000000000000",
+				minReturn: "57291080635495902669595",
+				pools: ["101158091151877850028968684976255873637166782454"],
+			},
+		};
+
+		const intent = buildIntent(call, {
+			contractAddress: "0x1111111254fb6c44bac0bed2854e76f90643097d",
+			contractName: "AggregationRouterV4",
+		});
+		expect(intent).toBe("1inch swap via Uniswap V3 (1 pool)");
+	});
 });

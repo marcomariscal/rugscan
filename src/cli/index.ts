@@ -491,16 +491,26 @@ async function runSafe(args: string[]) {
 						offline,
 						progress: callProgress,
 					});
-					callResults[index] = { to: call.to, analysis };
+					callResults[index] = {
+						to: call.to,
+						data: call.data,
+						operation: call.operation,
+						analysis,
+					};
 				} catch (err) {
 					const message = err instanceof Error ? err.message : "unknown error";
-					callResults[index] = { to: call.to, error: message };
+					callResults[index] = {
+						to: call.to,
+						data: call.data,
+						operation: call.operation,
+						error: message,
+					};
 				}
 
 				// Progressive disclosure: per-call completion line
 				if (showProgress && totalCalls > 1) {
 					process.stdout.write(
-						`${renderCallProgressLine(index, callResults[index], totalCalls)}\n`,
+						`${renderCallProgressLine(index, callResults[index], totalCalls, chain)}\n`,
 					);
 				}
 			});
@@ -509,7 +519,8 @@ async function runSafe(args: string[]) {
 		} else {
 			// Offline: parse-only (no analysis)
 			for (let i = 0; i < plan.callsToAnalyze.length; i++) {
-				callResults[i] = { to: plan.callsToAnalyze[i].to };
+				const call = plan.callsToAnalyze[i];
+				callResults[i] = { to: call.to, data: call.data, operation: call.operation };
 			}
 		}
 
@@ -531,7 +542,11 @@ async function runSafe(args: string[]) {
 		process.exit(0);
 	} catch (error) {
 		console.error(renderError("Safe scan failed:"));
-		console.error(error);
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(renderError(message));
+		if (verbose && error instanceof Error && error.stack) {
+			console.error(error.stack);
+		}
 		process.exit(1);
 	}
 }

@@ -248,7 +248,7 @@ describe("proxy wallet explainability output", () => {
 		for (const mode of ["default", "wallet"] as const) {
 			const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, mode }));
 			expect(output).toContain(
-				"Decoded: approve(address,uint256) · args: spender=0x0000...8ba3, amount=115792089237316195423… · selector 0x095ea7b3",
+				"Decoded: approve(address,uint256) · args: spender=0x0000...8ba3, amount=MAX_UINT256 · selector 0x095ea7b3",
 			);
 		}
 	});

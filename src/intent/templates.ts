@@ -427,6 +427,19 @@ const safeExecTransaction: IntentTemplate = {
 	},
 };
 
+const oneInchUniswapV3Swap: IntentTemplate = {
+	id: "1inch-uniswap-v3-swap",
+	match: (call) => call.functionName === "uniswapV3Swap",
+	render: (call) => {
+		const pools = readArg(call, "pools", 2);
+		const poolCount = Array.isArray(pools) ? pools.length : 0;
+		if (poolCount > 0) {
+			return `1inch swap via Uniswap V3 (${poolCount} pool${poolCount === 1 ? "" : "s"})`;
+		}
+		return "1inch swap via Uniswap V3";
+	},
+};
+
 const uniswapV2ExactTokensForTokens: IntentTemplate = {
 	id: "uniswap-v2-exact-tokens-for-tokens",
 	match: (call) => call.functionName === "swapExactTokensForTokens",
@@ -641,6 +654,7 @@ export const INTENT_TEMPLATES: IntentTemplate[] = [
 	uniswapUniversalRouterExecute,
 	routerMulticall,
 	safeExecTransaction,
+	oneInchUniswapV3Swap,
 	uniswapV2ExactTokensForTokens,
 	uniswapV2TokensForExactTokens,
 	uniswapV2ExactEthForTokens,

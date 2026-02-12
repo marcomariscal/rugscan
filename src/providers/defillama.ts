@@ -35,6 +35,7 @@ const KNOWN_PROTOCOL_ADDRESSES: Partial<Record<Chain, Record<string, ProtocolOve
 		"0x99a58482bd75cbab83b27ec03ca68ff489b5788f": { name: "Curve DEX", slug: "curve-dex" },
 		// 1inch
 		"0x1111111254eeb25477b68fb85ed929f73a960582": { name: "1inch", slug: "1inch-network" },
+		"0x1111111254fb6c44bac0bed2854e76f90643097d": { name: "1inch", slug: "1inch-network" },
 		// WETH
 		"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": { name: "WETH", slug: "weth" },
 		// USDC/Circle

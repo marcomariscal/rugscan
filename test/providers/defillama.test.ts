@@ -4,6 +4,17 @@ import { matchProtocol } from "../../src/providers/defillama";
 const test = process.env.ASSAY_LIVE_TESTS === "1" ? bunTest : bunTest.skip;
 
 describe("defillama", () => {
+	bunTest("manual 1inch router fixture resolves without network lookup", async () => {
+		const result = await matchProtocol("0x1111111254fb6c44bac0bed2854e76f90643097d", "ethereum", {
+			allowNetwork: false,
+		});
+
+		expect(result).not.toBeNull();
+		expect(result?.name).toBe("1inch");
+		if (!result) return;
+		expect(result.slug).toBe("1inch-network");
+	});
+
 	test("matchProtocol identifies Uniswap", async () => {
 		const result = await matchProtocol("0xe592427a0aece92de3edee1f18e0157c05861564", "ethereum");
 

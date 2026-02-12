@@ -43,6 +43,8 @@ describe("safe CLI output matrix", () => {
 		// Per-call one-liners shown (concise, not multi-line plumbing)
 		expect(stdout).toContain("Call 1");
 		expect(stdout).toContain("Call 2");
+		expect(stdout).toContain("USDC (0xaf88...5831)");
+		expect(stdout).toContain("Approve");
 		// Offline: explicit messaging about analysis availability
 		expect(stdout).toContain("analysis requires network");
 		// Raw plumbing NOT shown in default mode
@@ -103,8 +105,8 @@ describe("safe CLI output matrix", () => {
 		]);
 
 		expect(result.exitCode).toBe(1);
-		// Heading is written to stdout before the error
 		expect(result.stderr).toContain("Safe scan failed:");
 		expect(result.stderr).toContain("Invalid Safe Transaction Service response");
+		expect(result.stderr).not.toContain("parseSafeMultisigTransaction");
 	});
 });
