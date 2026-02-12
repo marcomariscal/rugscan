@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderResultBox } from "../src/cli/ui";
 import { MAX_UINT256 } from "../src/constants";
+import { PERMIT2_CANONICAL_ADDRESS } from "../src/permit2";
 import type { AnalysisResult } from "../src/types";
 
 function stripAnsi(input: string): string {
@@ -251,6 +252,52 @@ describe("proxy wallet explainability output", () => {
 				"Decoded: approve(address,uint256) · args: spender=0x0000...8ba3, amount=MAX_UINT256 · selector 0x095ea7b3",
 			);
 		}
+	});
+
+	test("collapses max-uint approval amount in action line while keeping decoded details", () => {
+		const analysis: AnalysisResult = {
+			...buildBaseAnalysis(),
+			simulation: undefined,
+			intent: `Approve 0x0000000000000000000000000000000000000001 to spend ${MAX_UINT256.toString()} USDC`,
+			findings: [
+				{
+					level: "info",
+					code: "CALLDATA_DECODED",
+					message: "Decoded calldata",
+					details: {
+						signature: "approve(address,uint256)",
+						functionName: "approve",
+						selector: "0x095ea7b3",
+						args: {
+							spender: "0x0000000000000000000000000000000000000001",
+							amount: MAX_UINT256.toString(),
+						},
+					},
+				},
+			],
+		};
+
+		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true, mode: "default" }));
+		expect(output).toContain(
+			"Action: Approve 0x0000000000000000000000000000000000000001 to spend UNLIMITED USDC",
+		);
+		expect(output).not.toContain(MAX_UINT256.toString());
+		expect(output).toContain("amount=MAX_UINT256");
+	});
+
+	test("labels Permit2 protocol clearly for canonical contract", () => {
+		const analysis: AnalysisResult = {
+			...buildBaseAnalysis(),
+			contract: {
+				...buildBaseAnalysis().contract,
+				address: PERMIT2_CANONICAL_ADDRESS,
+				name: "AllowanceTransfer",
+			},
+			protocol: undefined,
+		};
+
+		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: false }));
+		expect(output).toContain("Protocol: Permit2");
 	});
 
 	test("dedupes verified/proxy checks in default + wallet output", () => {

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { DecodedCall } from "../src/analyzers/calldata/decoder";
+import { MAX_UINT160, MAX_UINT256 } from "../src/constants";
 import { buildIntent } from "../src/intent";
+import { PERMIT2_CANONICAL_ADDRESS } from "../src/permit2";
 
 describe("intent templates", () => {
 	test("builds ERC20 approve intent", () => {
@@ -154,5 +156,131 @@ describe("intent templates", () => {
 			contractName: "AggregationRouterV4",
 		});
 		expect(intent).toBe("1inch swap via Uniswap V3 (1 pool)");
+	});
+
+	test("humanizes max uint256 approvals as UNLIMITED", () => {
+		const call: DecodedCall = {
+			selector: "0x095ea7b3",
+			signature: "approve(address,uint256)",
+			functionName: "approve",
+			source: "known-abi",
+			standard: "erc20",
+			args: {
+				spender: "0x0000000000000000000000000000000000000001",
+				amount: MAX_UINT256.toString(),
+			},
+		};
+
+		const intent = buildIntent(call, {
+			contractAddress: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+		});
+		expect(intent).toBe(
+			"Approve 0x0000000000000000000000000000000000000001 to spend UNLIMITED USDC",
+		);
+	});
+
+	test("humanizes setApprovalForAll grant/revoke wording", () => {
+		const grantCall: DecodedCall = {
+			selector: "0xa22cb465",
+			signature: "setApprovalForAll(address,bool)",
+			functionName: "setApprovalForAll",
+			source: "contract-abi",
+			args: {
+				operator: "0x0000000000000000000000000000000000000abc",
+				approved: true,
+			},
+		};
+
+		const revokeCall: DecodedCall = {
+			...grantCall,
+			args: {
+				operator: "0x0000000000000000000000000000000000000abc",
+				approved: false,
+			},
+		};
+
+		expect(buildIntent(grantCall, { contractName: "ENS" })).toBe(
+			"Grant 0x0000000000000000000000000000000000000abc operator access to all ENS tokens",
+		);
+		expect(buildIntent(revokeCall, { contractName: "ENS" })).toBe(
+			"Revoke 0x0000000000000000000000000000000000000abc operator access to all ENS tokens",
+		);
+	});
+
+	test("humanizes Circle CCTP depositForBurn", () => {
+		const call: DecodedCall = {
+			selector: "0x6fd3504e",
+			signature: "depositForBurn(uint256,uint32,bytes32,address)",
+			functionName: "depositForBurn",
+			source: "contract-abi",
+			args: {
+				amount: "1000000",
+				destinationDomain: "32",
+				mintRecipient: "0x0000000000000000000000000000000000000000000000000000000000000001",
+				burnToken: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+			},
+		};
+
+		const intent = buildIntent(call, {});
+		expect(intent).toBe("Bridge 1 USDC via Circle CCTP to domain 32");
+	});
+
+	test("humanizes upgradeToAndCall as proxy upgrade", () => {
+		const call: DecodedCall = {
+			selector: "0x4f1ef286",
+			signature: "upgradeToAndCall(address,bytes)",
+			functionName: "upgradeToAndCall",
+			source: "contract-abi",
+			args: {
+				newImplementation: "0xa19934ae98d6b6ce0879f2674c58f9cf73344982",
+				data: "0x",
+			},
+		};
+
+		const intent = buildIntent(call, {});
+		expect(intent).toBe(
+			"Upgrade proxy implementation to 0xa19934ae98d6b6ce0879f2674c58f9cf73344982",
+		);
+	});
+
+	test("humanizes EntryPoint handleOps as EIP-4337 bundle", () => {
+		const call: DecodedCall = {
+			selector: "0x1fad948c",
+			signature:
+				"handleOps((bytes,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,bytes,bytes)[],address)",
+			functionName: "handleOps",
+			source: "contract-abi",
+			args: {
+				ops: [{}, {}],
+				beneficiary: "0x3cc44c0a462cd4e9c0ab15028f65b353f7df1de8",
+			},
+		};
+
+		const intent = buildIntent(call, {});
+		expect(intent).toBe(
+			"EIP-4337: process 2 UserOperations (beneficiary 0x3cc44c0a462cd4e9c0ab15028f65b353f7df1de8)",
+		);
+	});
+
+	test("humanizes Permit2 approve(token,spender,amount,expiration) with expiry", () => {
+		const call: DecodedCall = {
+			selector: "0x87517c45",
+			signature: "approve(address,address,uint160,uint48)",
+			functionName: "approve",
+			source: "contract-abi",
+			args: {
+				token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+				spender: "0x9999999999999999999999999999999999999999",
+				amount: MAX_UINT160.toString(),
+				expiration: "1735689600",
+			},
+		};
+
+		const intent = buildIntent(call, {
+			contractAddress: PERMIT2_CANONICAL_ADDRESS,
+		});
+		expect(intent).toBe(
+			"Permit2: Allow 0x9999999999999999999999999999999999999999 to spend up to UNLIMITED USDC until 2025-01-01 00:00 UTC",
+		);
 	});
 });

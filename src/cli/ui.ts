@@ -4,6 +4,7 @@ import { KNOWN_SPENDERS } from "../approvals/known-spenders";
 import { getChainConfig } from "../chains";
 import { MAX_UINT160, MAX_UINT256 } from "../constants";
 import { buildIntent } from "../intent";
+import { PERMIT2_CANONICAL_ADDRESS } from "../permit2";
 import { getKnownTokenMetadata } from "../tokens/known";
 import type {
 	AnalysisResult,
@@ -67,6 +68,9 @@ const KNOWN_PROTOCOL_APPROVAL_ENTITIES: Partial<
 		},
 	},
 };
+
+const MAX_UINT256_DECIMAL = MAX_UINT256.toString();
+const MAX_UINT160_DECIMAL = MAX_UINT160.toString();
 
 type RenderMode = "default" | "wallet";
 
@@ -566,7 +570,12 @@ function protocolFromKnownProtocolFinding(findings: Finding[]): string | null {
 	return null;
 }
 
+function isPermit2CanonicalContract(result: AnalysisResult): boolean {
+	return result.contract.address.toLowerCase() === PERMIT2_CANONICAL_ADDRESS;
+}
+
 function formatProtocolDisplay(result: AnalysisResult): string {
+	if (isPermit2CanonicalContract(result)) return "Permit2";
 	if (result.protocolMatch?.name) return cleanLabel(result.protocolMatch.name);
 
 	const fromFinding = protocolFromKnownProtocolFinding(result.findings);
@@ -665,15 +674,27 @@ function formatContractLabel(contract: AnalysisResult["contract"]): string {
 	return address;
 }
 
+function collapseUnlimitedApprovalAmounts(label: string): string {
+	const normalized = label.toLowerCase();
+	if (!normalized.includes("approve") && !normalized.includes("permit")) {
+		return label;
+	}
+	return label
+		.replaceAll(MAX_UINT256_DECIMAL, "UNLIMITED")
+		.replaceAll(MAX_UINT160_DECIMAL, "UNLIMITED")
+		.replaceAll("MAX_UINT256", "UNLIMITED")
+		.replaceAll("MAX_UINT160", "UNLIMITED");
+}
+
 function resolveActionLabel(result: AnalysisResult): string {
 	const base = result.intent ?? findDecodedSignature(result.findings) ?? "Unknown action";
 	const improvedApproval = improveApprovalIntentFromSimulation(result, base);
-	if (improvedApproval) return improvedApproval;
+	if (improvedApproval) return collapseUnlimitedApprovalAmounts(improvedApproval);
 
 	const improvedSwap = improveSwapIntentFromSimulation(result, base);
-	if (improvedSwap) return improvedSwap;
+	if (improvedSwap) return collapseUnlimitedApprovalAmounts(improvedSwap);
 
-	return base;
+	return collapseUnlimitedApprovalAmounts(base);
 }
 
 function isPlainEthTransferResult(result: AnalysisResult): boolean {

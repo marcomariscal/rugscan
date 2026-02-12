@@ -3,7 +3,9 @@ import {
 	decodeUniversalRouterCommandLabels,
 } from "../analyzers/calldata/decoder";
 import { isAddress, isRecord, normalizeAddress } from "../analyzers/calldata/utils";
+import { MAX_UINT160, MAX_UINT256 } from "../constants";
 import { formatAmountWithDecimals, formatNativeWei } from "../format/amounts";
+import { PERMIT2_CANONICAL_ADDRESS } from "../permit2";
 import { getKnownTokenMetadata } from "../tokens/known";
 
 export interface IntentContext {
@@ -39,6 +41,88 @@ function parseBoolean(value: unknown): boolean | null {
 		if (normalized === "false") return false;
 	}
 	return null;
+}
+
+function parseBigInt(value: unknown): bigint | null {
+	if (typeof value === "bigint") return value;
+	if (typeof value === "number") {
+		if (!Number.isFinite(value)) return null;
+		return BigInt(Math.trunc(value));
+	}
+	if (typeof value !== "string" || value.length === 0) return null;
+	try {
+		return BigInt(value);
+	} catch {
+		return null;
+	}
+}
+
+function formatApprovalAmount(
+	value: unknown,
+	context: IntentContext,
+	standard: "erc20" | "permit2",
+): string | null {
+	const amount = parseBigInt(value);
+	if (
+		(standard === "erc20" && amount === MAX_UINT256) ||
+		(standard === "permit2" && amount === MAX_UINT160)
+	) {
+		return "UNLIMITED";
+	}
+	return formatTokenAmount(value, context);
+}
+
+function tokenLabelForAddress(tokenAddress: string | undefined): string {
+	if (!tokenAddress) return "token";
+	const metadata = getKnownTokenMetadata(tokenAddress);
+	if (metadata?.symbol) return metadata.symbol;
+	return normalizeAddress(tokenAddress);
+}
+
+function formatTokenAmountForAddress(
+	value: unknown,
+	tokenAddress: string | undefined,
+): string | null {
+	if (!tokenAddress) return formatValue(value);
+	const metadata = getKnownTokenMetadata(tokenAddress);
+	if (!metadata) return formatValue(value);
+	return formatAmountWithDecimals(value, metadata.decimals, metadata.displayDecimals ?? 4);
+}
+
+function formatApprovalAmountForTokenAddress(
+	value: unknown,
+	tokenAddress: string | undefined,
+	standard: "erc20" | "permit2",
+): string | null {
+	const amount = parseBigInt(value);
+	if (
+		(standard === "erc20" && amount === MAX_UINT256) ||
+		(standard === "permit2" && amount === MAX_UINT160)
+	) {
+		return "UNLIMITED";
+	}
+	return formatTokenAmountForAddress(value, tokenAddress);
+}
+
+function formatPermit2Expiry(expiration: unknown): string | null {
+	const parsed = parseBigInt(expiration);
+	if (parsed === null) return null;
+	const maxUint48 = (1n << 48n) - 1n;
+	if (parsed === maxUint48) return "never";
+	if (parsed <= 0n) return "immediately";
+
+	const seconds = Number(parsed);
+	if (!Number.isFinite(seconds)) return parsed.toString();
+
+	const date = new Date(seconds * 1000);
+	if (Number.isNaN(date.getTime())) return parsed.toString();
+
+	const yyyy = date.getUTCFullYear().toString().padStart(4, "0");
+	const mm = (date.getUTCMonth() + 1).toString().padStart(2, "0");
+	const dd = date.getUTCDate().toString().padStart(2, "0");
+	const hh = date.getUTCHours().toString().padStart(2, "0");
+	const min = date.getUTCMinutes().toString().padStart(2, "0");
+	return `${yyyy}-${mm}-${dd} ${hh}:${min} UTC`;
 }
 
 function readArg(call: DecodedCall, name: string, index: number): unknown {
@@ -220,11 +304,15 @@ function extractNestedCallLabels(call: DecodedCall): string[] {
 }
 
 const KNOWN_ADDRESS_LABELS: Record<string, string> = {
-	"0x000000000022d473030f116ddee9f6b43ac78ba3": "Permit2",
+	[PERMIT2_CANONICAL_ADDRESS]: "Permit2",
 };
 
 function formatAddressWithKnownLabel(value: string): string {
 	return KNOWN_ADDRESS_LABELS[value.toLowerCase()] ?? normalizeAddress(value);
+}
+
+function isPermit2Contract(context: IntentContext): boolean {
+	return context.contractAddress?.toLowerCase() === PERMIT2_CANONICAL_ADDRESS;
 }
 
 function summarizeSafeInnerCall(call: DecodedCall): string | null {
@@ -243,7 +331,7 @@ function summarizeSafeInnerCall(call: DecodedCall): string | null {
 			contractAddress: tokenAddress ?? undefined,
 		};
 		const token = tokenLabel(context);
-		const amountLabel = formatTokenAmount(amount, context);
+		const amountLabel = formatApprovalAmount(amount, context, "erc20");
 		if (spender && amountLabel) {
 			return `${token} approve(${formatAddressWithKnownLabel(spender)}, ${amountLabel})`;
 		}
@@ -257,7 +345,7 @@ const erc20Approve: IntentTemplate = {
 	match: (call) => call.standard === "erc20" && call.functionName === "approve",
 	render: (call, context) => {
 		const spender = formatValue(readArg(call, "spender", 0));
-		const amount = formatTokenAmount(readArg(call, "amount", 1), context);
+		const amount = formatApprovalAmount(readArg(call, "amount", 1), context, "erc20");
 		if (!spender || !amount) return null;
 		return `Approve ${spender} to spend ${amount} ${tokenLabel(context)}`;
 	},
@@ -310,9 +398,9 @@ const erc721SetApprovalForAll: IntentTemplate = {
 		if (!operator || approved === null) return null;
 		const collection = collectionLabel(context);
 		if (approved) {
-			return `Approve ${operator} to manage all ${collection} tokens`;
+			return `Grant ${operator} operator access to all ${collection} tokens`;
 		}
-		return `Revoke ${operator} approval for all ${collection} tokens`;
+		return `Revoke ${operator} operator access to all ${collection} tokens`;
 	},
 };
 
@@ -587,6 +675,99 @@ const uniswapV3ExactOutput: IntentTemplate = {
 	},
 };
 
+const cctpDepositForBurn: IntentTemplate = {
+	id: "cctp-deposit-for-burn",
+	match: (call) => call.functionName === "depositForBurn",
+	render: (call) => {
+		const amountValue = readArg(call, "amount", 0);
+		const destinationDomain = formatValue(readArg(call, "destinationDomain", 1));
+		const burnTokenValue = readArg(call, "burnToken", 3);
+		const burnToken = typeof burnTokenValue === "string" ? burnTokenValue : undefined;
+		const token = tokenLabelForAddress(burnToken);
+		const amount = formatTokenAmountForAddress(amountValue, burnToken) ?? formatValue(amountValue);
+		if (amount && destinationDomain) {
+			return `Bridge ${amount} ${token} via Circle CCTP to domain ${destinationDomain}`;
+		}
+		if (amount) {
+			return `Bridge ${amount} ${token} via Circle CCTP`;
+		}
+		return "Bridge tokens via Circle CCTP";
+	},
+};
+
+const proxyUpgradeToAndCall: IntentTemplate = {
+	id: "proxy-upgrade-to-and-call",
+	match: (call) => call.functionName === "upgradeToAndCall",
+	render: (call) => {
+		const implementation =
+			formatValue(readArg(call, "newImplementation", 0)) ??
+			formatValue(readArg(call, "implementation", 0));
+		const data = readArg(call, "data", 1);
+		const hasSetupCall = typeof data === "string" && data.startsWith("0x") && data !== "0x";
+		if (implementation && hasSetupCall) {
+			return `Upgrade proxy implementation to ${implementation} and run setup call`;
+		}
+		if (implementation) {
+			return `Upgrade proxy implementation to ${implementation}`;
+		}
+		if (hasSetupCall) {
+			return "Upgrade proxy implementation and run setup call";
+		}
+		return "Upgrade proxy implementation";
+	},
+};
+
+const eip4337HandleOps: IntentTemplate = {
+	id: "eip4337-handle-ops",
+	match: (call) => call.functionName === "handleOps",
+	render: (call) => {
+		const ops = readArg(call, "ops", 0) ?? readArg(call, "userOps", 0);
+		const operationCount = Array.isArray(ops) ? ops.length : null;
+		const beneficiary = formatValue(readArg(call, "beneficiary", 1));
+		if (operationCount !== null && beneficiary) {
+			return `EIP-4337: process ${operationCount} UserOperation${operationCount === 1 ? "" : "s"} (beneficiary ${beneficiary})`;
+		}
+		if (operationCount !== null) {
+			return `EIP-4337: process ${operationCount} UserOperation${operationCount === 1 ? "" : "s"}`;
+		}
+		if (beneficiary) {
+			return `EIP-4337: process UserOperation bundle (beneficiary ${beneficiary})`;
+		}
+		return "EIP-4337: process UserOperation bundle";
+	},
+};
+
+const permit2Approve: IntentTemplate = {
+	id: "permit2-approve",
+	match: (call) => call.functionName === "approve",
+	render: (call, context) => {
+		if (!isPermit2Contract(context)) return null;
+		const tokenAddressValue = readArg(call, "token", 0);
+		const tokenAddress =
+			typeof tokenAddressValue === "string" && isAddress(tokenAddressValue)
+				? tokenAddressValue
+				: undefined;
+		const spender = formatValue(readArg(call, "spender", 1));
+		const amount = formatApprovalAmountForTokenAddress(
+			readArg(call, "amount", 2),
+			tokenAddress,
+			"permit2",
+		);
+		const expiry = formatPermit2Expiry(readArg(call, "expiration", 3));
+		const token = tokenLabelForAddress(tokenAddress);
+		if (spender && amount && expiry) {
+			return `Permit2: Allow ${spender} to spend up to ${amount} ${token} until ${expiry}`;
+		}
+		if (spender && amount) {
+			return `Permit2: Allow ${spender} to spend up to ${amount} ${token}`;
+		}
+		if (spender) {
+			return `Permit2: Allow ${spender} to spend tokens`;
+		}
+		return "Permit2: Update token allowance";
+	},
+};
+
 const permit2Permit: IntentTemplate = {
 	id: "permit2-permit",
 	match: (call) => call.functionName === "permit" && call.standard !== "eip2612",
@@ -674,6 +855,10 @@ export const INTENT_TEMPLATES: IntentTemplate[] = [
 	uniswapV3ExactOutputSingle,
 	uniswapV3ExactInput,
 	uniswapV3ExactOutput,
+	cctpDepositForBurn,
+	proxyUpgradeToAndCall,
+	eip4337HandleOps,
+	permit2Approve,
 	permit2Permit,
 	permit2PermitTransferFrom,
 	wethDeposit,
