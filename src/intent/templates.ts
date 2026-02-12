@@ -862,6 +862,29 @@ const wethWithdraw: IntentTemplate = {
 	},
 };
 
+const seaportFulfillBasicOrder: IntentTemplate = {
+	id: "seaport-fulfill-basic-order",
+	match: (call) => call.functionName === "fulfillBasicOrder",
+	render: () => "Seaport: fulfill marketplace order",
+};
+
+const safeExecTransactionFromModule: IntentTemplate = {
+	id: "safe-exec-transaction-from-module",
+	match: (call) =>
+		call.functionName === "execTransactionFromModule" ||
+		call.functionName === "execTransactionFromModuleReturnData",
+	render: (call) => {
+		const innerCall = readArg(call, "innerCall", 3);
+		if (isRecord(innerCall)) {
+			const functionName = innerCall.functionName;
+			if (typeof functionName === "string" && functionName.length > 0) {
+				return `Safe module exec → ${functionName}`;
+			}
+		}
+		return "Safe module exec transaction";
+	},
+};
+
 export const INTENT_TEMPLATES: IntentTemplate[] = [
 	erc20Approve,
 	erc20Transfer,
@@ -882,6 +905,8 @@ export const INTENT_TEMPLATES: IntentTemplate[] = [
 	uniswapUniversalRouterExecute,
 	routerMulticall,
 	safeExecTransaction,
+	safeExecTransactionFromModule,
+	seaportFulfillBasicOrder,
 	oneInchSwap,
 	oneInchUniswapV3Swap,
 	uniswapV2ExactTokensForTokens,

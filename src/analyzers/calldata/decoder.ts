@@ -252,6 +252,20 @@ const LOCAL_SELECTOR_FALLBACKS: Record<string, LocalSelectorFallback> = {
 			"execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)",
 		functionName: "execTransaction",
 	},
+	"0x5229073f": {
+		signature: "execTransactionFromModuleReturnData(address,uint256,bytes,uint8)",
+		functionName: "execTransactionFromModuleReturnData",
+	},
+	"0x468721a7": {
+		signature: "execTransactionFromModule(address,uint256,bytes,uint8)",
+		functionName: "execTransactionFromModule",
+	},
+	// Seaport 1.x
+	"0xfb0f3ee1": {
+		signature:
+			"fulfillBasicOrder((address,uint256,uint256,address,address,address,uint256,uint256,uint8,uint256,uint256,bytes32,uint256,bytes32,bytes32,uint256,(uint256,address)[],bytes))",
+		functionName: "fulfillBasicOrder",
+	},
 	// 1inch Aggregation Router
 	"0x12aa3caf": {
 		signature:
@@ -335,6 +349,20 @@ function decodeLocalSelectorFallback(
 
 	if (fallback.functionName === "execTransaction") {
 		const decoded = decodeSafeExecTransaction(data, normalized, fallback.signature, depth);
+		if (decoded) return decoded;
+	}
+
+	if (
+		fallback.functionName === "execTransactionFromModule" ||
+		fallback.functionName === "execTransactionFromModuleReturnData"
+	) {
+		const decoded = decodeSafeExecTransactionFromModule(
+			data,
+			normalized,
+			fallback.signature,
+			fallback.functionName,
+			depth,
+		);
 		if (decoded) return decoded;
 	}
 
@@ -697,6 +725,84 @@ function decodeSafeExecTransaction(
 			selector,
 			signature: fallbackSignature,
 			functionName: "execTransaction",
+			source: "local-selector",
+			args,
+			argNames,
+		};
+	} catch {
+		return null;
+	}
+}
+
+const SAFE_EXEC_TX_FROM_MODULE_ABI: Abi = [
+	{
+		type: "function",
+		name: "execTransactionFromModule",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "to", type: "address" },
+			{ name: "value", type: "uint256" },
+			{ name: "data", type: "bytes" },
+			{ name: "operation", type: "uint8" },
+		],
+		outputs: [{ name: "success", type: "bool" }],
+	},
+	{
+		type: "function",
+		name: "execTransactionFromModuleReturnData",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "to", type: "address" },
+			{ name: "value", type: "uint256" },
+			{ name: "data", type: "bytes" },
+			{ name: "operation", type: "uint8" },
+		],
+		outputs: [
+			{ name: "success", type: "bool" },
+			{ name: "returnData", type: "bytes" },
+		],
+	},
+];
+
+function decodeSafeExecTransactionFromModule(
+	data: string,
+	selector: string,
+	fallbackSignature: string,
+	functionName: string,
+	depth: number,
+): DecodedCall | null {
+	if (!isHex(data)) return null;
+	try {
+		const decoded = decodeFunctionData({ abi: SAFE_EXEC_TX_FROM_MODULE_ABI, data });
+		const toValue = getArg(decoded.args, 0, "to");
+		const valueValue = getArg(decoded.args, 1, "value");
+		const dataValue = getArg(decoded.args, 2, "data");
+		const operationValue = getArg(decoded.args, 3, "operation");
+		if (typeof toValue !== "string" || typeof dataValue !== "string") return null;
+
+		const innerDecoded = decodeNestedKnownCalldata(dataValue, depth);
+		const args: Record<string, unknown> = {
+			to: normalizeAddress(toValue),
+			value: formatDecodedValue(valueValue),
+			operation: formatDecodedValue(operationValue),
+		};
+		const argNames = ["to", "value", "operation"];
+
+		if (innerDecoded) {
+			args.innerCall = {
+				selector: innerDecoded.selector,
+				signature: innerDecoded.signature,
+				functionName: innerDecoded.functionName,
+				...(innerDecoded.args !== undefined ? { args: innerDecoded.args } : {}),
+				...(innerDecoded.argNames ? { argNames: innerDecoded.argNames } : {}),
+			};
+			argNames.push("innerCall");
+		}
+
+		return {
+			selector,
+			signature: fallbackSignature,
+			functionName,
 			source: "local-selector",
 			args,
 			argNames,

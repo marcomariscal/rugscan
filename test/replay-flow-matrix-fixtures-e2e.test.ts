@@ -219,6 +219,25 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "depositETH",
 	},
+	// === Pass 18: Marketplace fulfillment (Seaport) + Safe module exec ===
+	// Lane 9: Marketplace order fulfillment (Seaport fulfillBasicOrder)
+	{
+		flow: "Seaport fulfillBasicOrder (marketplace order fulfillment)",
+		fixturePath: "fixtures/txs/seaport-fulfill-basic-order-3bd84118.json",
+		nativeDiff: "negative",
+		intentIncludes: "Seaport",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "fulfillBasicOrder",
+	},
+	// Lane 10: Safe module exec (execTransactionFromModuleReturnData)
+	{
+		flow: "Safe execTransactionFromModuleReturnData (module exec path)",
+		fixturePath: "fixtures/txs/safe-module-exec-return-data-b6e95e6c.json",
+		nativeDiff: "zero",
+		intentIncludes: "Safe module exec",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "execTransactionFromModuleReturnData",
+	},
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -503,17 +522,8 @@ const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
 	// Ownership transfer / role mutation — PROMOTED to real lane (Pass 17)
 	// Canonical L2 bridge deposit (non-CCTP) — PROMOTED to real lane (Pass 17)
 	// Bridge: Optimism Standard Bridge depositETH — PROMOTED to real lane (Pass 17)
-	{
-		lane: "Marketplace order fulfillment (Seaport-style)",
-		placeholderFixturePath: "fixtures/txs/seaport-fulfill-order-TODO.json",
-		skipReason:
-			"No replay fixture committed yet for Seaport fulfillOrder/fulfillAdvancedOrder/matchOrders paths.",
-		acceptanceCriteria: [
-			"Fixture targets Seaport contract with fulfillOrder/fulfillAdvancedOrder/matchOrders",
-			"Intent includes marketplace order fulfillment semantics",
-			"Simulation captures NFT/token movement legs relevant to order execution",
-		],
-	},
+	// Marketplace order fulfillment (Seaport-style) — PROMOTED to real lane (Pass 18)
+	// Safe module enable / execTransactionFromModule — PROMOTED to real lane (Pass 18)
 	{
 		lane: "Universal Router command-stream multi-step path",
 		placeholderFixturePath: "fixtures/txs/universal-router-command-stream-multistep-TODO.json",
@@ -523,16 +533,6 @@ const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
 			"Fixture contains command stream with 3+ actionable steps",
 			"Decoded command labels preserved in intent as a step summary",
 			"Findings reflect combined approval/swap/sweep risk composition",
-		],
-	},
-	{
-		lane: "Safe module enable / execTransactionFromModule",
-		placeholderFixturePath: "fixtures/txs/safe-module-enable-exectxfrommodule-TODO.json",
-		skipReason: "No real fixture recorded for Safe module enablement/module-executed call path.",
-		acceptanceCriteria: [
-			"Fixture decodes enableModule or execTransactionFromModule",
-			"Intent calls out Safe module action, not plain Safe owner execution",
-			"Findings include explicit elevated-trust module execution warning",
 		],
 	},
 	{
