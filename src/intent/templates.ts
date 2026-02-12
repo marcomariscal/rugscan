@@ -1,4 +1,7 @@
-import type { DecodedCall } from "../analyzers/calldata/decoder";
+import {
+	type DecodedCall,
+	decodeUniversalRouterCommandLabels,
+} from "../analyzers/calldata/decoder";
 import { isAddress, isRecord, normalizeAddress } from "../analyzers/calldata/utils";
 
 export interface IntentContext {
@@ -142,6 +145,38 @@ function extractRecipient(value: unknown): string | undefined {
 	return recipient ?? undefined;
 }
 
+function extractUniversalRouterCommandLabels(call: DecodedCall): string[] {
+	const commandsDecoded = readArg(call, "commandsDecoded", 3);
+	if (Array.isArray(commandsDecoded)) {
+		const labels: string[] = [];
+		for (const entry of commandsDecoded) {
+			if (!isRecord(entry)) continue;
+			const command = entry.command;
+			if (typeof command !== "string" || command.length === 0) continue;
+			const allowRevert = entry.allowRevert;
+			labels.push(allowRevert === true ? `${command} (allow-revert)` : command);
+		}
+		if (labels.length > 0) {
+			return labels;
+		}
+	}
+
+	const commands = readArg(call, "commands", 0);
+	if (typeof commands === "string" && commands.startsWith("0x")) {
+		return decodeUniversalRouterCommandLabels(commands);
+	}
+
+	return [];
+}
+
+function summarizeUniversalRouterCommands(labels: string[]): string | null {
+	if (labels.length === 0) return null;
+	const maxSteps = 4;
+	const visible = labels.slice(0, maxSteps);
+	const suffix = labels.length > maxSteps ? ` +${labels.length - maxSteps} more` : "";
+	return `${visible.join(" → ")}${suffix}`;
+}
+
 const erc20Approve: IntentTemplate = {
 	id: "erc20-approve",
 	match: (call) => call.standard === "erc20" && call.functionName === "approve",
@@ -273,6 +308,20 @@ const aaveGatewayRepayEth: IntentTemplate = {
 	id: "aave-gateway-repay-eth",
 	match: (call) => call.functionName === "repayETH",
 	render: () => "Repay ETH to Aave",
+};
+
+const uniswapUniversalRouterExecute: IntentTemplate = {
+	id: "uniswap-universal-router-execute",
+	match: (call) =>
+		call.functionName === "execute" &&
+		(call.signature === "execute(bytes,bytes[],uint256)" ||
+			call.signature === "execute(bytes,bytes[])"),
+	render: (call) => {
+		const labels = extractUniversalRouterCommandLabels(call);
+		const summary = summarizeUniversalRouterCommands(labels);
+		if (!summary) return "Uniswap Universal Router execution";
+		return `Uniswap Universal Router: ${summary}`;
+	},
 };
 
 const uniswapV2ExactTokensForTokens: IntentTemplate = {
@@ -486,6 +535,7 @@ export const INTENT_TEMPLATES: IntentTemplate[] = [
 	aaveGatewayWithdrawEth,
 	aaveGatewayBorrowEth,
 	aaveGatewayRepayEth,
+	uniswapUniversalRouterExecute,
 	uniswapV2ExactTokensForTokens,
 	uniswapV2TokensForExactTokens,
 	uniswapV2ExactEthForTokens,

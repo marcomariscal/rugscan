@@ -31,9 +31,7 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		flow: "Uniswap real swap",
 		fixturePath: "fixtures/txs/uniswap-v4-universalrouter-eth-swap-873d55dd.json",
 		nativeDiff: "negative",
-		// Universal Router `execute` doesn't match an intent template in JSON output;
-		// the simulation-derived swap label is applied in the render path only.
-		// We verify calldata decoding succeeded and simulation ran correctly.
+		intentIncludes: "Uniswap Universal Router",
 		requireDecodedCalldata: true,
 	},
 	{

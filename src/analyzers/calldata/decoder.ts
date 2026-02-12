@@ -1,5 +1,5 @@
 import type { Abi, AbiFunction, AbiParameter } from "viem";
-import { decodeFunctionData, getAbiItem, isHex, parseAbiItem } from "viem";
+import { decodeAbiParameters, decodeFunctionData, getAbiItem, isHex, parseAbiItem } from "viem";
 import { extractSelector, isRecord, normalizeAddress, stringifyValue } from "./utils";
 
 const ERC20_ABI: Abi = [
@@ -63,9 +63,64 @@ const KNOWN_SIGNATURES: Record<string, string> = {
 	permit: "permit(address,address,uint256,uint256,uint8,bytes32,bytes32)",
 };
 
+const UNIVERSAL_ROUTER_EXECUTE_ABI: Abi = [
+	{
+		type: "function",
+		name: "execute",
+		stateMutability: "payable",
+		inputs: [
+			{ name: "commands", type: "bytes" },
+			{ name: "inputs", type: "bytes[]" },
+			{ name: "deadline", type: "uint256" },
+		],
+		outputs: [],
+	},
+	{
+		type: "function",
+		name: "execute",
+		stateMutability: "payable",
+		inputs: [
+			{ name: "commands", type: "bytes" },
+			{ name: "inputs", type: "bytes[]" },
+		],
+		outputs: [],
+	},
+];
+
+const UNIVERSAL_ROUTER_COMMAND_LABELS: Record<number, string> = {
+	0: "V3_SWAP_EXACT_IN",
+	1: "V3_SWAP_EXACT_OUT",
+	2: "PERMIT2_TRANSFER_FROM",
+	3: "PERMIT2_PERMIT_BATCH",
+	4: "SWEEP",
+	5: "TRANSFER",
+	6: "PAY_PORTION",
+	8: "V2_SWAP_EXACT_IN",
+	9: "V2_SWAP_EXACT_OUT",
+	10: "PERMIT2_PERMIT",
+	11: "WRAP_ETH",
+	12: "UNWRAP_WETH",
+	13: "PERMIT2_TRANSFER_FROM_BATCH",
+	14: "BALANCE_CHECK_ERC20",
+	16: "V4_SWAP",
+	17: "V3_POSITION_MANAGER_PERMIT",
+	18: "V3_POSITION_MANAGER_CALL",
+	19: "V4_INITIALIZE_POOL",
+	20: "V4_POSITION_MANAGER_CALL",
+	33: "EXECUTE_SUB_PLAN",
+};
+
 interface LocalSelectorFallback {
 	signature: string;
 	functionName: string;
+}
+
+interface UniversalRouterCommandStep {
+	index: number;
+	opcode: string;
+	command: string;
+	allowRevert: boolean;
+	details?: Record<string, unknown>;
 }
 
 const LOCAL_SELECTOR_FALLBACKS: Record<string, LocalSelectorFallback> = {
@@ -189,14 +244,20 @@ export function decodeKnownCalldata(data: string): DecodedCall | null {
 				return null;
 		}
 	} catch {
-		return decodeLocalSelectorFallback(selector);
+		return decodeLocalSelectorFallback(selector, data);
 	}
 }
 
-function decodeLocalSelectorFallback(selector: string): DecodedCall | null {
+function decodeLocalSelectorFallback(selector: string, data: string): DecodedCall | null {
 	const normalized = selector.toLowerCase();
 	const fallback = LOCAL_SELECTOR_FALLBACKS[normalized];
 	if (!fallback) return null;
+
+	if (fallback.functionName === "execute") {
+		const decoded = decodeUniversalRouterExecute(data, normalized, fallback.signature);
+		if (decoded) return decoded;
+	}
+
 	return {
 		selector: normalized,
 		signature: fallback.signature,
@@ -399,6 +460,278 @@ function decodePermit(selector: string, args: unknown): DecodedCall | null {
 		},
 		argNames: ["owner", "spender", "value", "deadline", "v", "r", "s"],
 	};
+}
+
+function decodeUniversalRouterExecute(
+	data: string,
+	selector: string,
+	fallbackSignature: string,
+): DecodedCall | null {
+	if (!isHex(data)) return null;
+	try {
+		const decoded = decodeFunctionData({ abi: UNIVERSAL_ROUTER_EXECUTE_ABI, data });
+		const commandsValue = getArg(decoded.args, 0, "commands");
+		const inputsValue = getArg(decoded.args, 1, "inputs");
+		const deadlineValue = getArg(decoded.args, 2, "deadline");
+		if (typeof commandsValue !== "string" || !isHex(commandsValue)) return null;
+		if (!Array.isArray(inputsValue)) return null;
+
+		const inputs: string[] = [];
+		for (const input of inputsValue) {
+			if (typeof input !== "string" || !isHex(input)) return null;
+			inputs.push(input.toLowerCase());
+		}
+
+		const commandSteps = decodeUniversalRouterCommandSteps(commandsValue, inputs);
+		const commandLabels = commandSteps.map((step) =>
+			step.allowRevert ? `${step.command} (allow-revert)` : step.command,
+		);
+
+		const args: Record<string, unknown> = {
+			commands: commandsValue.toLowerCase(),
+			inputCount: inputs.length,
+			commandLabels,
+			commandsDecoded: commandSteps,
+		};
+		const argNames = ["commands", "inputCount", "commandLabels", "commandsDecoded"];
+
+		const formattedDeadline = formatDecodedValue(deadlineValue);
+		if (formattedDeadline !== undefined && formattedDeadline !== null) {
+			args.deadline = formattedDeadline;
+			argNames.push("deadline");
+		}
+
+		const signature =
+			fallbackSignature.length > 0
+				? fallbackSignature
+				: Array.isArray(decoded.args) && decoded.args.length >= 3
+					? "execute(bytes,bytes[],uint256)"
+					: "execute(bytes,bytes[])";
+
+		return {
+			selector,
+			signature,
+			functionName: "execute",
+			source: "local-selector",
+			args,
+			argNames,
+		};
+	} catch {
+		return null;
+	}
+}
+
+export function decodeUniversalRouterCommandLabels(commands: string): string[] {
+	const steps = decodeUniversalRouterCommandSteps(commands, []);
+	return steps.map((step) => (step.allowRevert ? `${step.command} (allow-revert)` : step.command));
+}
+
+function decodeUniversalRouterCommandSteps(
+	commands: string,
+	inputs: string[],
+): UniversalRouterCommandStep[] {
+	const bytes = hexToBytes(commands);
+	if (!bytes) return [];
+
+	const steps: UniversalRouterCommandStep[] = [];
+	for (let index = 0; index < bytes.length; index += 1) {
+		const commandByte = bytes[index];
+		const opcode = commandByte & 0x3f;
+		const label =
+			UNIVERSAL_ROUTER_COMMAND_LABELS[opcode] ??
+			`COMMAND_0x${opcode.toString(16).padStart(2, "0")}`;
+		const input = inputs[index];
+		const details = input ? decodeUniversalRouterCommandDetails(opcode, input) : undefined;
+		steps.push({
+			index,
+			opcode: `0x${opcode.toString(16).padStart(2, "0")}`,
+			command: label,
+			allowRevert: (commandByte & 0x80) !== 0,
+			...(details ? { details } : {}),
+		});
+	}
+	return steps;
+}
+
+function decodeUniversalRouterCommandDetails(
+	opcode: number,
+	input: string,
+): Record<string, unknown> | undefined {
+	if (!isHex(input)) return undefined;
+
+	if (opcode === 0x00 || opcode === 0x01) {
+		const decoded = decodeAbiTuple(input, [
+			{ name: "recipient", type: "address" },
+			{ name: opcode === 0x00 ? "amountIn" : "amountOut", type: "uint256" },
+			{ name: opcode === 0x00 ? "amountOutMin" : "amountInMax", type: "uint256" },
+			{ name: "path", type: "bytes" },
+			{ name: "payerIsUser", type: "bool" },
+		]);
+		if (!decoded) return undefined;
+		const path = valueAt(decoded, 3);
+		const tokenPair = extractTokensFromEncodedPath(path);
+		return pruneUndefined({
+			recipient: normalizeAddressString(valueAt(decoded, 0)),
+			[opcode === 0x00 ? "amountIn" : "amountOut"]: formatDecodedValue(valueAt(decoded, 1)),
+			[opcode === 0x00 ? "amountOutMin" : "amountInMax"]: formatDecodedValue(valueAt(decoded, 2)),
+			tokenIn: tokenPair.tokenIn,
+			tokenOut: tokenPair.tokenOut,
+			payerIsUser: valueAt(decoded, 4),
+		});
+	}
+
+	if (opcode === 0x08 || opcode === 0x09) {
+		const decoded = decodeAbiTuple(input, [
+			{ name: "recipient", type: "address" },
+			{ name: opcode === 0x08 ? "amountIn" : "amountOut", type: "uint256" },
+			{ name: opcode === 0x08 ? "amountOutMin" : "amountInMax", type: "uint256" },
+			{ name: "path", type: "address[]" },
+			{ name: "payerIsUser", type: "bool" },
+		]);
+		if (!decoded) return undefined;
+		const tokenPair = extractTokensFromAddressPath(valueAt(decoded, 3));
+		return pruneUndefined({
+			recipient: normalizeAddressString(valueAt(decoded, 0)),
+			[opcode === 0x08 ? "amountIn" : "amountOut"]: formatDecodedValue(valueAt(decoded, 1)),
+			[opcode === 0x08 ? "amountOutMin" : "amountInMax"]: formatDecodedValue(valueAt(decoded, 2)),
+			tokenIn: tokenPair.tokenIn,
+			tokenOut: tokenPair.tokenOut,
+			payerIsUser: valueAt(decoded, 4),
+		});
+	}
+
+	if (opcode === 0x0b || opcode === 0x0c) {
+		const decoded = decodeAbiTuple(input, [
+			{ name: "recipient", type: "address" },
+			{ name: "amountMin", type: "uint256" },
+		]);
+		if (!decoded) return undefined;
+		return pruneUndefined({
+			recipient: normalizeAddressString(valueAt(decoded, 0)),
+			amountMin: formatDecodedValue(valueAt(decoded, 1)),
+		});
+	}
+
+	if (opcode === 0x04) {
+		const decoded = decodeAbiTuple(input, [
+			{ name: "token", type: "address" },
+			{ name: "recipient", type: "address" },
+			{ name: "amountMin", type: "uint256" },
+		]);
+		if (!decoded) return undefined;
+		return pruneUndefined({
+			token: normalizeAddressString(valueAt(decoded, 0)),
+			recipient: normalizeAddressString(valueAt(decoded, 1)),
+			amountMin: formatDecodedValue(valueAt(decoded, 2)),
+		});
+	}
+
+	if (opcode === 0x05) {
+		const decoded = decodeAbiTuple(input, [
+			{ name: "token", type: "address" },
+			{ name: "recipient", type: "address" },
+			{ name: "value", type: "uint256" },
+		]);
+		if (!decoded) return undefined;
+		return pruneUndefined({
+			token: normalizeAddressString(valueAt(decoded, 0)),
+			recipient: normalizeAddressString(valueAt(decoded, 1)),
+			value: formatDecodedValue(valueAt(decoded, 2)),
+		});
+	}
+
+	if (opcode === 0x06) {
+		const decoded = decodeAbiTuple(input, [
+			{ name: "token", type: "address" },
+			{ name: "recipient", type: "address" },
+			{ name: "bips", type: "uint256" },
+		]);
+		if (!decoded) return undefined;
+		return pruneUndefined({
+			token: normalizeAddressString(valueAt(decoded, 0)),
+			recipient: normalizeAddressString(valueAt(decoded, 1)),
+			bips: formatDecodedValue(valueAt(decoded, 2)),
+		});
+	}
+
+	if (opcode === 0x10) {
+		const decoded = decodeAbiTuple(input, [
+			{ name: "actions", type: "bytes" },
+			{ name: "params", type: "bytes[]" },
+		]);
+		if (!decoded) return undefined;
+		const actions = valueAt(decoded, 0);
+		const params = valueAt(decoded, 1);
+		const actionCount =
+			typeof actions === "string" && isHex(actions)
+				? Math.max(0, (actions.length - 2) / 2)
+				: undefined;
+		const paramsCount = Array.isArray(params) ? params.length : undefined;
+		return pruneUndefined({ actionCount, paramsCount });
+	}
+
+	return undefined;
+}
+
+function decodeAbiTuple(input: string, params: AbiParameter[]): readonly unknown[] | null {
+	if (!isHex(input)) return null;
+	try {
+		return decodeAbiParameters(params, input);
+	} catch {
+		return null;
+	}
+}
+
+function valueAt(values: readonly unknown[], index: number): unknown {
+	if (index < 0 || index >= values.length) return undefined;
+	return values[index];
+}
+
+function hexToBytes(value: string): number[] | null {
+	if (!isHex(value)) return null;
+	const raw = value.startsWith("0x") ? value.slice(2) : value;
+	if (raw.length === 0) return [];
+	if (raw.length % 2 !== 0) return null;
+	const bytes: number[] = [];
+	for (let index = 0; index < raw.length; index += 2) {
+		const byte = Number.parseInt(raw.slice(index, index + 2), 16);
+		if (Number.isNaN(byte)) return null;
+		bytes.push(byte);
+	}
+	return bytes;
+}
+
+function extractTokensFromEncodedPath(path: unknown): { tokenIn?: string; tokenOut?: string } {
+	if (typeof path !== "string" || !path.startsWith("0x")) return {};
+	const raw = path.slice(2);
+	if (raw.length < 40) return {};
+	const tokenIn = normalizeAddress(`0x${raw.slice(0, 40)}`);
+	const tokenOut = normalizeAddress(`0x${raw.slice(raw.length - 40)}`);
+	return { tokenIn, tokenOut };
+}
+
+function extractTokensFromAddressPath(path: unknown): { tokenIn?: string; tokenOut?: string } {
+	if (!Array.isArray(path) || path.length === 0) return {};
+	const first = path[0];
+	const last = path[path.length - 1];
+	const tokenIn = normalizeAddressString(first);
+	const tokenOut = normalizeAddressString(last);
+	return { tokenIn, tokenOut };
+}
+
+function normalizeAddressString(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	return normalizeAddress(value);
+}
+
+function pruneUndefined(details: Record<string, unknown>): Record<string, unknown> | undefined {
+	const filteredEntries = Object.entries(details).filter((entry) => entry[1] !== undefined);
+	if (filteredEntries.length === 0) return undefined;
+	const filtered: Record<string, unknown> = {};
+	for (const [key, value] of filteredEntries) {
+		filtered[key] = value;
+	}
+	return filtered;
 }
 
 function getArg(args: unknown, index: number, name: string): unknown {
