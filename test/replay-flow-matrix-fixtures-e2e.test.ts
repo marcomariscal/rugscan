@@ -18,6 +18,15 @@ type ReplayMatrixEntry = {
 	requireDecodedFunctionName?: string;
 	/** Assert a VERIFIED finding containing this contract name */
 	requireVerifiedName?: string;
+	/** Assert required finding codes are present */
+	requireFindingCodes?: string[];
+};
+
+type ReplayLaneScaffold = {
+	lane: string;
+	placeholderFixturePath: string;
+	skipReason: string;
+	acceptanceCriteria: string[];
 };
 
 type ParsedFixture = {
@@ -95,6 +104,74 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		nativeDiff: "zero",
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "execTransaction",
+	},
+	// === Matrix lanes 1-6: Assay UX hard-gate coverage ===
+	// Lane 1: Permit / Permit2 signatures/approvals
+	{
+		flow: "ERC20 approve to Permit2 (max uint256)",
+		fixturePath: "fixtures/txs/erc20-approve-usdc-permit2-max.json",
+		nativeDiff: "zero",
+		intentIncludes: "Approve",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "approve",
+		requireFindingCodes: ["UNLIMITED_APPROVAL"],
+	},
+	{
+		flow: "Permit2 approve (unlimited allowance to unknown spender)",
+		fixturePath: "fixtures/txs/permit2-approve-usdc-unlimited.json",
+		nativeDiff: "zero",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "approve",
+		requireFindingCodes: ["SIM_UNLIMITED_APPROVAL_UNKNOWN_SPENDER"],
+	},
+	// Lane 2: ERC20 transferFrom spender-path drain
+	{
+		flow: "ERC20 transferFrom spender-path (USDC drain)",
+		fixturePath: "fixtures/txs/erc20-transferfrom-usdc-spender-path-fd229120.json",
+		nativeDiff: "zero",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "transferFrom",
+	},
+	// Lane 3: ERC721/ERC1155 setApprovalForAll operator approvals
+	{
+		flow: "ERC721 setApprovalForAll (ENS → OpenSea operator)",
+		fixturePath: "fixtures/txs/erc721-approval-for-all-ens-opensea-true.json",
+		nativeDiff: "zero",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "setApprovalForAll",
+		requireFindingCodes: ["SIM_APPROVAL_FOR_ALL_UNKNOWN_OPERATOR"],
+	},
+	{
+		flow: "ERC1155 setApprovalForAll (Mirror MNFTs → operator)",
+		fixturePath: "fixtures/txs/erc1155-approval-for-all-mirror-mnfts-opensea-true.json",
+		nativeDiff: "zero",
+		requireDecodedCalldata: true,
+		requireFindingCodes: ["SIM_APPROVAL_FOR_ALL_UNKNOWN_OPERATOR"],
+	},
+	// Lane 4: Bridge transaction path (Circle CCTP depositForBurn)
+	{
+		flow: "Bridge: CCTP depositForBurn USDC (Ethereum → remote)",
+		fixturePath: "fixtures/txs/bridge-cctp-depositforburn-usdc-517cf9a8.json",
+		nativeDiff: "zero",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "depositForBurn",
+	},
+	// Lane 5: Proxy admin upgrade call path
+	{
+		flow: "Proxy admin upgradeToAndCall",
+		fixturePath: "fixtures/txs/proxy-upgrade-to-and-call-de7374fb.json",
+		nativeDiff: "zero",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "upgradeToAndCall",
+		requireFindingCodes: ["UPGRADEABLE"],
+	},
+	// Lane 6: EIP-4337 flow path (EntryPoint handleOps)
+	{
+		flow: "EIP-4337 EntryPoint handleOps (UserOperation bundle)",
+		fixturePath: "fixtures/txs/eip4337-entrypoint-handleops-90631007.json",
+		nativeDiff: "positive",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "handleOps",
 	},
 ];
 
@@ -295,6 +372,11 @@ describe("real replay flow matrix e2e", () => {
 					true,
 				);
 			}
+			if (entry.requireFindingCodes) {
+				for (const code of entry.requireFindingCodes) {
+					expect(hasFindingCode(parsed.scan.findings, code)).toBe(true);
+				}
+			}
 		}, 240000);
 	}
 });
@@ -323,4 +405,86 @@ describe("EIP-7702 type-4 matrix scaffold", () => {
 	alwaysTest.todo(
 		"EIP-7702 delegation replay with real on-chain fixture (blocked: no mainnet fixture yet)",
 	);
+});
+
+/**
+ * Lane 1 supplement: Permit / Permit2 off-chain signature scaffold.
+ *
+ * ERC-2612 permit() and Permit2 off-chain signatures (EIP-712 typed data) are
+ * intercepted at the wallet/RPC layer as eth_signTypedData_v4 rather than as
+ * on-chain transactions. The scan CLI path currently operates on transaction
+ * calldata, not typed-data signing requests.
+ *
+ * TODO: Once eth_signTypedData_v4 interception is supported by the proxy/scan
+ * path, record a real fixture and add a full ReplayMatrixEntry.
+ *
+ * Acceptance criteria:
+ * 1. Fixture at test/fixtures/txs/permit2-off-chain-signature-TODO.json
+ *    containing a captured eth_signTypedData_v4 request.
+ * 2. Matrix entry asserts: decoded permit fields, spender label, expiry warning.
+ * 3. Safety finding codes: PERMIT_SIGNATURE, or equivalent.
+ */
+describe("Permit off-chain signature matrix scaffold", () => {
+	alwaysTest("Permit off-chain signature fixture path reserved", () => {
+		const placeholder = "fixtures/txs/permit2-off-chain-signature-TODO.json";
+		expect(placeholder).toContain("TODO");
+	});
+
+	alwaysTest.todo(
+		"Permit2 off-chain typed-data signature replay (blocked: scan path does not yet intercept eth_signTypedData_v4)",
+	);
+});
+
+/**
+ * Scaffold lane markers for lanes 4-6 edge cases.
+ *
+ * The primary fixtures for Bridge (CCTP depositForBurn), Proxy upgrade
+ * (upgradeToAndCall), and EIP-4337 (handleOps) are real and exercised above
+ * in REPLAY_MATRIX. These scaffolds track additional sub-variants that would
+ * strengthen coverage once fixtures become available.
+ */
+const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
+	{
+		lane: "Bridge: Optimism Standard Bridge depositETH",
+		placeholderFixturePath: "fixtures/txs/bridge-optimism-deposit-eth-TODO.json",
+		skipReason: "No mainnet fixture recorded yet for Optimism Standard Bridge depositETH path.",
+		acceptanceCriteria: [
+			"Real mainnet tx fixture with depositETH calldata to 0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1",
+			"nativeDiff: negative (ETH sent to bridge)",
+			"Decoded functionName: depositETH",
+			"Intent includes 'Bridge' or 'Optimism'",
+		],
+	},
+	{
+		lane: "Proxy admin upgrade via ProxyAdmin.upgrade()",
+		placeholderFixturePath: "fixtures/txs/proxy-admin-upgrade-selector-99a88ec4-TODO.json",
+		skipReason:
+			"No mainnet fixture recorded for ProxyAdmin.upgrade(proxy, impl) selector 0x99a88ec4.",
+		acceptanceCriteria: [
+			"Real mainnet tx fixture with selector 0x99a88ec4",
+			"Decoded functionName: upgrade",
+			"UPGRADEABLE finding present",
+		],
+	},
+	{
+		lane: "EIP-4337 EntryPoint v0.7 handleOps",
+		placeholderFixturePath: "fixtures/txs/eip4337-entrypoint-v07-handleops-TODO.json",
+		skipReason:
+			"Current fixture uses EntryPoint v0.6 (0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789). v0.7 EntryPoint (0x0000000071727De22E5E9d8BAf0edAc6f37da032) may produce different finding codes.",
+		acceptanceCriteria: [
+			"Real mainnet tx fixture targeting v0.7 EntryPoint",
+			"Decoded functionName: handleOps",
+			"Validate any differences in finding codes vs v0.6",
+		],
+	},
+];
+
+describe("scaffold lane markers (TODO fixtures)", () => {
+	for (const scaffold of SCAFFOLD_LANES) {
+		alwaysTest(`[scaffold] ${scaffold.lane}`, () => {
+			expect(scaffold.placeholderFixturePath).toContain("TODO");
+			expect(scaffold.skipReason.length).toBeGreaterThan(0);
+			expect(scaffold.acceptanceCriteria.length).toBeGreaterThan(0);
+		});
+	}
 });
