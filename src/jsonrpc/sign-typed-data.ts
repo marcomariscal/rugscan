@@ -334,7 +334,22 @@ export function analyzeSignTypedDataV4Risk(
 		);
 	} else {
 		const nowUnix = options?.nowUnix ?? BigInt(Math.floor(Date.now() / 1000));
-		if (deadline > nowUnix + LONG_EXPIRY_SECONDS) {
+		if (deadline <= nowUnix) {
+			recommendation = ensureRecommendationAtLeast(recommendation, "warning");
+			findings.push({
+				code: "PERMIT_EXPIRED_DEADLINE",
+				severity: "warning",
+				message:
+					"Permit deadline/expiry is already in the past. This can indicate stale or misleading signature prompts.",
+				details: {
+					deadline: deadline.toString(),
+					nowUnix: nowUnix.toString(),
+				},
+			});
+			actionableNotes.push(
+				`Expiry is already expired (deadline ${deadline.toString()}, now ${nowUnix.toString()}).`,
+			);
+		} else if (deadline > nowUnix + LONG_EXPIRY_SECONDS) {
 			recommendation = ensureRecommendationAtLeast(recommendation, "warning");
 			findings.push({
 				code: "PERMIT_LONG_EXPIRY",

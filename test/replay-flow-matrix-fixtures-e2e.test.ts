@@ -605,15 +605,19 @@ describe("real replay flow matrix e2e", () => {
  * parser used by the proxy interception path.
  */
 describe("Permit off-chain signature replay lane", () => {
-	const fixturePath = "fixtures/txs/permit2-off-chain-signature.json";
+	const permit2FixturePath = "fixtures/txs/permit2-off-chain-signature.json";
+	const expiredDeadlineFixturePath =
+		"fixtures/txs/permit-off-chain-signature-expired-deadline.json";
 
-	alwaysTest("Permit off-chain signature fixture promoted from TODO", () => {
-		expect(fixturePath).not.toContain("TODO");
-		expect(existsSync(path.join(import.meta.dir, fixturePath))).toBe(true);
+	alwaysTest("Permit off-chain signature fixtures promoted from TODO", () => {
+		expect(permit2FixturePath).not.toContain("TODO");
+		expect(expiredDeadlineFixturePath).not.toContain("TODO");
+		expect(existsSync(path.join(import.meta.dir, permit2FixturePath))).toBe(true);
+		expect(existsSync(path.join(import.meta.dir, expiredDeadlineFixturePath))).toBe(true);
 	});
 
 	alwaysTest("Permit2 off-chain typed-data fixture yields permit risk findings", async () => {
-		const absolutePath = path.join(import.meta.dir, fixturePath);
+		const absolutePath = path.join(import.meta.dir, permit2FixturePath);
 		const raw = await Bun.file(absolutePath).text();
 		const fixture: unknown = JSON.parse(raw);
 		expect(isRecord(fixture)).toBe(true);
@@ -635,6 +639,33 @@ describe("Permit off-chain signature replay lane", () => {
 		expect(assessment.findings.some((finding) => finding.code === "PERMIT_ZERO_EXPIRY")).toBe(true);
 		expect(assessment.actionableNotes.join(" ")).toContain("Only sign if you trust");
 	});
+
+	alwaysTest(
+		"Expired permit typed-data fixture yields explicit expired-deadline warning",
+		async () => {
+			const absolutePath = path.join(import.meta.dir, expiredDeadlineFixturePath);
+			const raw = await Bun.file(absolutePath).text();
+			const fixture: unknown = JSON.parse(raw);
+			expect(isRecord(fixture)).toBe(true);
+			if (!isRecord(fixture)) return;
+			expect(fixture.method).toBe("eth_signTypedData_v4");
+
+			const parsed = extractSignTypedDataV4Payload(fixture.params);
+			expect(parsed).not.toBeNull();
+			if (!parsed) return;
+
+			const assessment = analyzeSignTypedDataV4Risk(parsed, { nowUnix: 1_700_000_000n });
+			expect(assessment.permitLike).toBe(true);
+			expect(assessment.recommendation).toBe("warning");
+			expect(
+				assessment.findings.some((finding) => finding.code === "PERMIT_EXPIRED_DEADLINE"),
+			).toBe(true);
+			expect(assessment.findings.some((finding) => finding.code === "PERMIT_LONG_EXPIRY")).toBe(
+				false,
+			);
+			expect(assessment.actionableNotes.join(" ")).toContain("already expired");
+		},
+	);
 });
 
 /**

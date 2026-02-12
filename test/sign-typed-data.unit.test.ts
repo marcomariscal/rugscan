@@ -128,6 +128,41 @@ describe("eth_signTypedData_v4 parser + permit risk classification", () => {
 		);
 	});
 
+	test("classifies expired permit deadline as warning", () => {
+		const parsed = extractSignTypedDataV4Payload([
+			"0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+			{
+				types: {
+					EIP712Domain: [{ name: "name", type: "string" }],
+					Permit: [
+						{ name: "owner", type: "address" },
+						{ name: "spender", type: "address" },
+						{ name: "value", type: "uint256" },
+						{ name: "nonce", type: "uint256" },
+						{ name: "deadline", type: "uint256" },
+					],
+				},
+				primaryType: "Permit",
+				domain: { chainId: "1" },
+				message: {
+					owner: "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+					spender: "0x4444444444444444444444444444444444444444",
+					value: "1000000",
+					nonce: "9",
+					deadline: "1699999900",
+				},
+			},
+		]);
+		expect(parsed).not.toBeNull();
+		if (!parsed) return;
+
+		const assessment = analyzeSignTypedDataV4Risk(parsed, { nowUnix: 1_700_000_000n });
+		expect(assessment.recommendation).toBe("warning");
+		expect(assessment.findings.some((f) => f.code === "PERMIT_EXPIRED_DEADLINE")).toBe(true);
+		expect(assessment.findings.some((f) => f.code === "PERMIT_LONG_EXPIRY")).toBe(false);
+		expect(assessment.actionableNotes.join(" ")).toContain("already expired");
+	});
+
 	test("returns ok for non-permit typed data", () => {
 		const parsed = extractSignTypedDataV4Payload([
 			"0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
