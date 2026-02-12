@@ -6,7 +6,7 @@ import { createProgressRenderer, renderHeading, renderResultBox } from "../cli/u
 import { loadConfig } from "../config";
 import { fetchWithTimeout } from "../http";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
-import type { AnalyzeResponse, CalldataInput, ScanInput } from "../schema";
+import type { AnalyzeResponse, AuthorizationEntry, CalldataInput, ScanInput } from "../schema";
 import { scanInputSchema } from "../schema";
 import { getAnvilClient } from "../simulations/anvil";
 import { nowMs, TimingStore } from "../timing";
@@ -392,6 +392,49 @@ function isHexString(value: unknown): value is `0x${string}` {
 	return (value.length - 2) % 2 === 0;
 }
 
+/**
+ * Parse an EIP-7702 authorizationList from eth_sendTransaction params.
+ * Returns empty array if the field is absent or malformed.
+ */
+function parseAuthorizationListField(value: unknown): AuthorizationEntry[] {
+	if (!Array.isArray(value)) return [];
+	const result: AuthorizationEntry[] = [];
+	for (const entry of value) {
+		if (!isRecord(entry)) continue;
+		const address = typeof entry.address === "string" ? entry.address : null;
+		if (!address || !isAddress(address)) continue;
+		const chainId = parseQuantity(entry.chainId);
+		const nonce = parseQuantity(entry.nonce);
+		result.push({
+			address,
+			chainId: chainId === null ? 0 : Number(chainId),
+			nonce: nonce === null ? 0 : Number(nonce),
+		});
+	}
+	return result;
+}
+
+/**
+ * Extract EIP-7702 authorization list from a viem-parsed transaction.
+ * Works for type-4 (eip7702) transactions parsed by `parseTransaction`.
+ */
+function extractAuthorizationListFromParsedTx(
+	parsed: Record<string, unknown>,
+): AuthorizationEntry[] {
+	const authList = parsed.authorizationList;
+	if (!Array.isArray(authList)) return [];
+	const result: AuthorizationEntry[] = [];
+	for (const entry of authList) {
+		if (!isRecord(entry)) continue;
+		const address = typeof entry.address === "string" ? entry.address : null;
+		if (!address || !isAddress(address)) continue;
+		const chainId = typeof entry.chainId === "number" ? entry.chainId : 0;
+		const nonce = typeof entry.nonce === "number" ? entry.nonce : 0;
+		result.push({ address, chainId, nonce });
+	}
+	return result;
+}
+
 export function extractSendTransactionCalldata(request: JsonRpcRequest): CalldataInput | null {
 	if (request.method !== "eth_sendTransaction") return null;
 	const params = request.params;
@@ -408,12 +451,15 @@ export function extractSendTransactionCalldata(request: JsonRpcRequest): Calldat
 	const chainId = parseQuantity(tx.chainId);
 	const value = parseQuantity(tx.value);
 
+	const authorizationList = parseAuthorizationListField(tx.authorizationList);
+
 	return {
 		to,
 		from,
 		data,
 		value: value === null ? undefined : value.toString(),
 		chain: chainId === null ? undefined : chainId.toString(),
+		authorizationList: authorizationList.length > 0 ? authorizationList : undefined,
 	};
 }
 
@@ -436,12 +482,16 @@ export async function extractSendRawTransactionCalldata(
 		const data = typeof parsed.data === "string" ? parsed.data : "0x";
 		const chainId = parsed.chainId;
 
+		// Extract EIP-7702 authorization list if present
+		const authorizationList = extractAuthorizationListFromParsedTx(parsed);
+
 		return {
 			to,
 			from,
 			data,
 			value: value.toString(),
 			chain: chainId === undefined ? undefined : chainId.toString(),
+			authorizationList: authorizationList.length > 0 ? authorizationList : undefined,
 		};
 	} catch {
 		return null;

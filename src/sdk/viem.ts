@@ -2,7 +2,7 @@ import type { Transport } from "viem";
 import { parseTransaction, recoverTransactionAddress, serializeTransaction } from "viem";
 import { renderResultBox } from "../cli/ui";
 import { type ScanOptions, scanWithAnalysis } from "../scan";
-import type { AnalyzeResponse, CalldataInput, ScanInput } from "../schema";
+import type { AnalyzeResponse, AuthorizationEntry, CalldataInput, ScanInput } from "../schema";
 import { scanInputSchema } from "../schema";
 import type { AnalysisResult, Config, Recommendation } from "../types";
 
@@ -56,6 +56,54 @@ function isSerializedTransaction(value: unknown): value is SerializedTransaction
 	return value !== "0x";
 }
 
+function isAddress(value: string): boolean {
+	return /^0x[0-9a-fA-F]{40}$/.test(value);
+}
+
+function parseAuthorizationListField(value: unknown): AuthorizationEntry[] {
+	if (!Array.isArray(value)) return [];
+	const result: AuthorizationEntry[] = [];
+	for (const entry of value) {
+		if (!isRecord(entry)) continue;
+		const address = typeof entry.address === "string" ? entry.address : null;
+		if (!address || !isAddress(address)) continue;
+
+		const parsedChainId = parseQuantity(entry.chainId);
+		const parsedNonce = parseQuantity(entry.nonce);
+		const chainId =
+			typeof entry.chainId === "number"
+				? entry.chainId
+				: parsedChainId === null
+					? 0
+					: Number(parsedChainId);
+		const nonce =
+			typeof entry.nonce === "number"
+				? entry.nonce
+				: parsedNonce === null
+					? 0
+					: Number(parsedNonce);
+		result.push({ address, chainId, nonce });
+	}
+	return result;
+}
+
+function extractAuthorizationListFromParsedTx(
+	parsed: Record<string, unknown>,
+): AuthorizationEntry[] {
+	const authList = parsed.authorizationList;
+	if (!Array.isArray(authList)) return [];
+	const result: AuthorizationEntry[] = [];
+	for (const entry of authList) {
+		if (!isRecord(entry)) continue;
+		const address = typeof entry.address === "string" ? entry.address : null;
+		if (!address || !isAddress(address)) continue;
+		const chainId = typeof entry.chainId === "number" ? entry.chainId : 0;
+		const nonce = typeof entry.nonce === "number" ? entry.nonce : 0;
+		result.push({ address, chainId, nonce });
+	}
+	return result;
+}
+
 function extractSendTransactionCalldata(params: unknown): CalldataInput | null {
 	if (!Array.isArray(params) || params.length < 1) return null;
 	const tx = params[0];
@@ -69,6 +117,7 @@ function extractSendTransactionCalldata(params: unknown): CalldataInput | null {
 
 	const chainId = parseQuantity(tx.chainId);
 	const value = parseQuantity(tx.value);
+	const authorizationList = parseAuthorizationListField(tx.authorizationList);
 
 	return {
 		to,
@@ -76,6 +125,7 @@ function extractSendTransactionCalldata(params: unknown): CalldataInput | null {
 		data,
 		value: value === null ? undefined : value.toString(),
 		chain: chainId === null ? undefined : chainId.toString(),
+		authorizationList: authorizationList.length > 0 ? authorizationList : undefined,
 	};
 }
 
@@ -93,6 +143,7 @@ async function extractSendRawTransactionCalldata(params: unknown): Promise<Calld
 		const value = parsed.value ?? 0n;
 		const data = typeof parsed.data === "string" ? parsed.data : "0x";
 		const chainId = parsed.chainId;
+		const authorizationList = extractAuthorizationListFromParsedTx(parsed);
 
 		return {
 			to,
@@ -100,6 +151,7 @@ async function extractSendRawTransactionCalldata(params: unknown): Promise<Calld
 			data,
 			value: value.toString(),
 			chain: chainId === undefined ? undefined : chainId.toString(),
+			authorizationList: authorizationList.length > 0 ? authorizationList : undefined,
 		};
 	} catch {
 		return null;

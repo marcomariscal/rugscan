@@ -75,12 +75,33 @@ export interface ContractInfo {
 	tags?: string[];
 }
 
+/**
+ * EIP-7702 authorization entry (code delegation).
+ *
+ * When present, the sender's EOA temporarily delegates execution to
+ * the contract at `address`. This is the most security-critical field
+ * in a type-4 transaction and must be surfaced to the user.
+ */
+export interface AuthorizationEntry {
+	/** Contract address the EOA delegates to. */
+	address: string;
+	/** Chain ID for the authorization. */
+	chainId: number;
+	/** Nonce of the EOA at authorization time. */
+	nonce: number;
+}
+
 export interface CalldataInput {
 	to: string;
 	from?: string;
 	data: string;
 	value?: string;
 	chain?: string;
+	/**
+	 * EIP-7702 authorization list. Present only for type-4 transactions.
+	 * Each entry delegates the sender's EOA to the specified contract address.
+	 */
+	authorizationList?: AuthorizationEntry[];
 }
 
 export interface ScanInput {
@@ -115,6 +136,12 @@ const hexDataSchema = z.string().refine((value) => isHexString(value), {
 
 const chainSchema = z.string().min(1);
 
+const authorizationEntrySchema = z.object({
+	address: addressSchema,
+	chainId: z.number().int().min(0),
+	nonce: z.number().int().min(0),
+});
+
 const calldataInputSchema = z
 	.object({
 		to: addressSchema,
@@ -127,6 +154,7 @@ const calldataInputSchema = z
 			})
 			.optional(),
 		chain: chainSchema.optional(),
+		authorizationList: z.array(authorizationEntrySchema).optional(),
 	})
 	.strict();
 

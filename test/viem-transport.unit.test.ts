@@ -211,14 +211,69 @@ describe("viem transport - unit", () => {
 		expect(calls.length).toBe(0);
 	});
 
-	test("supports eth_sendRawTransaction path", async () => {
+	test("preserves authorizationList for eth_sendTransaction payloads", async () => {
+		const { transport: upstream, calls } = createUpstream();
+		const config: Config = {};
+
+		const scanFn: AssayScanFn = async (input: ScanInput, options) => {
+			expect(input.calldata?.authorizationList).toHaveLength(1);
+			expect(input.calldata?.authorizationList?.[0]?.address.toLowerCase()).toBe(
+				"0x1234567890abcdef1234567890abcdef12345678",
+			);
+			expect(input.calldata?.authorizationList?.[0]?.chainId).toBe(1);
+			expect(input.calldata?.authorizationList?.[0]?.nonce).toBe(7);
+
+			const analysis = buildAnalysis({ recommendation: "ok", simulationSuccess: true });
+			const response = buildAnalyzeResponse(input, analysis, options?.requestId);
+			return { analysis, response };
+		};
+
+		const transport = createAssayViemTransport({
+			upstream,
+			config,
+			threshold: "warning",
+			scanFn,
+		});
+		const client = transport({ chain: mainnet });
+
+		const result = await client.request({
+			method: "eth_sendTransaction",
+			params: [
+				{
+					to: "0x66a9893cc07d91d95644aedd05d03f95e1dba8af",
+					from: "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+					data: "0x",
+					value: "0x0",
+					chainId: "0x1",
+					authorizationList: [
+						{
+							address: "0x1234567890abcdef1234567890abcdef12345678",
+							chainId: "0x1",
+							nonce: "0x7",
+						},
+					],
+				},
+			],
+		});
+
+		expect(result).toBe("0xdeadbeef");
+		expect(calls.length).toBe(1);
+		expect(calls[0]?.method).toBe("eth_sendTransaction");
+	});
+
+	test("supports eth_sendRawTransaction path (type-4 eip7702)", async () => {
 		const { transport: upstream, calls } = createUpstream();
 		const config: Config = {};
 
 		const account = privateKeyToAccount(`0x${"11".repeat(32)}`);
+		const signedAuthorization = await account.signAuthorization({
+			chainId: 1,
+			nonce: 7,
+			address: "0x1234567890abcdef1234567890abcdef12345678",
+		});
 		const signed = await account.signTransaction({
 			chainId: 1,
-			type: "eip1559",
+			type: "eip7702",
 			to: "0x66a9893cc07d91d95644aedd05d03f95e1dba8af",
 			value: 123n,
 			data: "0x1234",
@@ -226,6 +281,7 @@ describe("viem transport - unit", () => {
 			gas: 21000n,
 			maxFeePerGas: 1n,
 			maxPriorityFeePerGas: 1n,
+			authorizationList: [signedAuthorization],
 		});
 
 		const scanFn: AssayScanFn = async (input: ScanInput, options) => {
@@ -234,6 +290,12 @@ describe("viem transport - unit", () => {
 			expect(input.calldata?.data).toBe("0x1234");
 			expect(input.calldata?.value).toBe("123");
 			expect(input.calldata?.chain).toBe("1");
+			expect(input.calldata?.authorizationList).toHaveLength(1);
+			expect(input.calldata?.authorizationList?.[0]?.address.toLowerCase()).toBe(
+				"0x1234567890abcdef1234567890abcdef12345678",
+			);
+			expect(input.calldata?.authorizationList?.[0]?.chainId).toBe(1);
+			expect(input.calldata?.authorizationList?.[0]?.nonce).toBe(7);
 
 			const analysis = buildAnalysis({ recommendation: "ok", simulationSuccess: true });
 			const response = buildAnalyzeResponse(input, analysis, options?.requestId);

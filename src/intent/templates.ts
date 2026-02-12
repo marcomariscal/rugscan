@@ -3,6 +3,8 @@ import {
 	decodeUniversalRouterCommandLabels,
 } from "../analyzers/calldata/decoder";
 import { isAddress, isRecord, normalizeAddress } from "../analyzers/calldata/utils";
+import { formatAmountWithDecimals, formatNativeWei } from "../format/amounts";
+import { getKnownTokenMetadata } from "../tokens/known";
 
 export interface IntentContext {
 	contractAddress?: string;
@@ -72,8 +74,21 @@ function readStructField(value: unknown, name: string, index: number): unknown {
 	return undefined;
 }
 
+function tokenMetadata(context: IntentContext) {
+	return getKnownTokenMetadata(context.contractAddress);
+}
+
 function tokenLabel(context: IntentContext): string {
-	return context.contractName ?? context.contractAddress ?? "token";
+	const metadata = tokenMetadata(context);
+	return metadata?.symbol ?? context.contractName ?? context.contractAddress ?? "token";
+}
+
+function formatTokenAmount(value: unknown, context: IntentContext): string | null {
+	const metadata = tokenMetadata(context);
+	if (!metadata) {
+		return formatValue(value);
+	}
+	return formatAmountWithDecimals(value, metadata.decimals, metadata.displayDecimals ?? 4);
 }
 
 function collectionLabel(context: IntentContext): string {
@@ -177,12 +192,72 @@ function summarizeUniversalRouterCommands(labels: string[]): string | null {
 	return `${visible.join(" → ")}${suffix}`;
 }
 
+function summarizeNestedCallLabels(labels: string[]): string | null {
+	if (labels.length === 0) return null;
+	const maxSteps = 3;
+	const visible = labels.slice(0, maxSteps);
+	const suffix = labels.length > maxSteps ? ` +${labels.length - maxSteps} more` : "";
+	return `${visible.join(" + ")}${suffix}`;
+}
+
+function extractNestedCallLabels(call: DecodedCall): string[] {
+	const nested = readArg(call, "innerCalls", 1);
+	if (!Array.isArray(nested)) return [];
+	const labels: string[] = [];
+	for (const entry of nested) {
+		if (!isRecord(entry)) continue;
+		const functionName = entry.functionName;
+		if (typeof functionName === "string" && functionName.length > 0) {
+			labels.push(functionName);
+			continue;
+		}
+		const signature = entry.signature;
+		if (typeof signature === "string" && signature.length > 0) {
+			labels.push(signature);
+		}
+	}
+	return labels;
+}
+
+const KNOWN_ADDRESS_LABELS: Record<string, string> = {
+	"0x000000000022d473030f116ddee9f6b43ac78ba3": "Permit2",
+};
+
+function formatAddressWithKnownLabel(value: string): string {
+	return KNOWN_ADDRESS_LABELS[value.toLowerCase()] ?? normalizeAddress(value);
+}
+
+function summarizeSafeInnerCall(call: DecodedCall): string | null {
+	const innerCall = readArg(call, "innerCall", 3);
+	if (!isRecord(innerCall)) return null;
+	const functionName = innerCall.functionName;
+	if (typeof functionName !== "string" || functionName.length === 0) return null;
+
+	if (functionName === "approve") {
+		const args = innerCall.args;
+		if (!isRecord(args)) return null;
+		const spender = formatValue(args.spender);
+		const amount = args.amount ?? args.value;
+		const tokenAddress = formatValue(readArg(call, "to", 0));
+		const context: IntentContext = {
+			contractAddress: tokenAddress ?? undefined,
+		};
+		const token = tokenLabel(context);
+		const amountLabel = formatTokenAmount(amount, context);
+		if (spender && amountLabel) {
+			return `${token} approve(${formatAddressWithKnownLabel(spender)}, ${amountLabel})`;
+		}
+	}
+
+	return functionName;
+}
+
 const erc20Approve: IntentTemplate = {
 	id: "erc20-approve",
 	match: (call) => call.standard === "erc20" && call.functionName === "approve",
 	render: (call, context) => {
 		const spender = formatValue(readArg(call, "spender", 0));
-		const amount = formatValue(readArg(call, "amount", 1));
+		const amount = formatTokenAmount(readArg(call, "amount", 1), context);
 		if (!spender || !amount) return null;
 		return `Approve ${spender} to spend ${amount} ${tokenLabel(context)}`;
 	},
@@ -193,7 +268,7 @@ const erc20Transfer: IntentTemplate = {
 	match: (call) => call.standard === "erc20" && call.functionName === "transfer",
 	render: (call, context) => {
 		const to = formatValue(readArg(call, "to", 0));
-		const amount = formatValue(readArg(call, "amount", 1));
+		const amount = formatTokenAmount(readArg(call, "amount", 1), context);
 		if (!to || !amount) return null;
 		return `Transfer ${amount} ${tokenLabel(context)} to ${to}`;
 	},
@@ -206,7 +281,7 @@ const erc20TransferFrom: IntentTemplate = {
 		const from = formatValue(readArg(call, "from", 0));
 		const to = formatValue(readArg(call, "to", 1));
 		const amount =
-			formatValue(readArg(call, "amount", 2)) ??
+			formatTokenAmount(readArg(call, "amount", 2), context) ??
 			formatValue(readArg(call, "tokenId", 2)) ??
 			formatValue(readArg(call, "id", 2));
 		if (!from || !to || !amount) return null;
@@ -321,6 +396,34 @@ const uniswapUniversalRouterExecute: IntentTemplate = {
 		const summary = summarizeUniversalRouterCommands(labels);
 		if (!summary) return "Uniswap Universal Router execution";
 		return `Uniswap Universal Router: ${summary}`;
+	},
+};
+
+const routerMulticall: IntentTemplate = {
+	id: "router-multicall",
+	match: (call) => call.functionName === "multicall",
+	render: (call) => {
+		const labels = extractNestedCallLabels(call);
+		const summary = summarizeNestedCallLabels(labels);
+		if (!summary) return "multicall";
+		return `multicall: ${summary}`;
+	},
+};
+
+const safeExecTransaction: IntentTemplate = {
+	id: "safe-exec-transaction",
+	match: (call) => call.functionName === "execTransaction",
+	render: (call) => {
+		const innerSummary = summarizeSafeInnerCall(call);
+		if (innerSummary) {
+			return `Safe exec → ${innerSummary}`;
+		}
+		const valueLabel = formatNativeWei(readArg(call, "value", 1), 4);
+		const to = formatValue(readArg(call, "to", 0));
+		if (to && valueLabel) {
+			return `Safe exec → send ${valueLabel} ETH to ${to}`;
+		}
+		return "Safe exec transaction";
 	},
 };
 
@@ -536,6 +639,8 @@ export const INTENT_TEMPLATES: IntentTemplate[] = [
 	aaveGatewayBorrowEth,
 	aaveGatewayRepayEth,
 	uniswapUniversalRouterExecute,
+	routerMulticall,
+	safeExecTransaction,
 	uniswapV2ExactTokensForTokens,
 	uniswapV2TokensForExactTokens,
 	uniswapV2ExactEthForTokens,

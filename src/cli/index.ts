@@ -9,7 +9,12 @@ import { installOfflineHttpGuard } from "../offline-http";
 import { buildSafeIngestPlan } from "../safe/ingest";
 import { loadSafeMultisigTransaction } from "../safe/load";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
-import { type CalldataInput, type ScanInput, scanInputSchema } from "../schema";
+import {
+	type AuthorizationEntry,
+	type CalldataInput,
+	type ScanInput,
+	scanInputSchema,
+} from "../schema";
 import type { ApprovalContext, ApprovalTx, Chain, Recommendation } from "../types";
 import { formatSarif } from "./formatters/sarif";
 import {
@@ -924,6 +929,7 @@ function normalizeWalletTx(input: unknown, chainOverride?: string): unknown {
 		(typeof direct.chain === "string" ? direct.chain : undefined) ??
 		parseChainId(direct.chainId) ??
 		chainOverride;
+	const authorizationList = parseAuthorizationList(direct.authorizationList);
 
 	return {
 		to: direct.to,
@@ -931,6 +937,7 @@ function normalizeWalletTx(input: unknown, chainOverride?: string): unknown {
 		data: direct.data,
 		value: direct.value,
 		chain,
+		authorizationList: authorizationList.length > 0 ? authorizationList : undefined,
 	};
 }
 
@@ -941,6 +948,7 @@ type TxObject = {
 	value?: string;
 	chain?: unknown;
 	chainId?: unknown;
+	authorizationList?: unknown;
 };
 
 function coerceTxObject(record: Record<string, unknown>): TxObject | null {
@@ -969,11 +977,48 @@ function coerceTxObject(record: Record<string, unknown>): TxObject | null {
 				value: getString(obj, "value"),
 				chain: getString(obj, "chain"),
 				chainId: obj.chainId,
+				authorizationList: obj.authorizationList,
 			};
 		}
 	}
 
 	return null;
+}
+
+function parseAuthorizationList(value: unknown): AuthorizationEntry[] {
+	if (!Array.isArray(value)) return [];
+	const result: AuthorizationEntry[] = [];
+	for (const entry of value) {
+		if (!isRecord(entry)) continue;
+		const address = getString(entry, "address");
+		if (!address || !isValidAddress(address)) continue;
+		const chainId = parseAuthorizationNumber(entry.chainId);
+		const nonce = parseAuthorizationNumber(entry.nonce);
+		result.push({
+			address,
+			chainId: chainId ?? 0,
+			nonce: nonce ?? 0,
+		});
+	}
+	return result;
+}
+
+function parseAuthorizationNumber(value: unknown): number | null {
+	if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+		return value;
+	}
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	if (!trimmed) return null;
+	if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
+		const parsed = safeParseHexToInt(trimmed);
+		if (parsed === null || !Number.isSafeInteger(parsed) || parsed < 0) return null;
+		return parsed;
+	}
+	if (!/^[0-9]+$/.test(trimmed)) return null;
+	const parsed = Number.parseInt(trimmed, 10);
+	if (!Number.isSafeInteger(parsed) || parsed < 0) return null;
+	return parsed;
 }
 
 function parseChainId(value: unknown): string | undefined {

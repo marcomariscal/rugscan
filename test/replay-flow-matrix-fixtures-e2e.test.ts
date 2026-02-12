@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 const test = process.env.ASSAY_FORK_E2E === "1" ? bunTest : bunTest.skip;
+const alwaysTest = bunTest;
 
 type NativeDiffExpectation = "positive" | "negative" | "zero";
 
@@ -296,4 +297,30 @@ describe("real replay flow matrix e2e", () => {
 			}
 		}, 240000);
 	}
+});
+
+/**
+ * EIP-7702 (type-4 transaction) matrix scaffold.
+ *
+ * No real on-chain EIP-7702 fixture is available yet (the EIP is relatively new
+ * and mainnet adoption is sparse). Once a representative tx lands on-chain:
+ * 1. Record the fixture at test/fixtures/txs/eip7702-delegation-<hash>.json
+ * 2. Replace the TODO entry below with a full ReplayMatrixEntry
+ * 3. Remove this scaffold block
+ *
+ * The unit-level coverage (extraction + finding generation) lives in
+ * test/eip7702-authorization.unit.test.ts.
+ */
+describe("EIP-7702 type-4 matrix scaffold", () => {
+	alwaysTest("EIP-7702 authorization list fixture path reserved", () => {
+		const placeholder = "fixtures/txs/eip7702-delegation-TODO.json";
+		// Intentional: this test documents the missing fixture path so it shows up
+		// in test output and grep. It passes unconditionally — the real assertion
+		// will come when the fixture file exists.
+		expect(placeholder).toContain("TODO");
+	});
+
+	alwaysTest.todo(
+		"EIP-7702 delegation replay with real on-chain fixture (blocked: no mainnet fixture yet)",
+	);
 });
