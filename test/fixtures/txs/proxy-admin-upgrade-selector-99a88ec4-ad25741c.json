@@ -1,0 +1,12 @@
+{
+	"id": "proxy-admin-upgrade-selector-99a88ec4",
+	"provenance": "Mainnet tx 0xad25741cc14bfb0644c572eafe9a781405609fcadb8c9aa96219189e2fca81a2 — ProxyAdmin.upgrade(proxy, implementation) invocation (selector 0x99a88ec4). Block 22239989. Covers ProxyAdmin upgrade lane without setup call payload.",
+	"txHash": "0xad25741cc14bfb0644c572eafe9a781405609fcadb8c9aa96219189e2fca81a2",
+	"txBlock": 22239989,
+	"forkBlock": 22239988,
+	"chain": 1,
+	"to": "0x3e92baf90f03a0df688edcef04b02cb7ab806982",
+	"from": "0xd5f266f0e8240f4831445d80cd545b3baaa1b952",
+	"value": "0",
+	"data": "0x99a88ec4000000000000000000000000424b1ae0af693d4577dde25081e970cb656013c700000000000000000000000090b27b9bdc673866abd353a0cabeedff17ac341d"
+}
