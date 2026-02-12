@@ -77,7 +77,7 @@ describe("cli recommendation label with simulation failures", () => {
 		expect(output).toContain(
 			"Balance changes couldn't be fully verified — treat with extra caution.",
 		);
-		expect(output).toContain("Couldn't verify all approvals — treat with extra caution.");
+		expect(output).toContain("Couldn't verify approvals — treat with extra caution.");
 		expect(output).not.toContain("INCONCLUSIVE:");
 		expect(output).toContain(
 			"BLOCK — simulation coverage incomplete (balance coverage incomplete; approval coverage incomplete).",

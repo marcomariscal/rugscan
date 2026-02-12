@@ -294,7 +294,7 @@ function simulationCoverageAction(mode: RenderMode): string {
 	if (mode === "wallet") {
 		return "rerun without --wallet for full coverage before signing";
 	}
-	return "rerun with full coverage before signing";
+	return "rerun using a simulation-capable RPC (supports debug_traceCall), then rescan before signing";
 }
 
 function simulationCoverageNextStepLine(mode: RenderMode): string {
@@ -1015,6 +1015,36 @@ function cleanReasonPhrase(input: string): string {
 	return cleanLabel(input).replace(/[.]+$/g, "");
 }
 
+function summarizeHexReasonData(data: string): string {
+	if (data.length <= 34) return data;
+	return `${data.slice(0, 18)}…${data.slice(-8)}`;
+}
+
+function knownErrorSelectorLabel(selector: string): string | null {
+	const normalized = selector.toLowerCase();
+	if (normalized === "0x4e487b71") return "panic(uint256)";
+	if (normalized === "0x08c379a0") return "error(string)";
+	return null;
+}
+
+function formatSelectorDetail(errorData: string): string {
+	const normalized = errorData.toLowerCase();
+	if (normalized.length <= 2) {
+		return "selector unavailable";
+	}
+
+	const selector = normalized.slice(0, 10);
+	const label = knownErrorSelectorLabel(selector);
+	if (normalized.length === 10) {
+		if (!label) return `selector ${selector}`;
+		return `${label}, selector ${selector}`;
+	}
+
+	const data = summarizeHexReasonData(normalized);
+	if (!label) return `selector ${selector}, data ${data}`;
+	return `${label}, selector ${selector}, data ${data}`;
+}
+
 function userFacingSimulationFailureReason(reason: string): string {
 	const normalized = cleanLabel(reason);
 	if (!normalized) return normalized;
@@ -1024,6 +1054,30 @@ function userFacingSimulationFailureReason(reason: string): string {
 	if (/timed out waiting for anvil rpc to start/i.test(normalized)) {
 		return "Local simulation backend timed out.";
 	}
+
+	const executionRevertedCustomError = normalized.match(
+		/^execution reverted:\s*custom error\s*(0x[a-f0-9]*)$/i,
+	);
+	if (executionRevertedCustomError) {
+		const selector = executionRevertedCustomError[1];
+		return `execution reverted due to a contract error (${formatSelectorDetail(selector)})`;
+	}
+
+	const customError = normalized.match(/^custom error\s*:?[\s]*(0x[a-f0-9]*)$/i);
+	if (customError) {
+		const selector = customError[1];
+		return `contract reverted with a custom error (${formatSelectorDetail(selector)})`;
+	}
+
+	const executionRevertedHex = normalized.match(/^execution reverted:\s*(0x[a-f0-9]{8,})$/i);
+	if (executionRevertedHex) {
+		return `execution reverted with encoded error data (${summarizeHexReasonData(executionRevertedHex[1])})`;
+	}
+
+	if (/^0x[a-f0-9]{8,}$/i.test(normalized)) {
+		return `contract reverted with encoded error data (${summarizeHexReasonData(normalized)})`;
+	}
+
 	return normalized;
 }
 
@@ -1410,7 +1464,7 @@ function renderApprovalsSection(result: AnalysisResult, hasCalldata: boolean): s
 	const approvalsIncomplete = approvalCoverageIncomplete(result);
 	if (approvals.length === 0) {
 		if (approvalsIncomplete) {
-			lines.push(COLORS.warning(" - Couldn't verify all approvals — treat with extra caution."));
+			lines.push(COLORS.warning(" - Couldn't verify approvals — treat with extra caution."));
 			return lines;
 		}
 		lines.push(COLORS.dim(" - None detected"));

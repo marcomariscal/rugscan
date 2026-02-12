@@ -236,11 +236,11 @@ const WEIRD_INCONCLUSIVE_EDGE: OutputMatrixScenario = {
 		sender: "0x3333333333333333333333333333333333333333",
 	},
 	keyAssertions: [
-		"Simulation didn't complete (execution reverted: custom error 0x4e487b71)",
+		"Simulation didn't complete (execution reverted due to a contract error (panic(uint256), selector 0x4e487b71))",
 		"wallet fast-mode enabled; trace fallback only.",
 		"RECOMMENDATION: ⛔ BLOCK (UNVERIFIED)",
 		"BLOCK — simulation coverage incomplete",
-		"Next step: rerun with full coverage before signing.",
+		"Next step: rerun using a simulation-capable RPC (supports debug_traceCall), then rescan before signing.",
 	],
 };
 
