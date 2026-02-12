@@ -16,6 +16,7 @@ import {
 	scanInputSchema,
 } from "../schema";
 import type { ApprovalContext, ApprovalTx, Chain, Recommendation } from "../types";
+import { runDoctor } from "./doctor";
 import { formatSarif } from "./formatters/sarif";
 import {
 	ASSAY_UPSTREAM_ENV,
@@ -103,6 +104,7 @@ const OPTION_SPECS: Record<string, CommandOptionSpecs> = {
 		"--timings": { takesValue: false },
 		"--verbose": { takesValue: false },
 	},
+	doctor: {},
 };
 
 function assertNoUnknownOptions(command: string, args: string[]) {
@@ -141,6 +143,7 @@ Usage:
   assay safe <chain> <safeTxHash> [--safe-tx-json <path>] [--offline|--rpc-only] [--format json|text] [--verbose] [--quiet] [--no-sim] [--output <path|->]
   assay approval --token <address> --spender <address> --amount <value> [--expected <address>] [--chain <chain>] [--offline|--rpc-only]
   assay proxy [--upstream <rpc-url>] [--save] [--port <port>] [--hostname <host>] [--chain <chain>] [--offline|--rpc-only] [--threshold <caution|warning|danger>] [--on-risk <block|prompt>] [--record-dir <path>] [--wallet] [--once] [--timings] [--verbose]
+  assay doctor
   assay mcp
 
 Scan modes:
@@ -241,6 +244,12 @@ async function main() {
 		const commandArgs = args.slice(1);
 		assertNoUnknownOptions(command, commandArgs);
 		await runProxy(commandArgs);
+		return;
+	}
+	if (command === "doctor") {
+		const commandArgs = args.slice(1);
+		assertNoUnknownOptions(command, commandArgs);
+		await runDoctor();
 		return;
 	}
 	if (command === "mcp") {
