@@ -692,6 +692,186 @@ describe("jsonrpc proxy - integration", () => {
 		}
 	}, 20_000);
 
+	test("intercepts eth_signTypedData_v4 permit signatures and blocks risky payloads", async () => {
+		const upstreamSeen: unknown[] = [];
+		const upstream = Bun.serve({
+			port: 0,
+			fetch: async (request) => {
+				const body: unknown = await request.json();
+				upstreamSeen.push(body);
+				return new Response(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id: isRecord(body) ? (body.id ?? 1) : 1,
+						result: "0xSIG",
+					}),
+					{ headers: { "content-type": "application/json" } },
+				);
+			},
+		});
+
+		const proxy = createJsonRpcProxyServer({
+			upstreamUrl: `http://127.0.0.1:${upstream.port}`,
+			port: 0,
+			chain: "ethereum",
+			quiet: true,
+			policy: { threshold: "caution", onRisk: "block" },
+			scanFn: async () => ({ recommendation: "ok", simulationSuccess: true }),
+		});
+
+		try {
+			const typedData = {
+				types: {
+					EIP712Domain: [{ name: "name", type: "string" }],
+					PermitSingle: [
+						{ name: "details", type: "PermitDetails" },
+						{ name: "spender", type: "address" },
+						{ name: "sigDeadline", type: "uint256" },
+					],
+					PermitDetails: [
+						{ name: "token", type: "address" },
+						{ name: "amount", type: "uint160" },
+						{ name: "expiration", type: "uint48" },
+						{ name: "nonce", type: "uint48" },
+					],
+				},
+				primaryType: "PermitSingle",
+				domain: { chainId: 1 },
+				message: {
+					details: {
+						token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+						amount: "1461501637330902918203684832716283019655932542975",
+						expiration: "0",
+						nonce: "5",
+					},
+					spender: "0x9999999999999999999999999999999999999999",
+					sigDeadline: "0",
+				},
+			};
+			const payload = {
+				jsonrpc: "2.0",
+				id: 501,
+				method: "eth_signTypedData_v4",
+				params: ["0x24274566a1ad6a9b056e8e2618549ebd2f5141a7", JSON.stringify(typedData)],
+			};
+
+			const res = await fetch(`http://127.0.0.1:${proxy.port}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			expect(res.status).toBe(200);
+			const parsed: unknown = await res.json();
+			expect(isRecord(parsed)).toBe(true);
+			if (!isRecord(parsed)) return;
+			expect("error" in parsed).toBe(true);
+			const err = parsed.error;
+			expect(isRecord(err)).toBe(true);
+			if (!isRecord(err)) return;
+			expect(err.code).toBe(4001);
+			expect(isRecord(err.data)).toBe(true);
+			if (!isRecord(err.data)) return;
+			expect(isRecord(err.data.typedData)).toBe(true);
+			if (!isRecord(err.data.typedData)) return;
+			expect(Array.isArray(err.data.typedData.findings)).toBe(true);
+			const findings = err.data.typedData.findings;
+			expect(
+				Array.isArray(findings) &&
+					findings.some(
+						(item) =>
+							isRecord(item) && item.code === "PERMIT_SIGNATURE" && item.severity === "caution",
+					),
+			).toBe(true);
+			expect(
+				Array.isArray(findings) &&
+					findings.some((item) => isRecord(item) && item.code === "PERMIT_UNLIMITED_ALLOWANCE"),
+			).toBe(true);
+			expect(Array.isArray(err.data.typedData.actionableNotes)).toBe(true);
+			const notes = err.data.typedData.actionableNotes;
+			expect(
+				Array.isArray(notes) &&
+					notes.some((note) => typeof note === "string" && note.includes("Only sign if you trust")),
+			).toBe(true);
+			expect(
+				upstreamSeen.some((entry) => isRecord(entry) && entry.method === "eth_signTypedData_v4"),
+			).toBe(false);
+		} finally {
+			proxy.stop(true);
+			upstream.stop(true);
+		}
+	}, 20_000);
+
+	test("forwards non-permit eth_signTypedData_v4 payloads", async () => {
+		const upstreamSeen: unknown[] = [];
+		const upstream = Bun.serve({
+			port: 0,
+			fetch: async (request) => {
+				const body: unknown = await request.json();
+				upstreamSeen.push(body);
+				return new Response(
+					JSON.stringify({
+						jsonrpc: "2.0",
+						id: isRecord(body) ? (body.id ?? 1) : 1,
+						result: "0xFORWARDED_SIG",
+					}),
+					{ headers: { "content-type": "application/json" } },
+				);
+			},
+		});
+
+		const proxy = createJsonRpcProxyServer({
+			upstreamUrl: `http://127.0.0.1:${upstream.port}`,
+			port: 0,
+			chain: "ethereum",
+			quiet: true,
+			policy: { threshold: "caution", onRisk: "block" },
+			scanFn: async () => ({ recommendation: "ok", simulationSuccess: true }),
+		});
+
+		try {
+			const payload = {
+				jsonrpc: "2.0",
+				id: 502,
+				method: "eth_signTypedData_v4",
+				params: [
+					"0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+					JSON.stringify({
+						types: {
+							EIP712Domain: [{ name: "name", type: "string" }],
+							Mail: [
+								{ name: "from", type: "address" },
+								{ name: "contents", type: "string" },
+							],
+						},
+						primaryType: "Mail",
+						domain: { chainId: 1 },
+						message: {
+							from: "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+							contents: "hello",
+						},
+					}),
+				],
+			};
+
+			const res = await fetch(`http://127.0.0.1:${proxy.port}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(payload),
+			});
+			expect(res.status).toBe(200);
+			const parsed: unknown = await res.json();
+			expect(isRecord(parsed)).toBe(true);
+			if (!isRecord(parsed)) return;
+			expect(parsed.result).toBe("0xFORWARDED_SIG");
+			expect(
+				upstreamSeen.some((entry) => isRecord(entry) && entry.method === "eth_signTypedData_v4"),
+			).toBe(true);
+		} finally {
+			proxy.stop(true);
+			upstream.stop(true);
+		}
+	}, 20_000);
+
 	test("handles JSON-RPC batches and forwards sendTransaction per-entry", async () => {
 		const upstreamSeen: unknown[] = [];
 		const upstream = Bun.serve({

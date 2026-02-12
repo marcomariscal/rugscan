@@ -181,7 +181,7 @@ Options:
                  Keeps: Sourcify verification, protocol recognition, simulation.
                  For high-stakes transactions (large approvals, new protocols),
                  run without --wallet for full coverage (~10s).
-  --once         Exit after the first intercepted send request (eth_sendTransaction/eth_sendRawTransaction)
+  --once         Exit after the first intercepted request (eth_sendTransaction/eth_sendRawTransaction/eth_signTypedData_v4)
   --timings      Print proxy timing footer lines (opt-in)
   --verbose      Keep low-signal provider progress details in proxy wallet mode
 

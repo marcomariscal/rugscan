@@ -11,6 +11,11 @@ import { scanInputSchema } from "../schema";
 import { getAnvilClient } from "../simulations/anvil";
 import { nowMs, TimingStore } from "../timing";
 import type { Chain, Config, Recommendation } from "../types";
+import {
+	analyzeSignTypedDataV4Risk,
+	extractSignTypedDataV4Payload,
+	type TypedDataRiskAssessment,
+} from "./sign-typed-data";
 
 export type RiskAction = "forward" | "block" | "prompt";
 
@@ -57,6 +62,7 @@ export interface ProxyScanOutcome {
 	simulationSuccess: boolean;
 	response?: AnalyzeResponse;
 	renderedText?: string;
+	blockData?: Record<string, unknown>;
 }
 
 interface JsonRpcSuccess {
@@ -265,6 +271,70 @@ function evaluateAllowlist(options: {
 	};
 }
 
+function evaluateTypedDataAllowlist(options: {
+	config: Config;
+	assessment: TypedDataRiskAssessment;
+}): AllowlistEvaluation {
+	const allowSpenderEntries = options.config.allowlist?.spenders;
+	if (!Array.isArray(allowSpenderEntries)) {
+		return { enabled: false, violations: [], unknownApprovalSpenders: false };
+	}
+	if (!options.assessment.permitLike) {
+		return { enabled: true, violations: [], unknownApprovalSpenders: false };
+	}
+
+	const allowSpenders = new Set(allowSpenderEntries.map((v) => v.toLowerCase()));
+	const spender = options.assessment.spender?.toLowerCase();
+	if (!spender) {
+		return { enabled: true, violations: [], unknownApprovalSpenders: true };
+	}
+	if (allowSpenders.has(spender)) {
+		return { enabled: true, violations: [], unknownApprovalSpenders: false };
+	}
+	return {
+		enabled: true,
+		violations: [{ kind: "approvalSpender", address: spender, source: "calldata" }],
+		unknownApprovalSpenders: false,
+	};
+}
+
+function renderTypedDataAssessment(options: {
+	assessment: TypedDataRiskAssessment;
+	resolvedChain: Chain | null;
+}): string {
+	const chainLabel =
+		options.resolvedChain ??
+		(options.assessment.chainId ? `chain ${options.assessment.chainId}` : "unknown chain");
+	const lines = [
+		renderHeading(`Typed-data signature scan on ${chainLabel}`),
+		"",
+		"Method: eth_signTypedData_v4",
+		`Recommendation: ${options.assessment.recommendation.toUpperCase()}`,
+		`Primary type: ${options.assessment.primaryType ?? "unknown"}`,
+		...(options.assessment.actionableNotes.length > 0
+			? ["", ...options.assessment.actionableNotes.map((note) => `- ${note}`)]
+			: []),
+	];
+	return `${lines.join("\n")}\n`;
+}
+
+function buildTypedDataBlockData(assessment: TypedDataRiskAssessment): Record<string, unknown> {
+	return {
+		typedData: {
+			method: "eth_signTypedData_v4",
+			permitLike: assessment.permitLike,
+			primaryType: assessment.primaryType,
+			chainId: assessment.chainId,
+			spender: assessment.spender,
+			token: assessment.token,
+			amount: assessment.amount,
+			deadline: assessment.deadline,
+			findings: assessment.findings,
+			actionableNotes: assessment.actionableNotes,
+		},
+	};
+}
+
 function extractApprovalSpendersFromResponse(response: AnalyzeResponse | undefined): string[] {
 	const approvals = response?.scan.simulation?.approvals.changes;
 	if (!approvals) return [];
@@ -340,6 +410,11 @@ function buildProxyBlockData(
 			violations: allowlist.violations,
 			unknownApprovalSpenders: allowlist.unknownApprovalSpenders,
 		};
+	}
+	if (outcome.blockData) {
+		for (const [key, value] of Object.entries(outcome.blockData)) {
+			data[key] = value;
+		}
 	}
 	return data;
 }
@@ -878,8 +953,10 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 				const id: JsonRpcId = idPresent ? (entry.id ?? null) : null;
 				const isNotification = !idPresent;
 
-				const isInterceptable =
+				const isSendTransactionMethod =
 					entry.method === "eth_sendTransaction" || entry.method === "eth_sendRawTransaction";
+				const isTypedDataMethod = entry.method === "eth_signTypedData_v4";
+				const isInterceptable = isSendTransactionMethod || isTypedDataMethod;
 				if (!isInterceptable) {
 					const upstreamResponse = await forwardToUpstream(
 						options.upstreamUrl,
@@ -898,120 +975,150 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 
 				handledInterceptableSend = true;
 				const entryStarted = nowMs();
-
-				const calldata =
-					entry.method === "eth_sendTransaction"
-						? extractSendTransactionCalldata(entry)
-						: await extractSendRawTransactionCalldata(entry);
-				if (!calldata) {
-					if (isNotification) return null;
-					const message =
-						entry.method === "eth_sendRawTransaction"
-							? "Invalid params for eth_sendRawTransaction"
-							: "Invalid params for eth_sendTransaction";
-					return jsonRpcError(id, -32602, message);
-				}
-
-				if (upstreamChainId === null) {
-					if (!upstreamChainIdPromise) {
-						upstreamChainIdPromise = getUpstreamChainId(options.upstreamUrl);
-					}
-					upstreamChainId = await upstreamChainIdPromise;
-				}
-
-				const chain = resolveChainFromInputs({
-					upstreamChainId,
-					requestedChain: options.chain,
-					calldataChain: calldata.chain,
-				});
-				if (!chain) {
-					return isNotification ? null : jsonRpcError(id, -32602, "Unable to resolve chain");
-				}
-
-				// Phase 1: Write early recording before scan (captures at least rpc/calldata/meta).
-				let recording: RecordingHandle | null = null;
-				if (recordDir) {
-					recording = await initRecording({
-						recordDir,
-						chain,
-						method: entry.method,
-						calldata,
-						rpcRequest: entry,
-						quiet,
-					});
-				}
-
-				const config = await configPromise;
-				const scanConfig = applyUpstreamRpcOverrides({
-					config,
-					chain,
-					upstreamUrl: options.upstreamUrl,
-				});
-
 				const timings = new TimingStore();
 				timings.add("proxy.httpParse", httpParseMs);
+				const config = await configPromise;
 
-				const input: ScanInput = {
-					calldata: { ...calldata, chain: calldata.chain ?? upstreamChainId ?? undefined },
-				};
-				const validated = scanInputSchema.safeParse(input);
-				if (!validated.success) {
-					return isNotification ? null : jsonRpcError(id, -32602, "Invalid transaction fields");
-				}
-
+				let recording: RecordingHandle | null = null;
 				let outcome: ProxyScanOutcome;
+				let allowlist: AllowlistEvaluation = {
+					enabled: false,
+					violations: [],
+					unknownApprovalSpenders: false,
+				};
 				let scanErrored = false;
-				try {
-					const scanFn = options.scanFn
-						? options.scanFn
-						: async (
-								scanInput: ScanInput,
-								ctx: {
-									chain: Chain;
-									config: Config;
-									quiet?: boolean;
-									timings?: TimingStore;
-									offline?: boolean;
-								},
-							) =>
-								await defaultScanFn(scanInput, {
-									...ctx,
-									quiet: ctx.quiet ?? quiet,
-									timings: ctx.timings ?? timings,
-									offline: ctx.offline ?? options.offline,
-								});
 
-					const queuedAt = nowMs();
-					const queued = scanQueue.then(async () => {
-						timings.add("proxy.queueWait", nowMs() - queuedAt);
-						return await scanFn(validated.data, {
-							chain,
-							config: scanConfig,
-							quiet,
-							timings,
-							offline: options.offline,
-						});
+				if (isSendTransactionMethod) {
+					const calldata =
+						entry.method === "eth_sendTransaction"
+							? extractSendTransactionCalldata(entry)
+							: await extractSendRawTransactionCalldata(entry);
+					if (!calldata) {
+						if (isNotification) return null;
+						const message =
+							entry.method === "eth_sendRawTransaction"
+								? "Invalid params for eth_sendRawTransaction"
+								: "Invalid params for eth_sendTransaction";
+						return jsonRpcError(id, -32602, message);
+					}
+
+					if (upstreamChainId === null) {
+						if (!upstreamChainIdPromise) {
+							upstreamChainIdPromise = getUpstreamChainId(options.upstreamUrl);
+						}
+						upstreamChainId = await upstreamChainIdPromise;
+					}
+
+					const chain = resolveChainFromInputs({
+						upstreamChainId,
+						requestedChain: options.chain,
+						calldataChain: calldata.chain,
 					});
-					scanQueue = queued.then(
-						() => undefined,
-						() => undefined,
-					);
+					if (!chain) {
+						return isNotification ? null : jsonRpcError(id, -32602, "Unable to resolve chain");
+					}
 
-					outcome = await queued;
-				} catch (error) {
-					scanErrored = true;
-					const message = error instanceof Error ? error.message : "scan failed";
-					outcome = {
-						recommendation: "caution",
-						simulationSuccess: false,
-						renderedText: quiet ? undefined : `Scan failed: ${message}`,
+					if (recordDir) {
+						recording = await initRecording({
+							recordDir,
+							chain,
+							method: entry.method,
+							calldata,
+							rpcRequest: entry,
+							quiet,
+						});
+					}
+
+					const scanConfig = applyUpstreamRpcOverrides({
+						config,
+						chain,
+						upstreamUrl: options.upstreamUrl,
+					});
+
+					const input: ScanInput = {
+						calldata: { ...calldata, chain: calldata.chain ?? upstreamChainId ?? undefined },
 					};
+					const validated = scanInputSchema.safeParse(input);
+					if (!validated.success) {
+						return isNotification ? null : jsonRpcError(id, -32602, "Invalid transaction fields");
+					}
+
+					try {
+						const scanFn = options.scanFn
+							? options.scanFn
+							: async (
+									scanInput: ScanInput,
+									ctx: {
+										chain: Chain;
+										config: Config;
+										quiet?: boolean;
+										timings?: TimingStore;
+										offline?: boolean;
+									},
+								) =>
+									await defaultScanFn(scanInput, {
+										...ctx,
+										quiet: ctx.quiet ?? quiet,
+										timings: ctx.timings ?? timings,
+										offline: ctx.offline ?? options.offline,
+									});
+
+						const queuedAt = nowMs();
+						const queued = scanQueue.then(async () => {
+							timings.add("proxy.queueWait", nowMs() - queuedAt);
+							return await scanFn(validated.data, {
+								chain,
+								config: scanConfig,
+								quiet,
+								timings,
+								offline: options.offline,
+							});
+						});
+						scanQueue = queued.then(
+							() => undefined,
+							() => undefined,
+						);
+
+						outcome = await queued;
+					} catch (error) {
+						scanErrored = true;
+						const message = error instanceof Error ? error.message : "scan failed";
+						outcome = {
+							recommendation: "caution",
+							simulationSuccess: false,
+							renderedText: quiet ? undefined : `Scan failed: ${message}`,
+						};
+					}
+
+					allowlist = evaluateAllowlist({ calldata, config: scanConfig, outcome });
+				} else {
+					const typedDataPayload = extractSignTypedDataV4Payload(entry.params);
+					if (!typedDataPayload) {
+						if (isNotification) return null;
+						return jsonRpcError(id, -32602, "Invalid params for eth_signTypedData_v4");
+					}
+
+					const assessment = analyzeSignTypedDataV4Risk(typedDataPayload);
+					const resolvedChain = resolveChainFromInputs({
+						upstreamChainId,
+						requestedChain: options.chain,
+						calldataChain: assessment.chainId,
+					});
+
+					outcome = {
+						recommendation: assessment.recommendation,
+						simulationSuccess: true,
+						renderedText: quiet
+							? undefined
+							: renderTypedDataAssessment({ assessment, resolvedChain }),
+						blockData: buildTypedDataBlockData(assessment),
+					};
+					allowlist = evaluateTypedDataAllowlist({ config, assessment });
 				}
 
-				// Detect client disconnect after scan completes.
 				if (requestSignal?.aborted) {
 					if (!quiet) {
-						process.stderr.write("Client disconnected during scan. Blocking by default.\n");
+						process.stderr.write("Client disconnected during analysis. Blocking by default.\n");
 					}
 					if (recording) {
 						await finalizeRecording({
@@ -1028,10 +1135,7 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 								id,
 								4001,
 								"Transaction blocked by assay",
-								buildProxyBlockData(
-									outcome,
-									evaluateAllowlist({ calldata, config: scanConfig, outcome }),
-								),
+								buildProxyBlockData(outcome, allowlist),
 							);
 				}
 
@@ -1044,7 +1148,6 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 					process.stdout.write(`${timings.toLogLine(`timing ${entry.method}`)}\n`);
 				}
 
-				const allowlist = evaluateAllowlist({ calldata, config: scanConfig, outcome });
 				if (!quiet && allowlist.enabled) {
 					if (allowlist.violations.length > 0) {
 						process.stdout.write(
@@ -1054,7 +1157,9 @@ export function createJsonRpcProxyServer(options: ProxyOptions) {
 						);
 					} else if (allowlist.unknownApprovalSpenders) {
 						process.stdout.write(
-							"Allowlist note: approval spender/operator could not be determined (simulation failed)\n",
+							isTypedDataMethod
+								? "Allowlist note: typed-data spender/operator could not be determined\n"
+								: "Allowlist note: approval spender/operator could not be determined (simulation failed)\n",
 						);
 					}
 				}

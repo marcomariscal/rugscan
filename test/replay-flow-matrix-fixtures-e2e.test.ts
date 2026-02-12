@@ -1,6 +1,10 @@
 import { test as bunTest, describe, expect } from "bun:test";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import {
+	analyzeSignTypedDataV4Risk,
+	extractSignTypedDataV4Payload,
+} from "../src/jsonrpc/sign-typed-data";
 
 const test = process.env.ASSAY_FORK_E2E === "1" ? bunTest : bunTest.skip;
 const alwaysTest = bunTest;
@@ -520,31 +524,43 @@ describe("EIP-7702 type-4 matrix scaffold", () => {
 });
 
 /**
- * Lane 1 supplement: Permit / Permit2 off-chain signature scaffold.
+ * Lane 1 supplement: Permit / Permit2 off-chain signatures.
  *
- * ERC-2612 permit() and Permit2 off-chain signatures (EIP-712 typed data) are
- * intercepted at the wallet/RPC layer as eth_signTypedData_v4 rather than as
- * on-chain transactions. The scan CLI path currently operates on transaction
- * calldata, not typed-data signing requests.
- *
- * TODO: Once eth_signTypedData_v4 interception is supported by the proxy/scan
- * path, record a real fixture and add a full ReplayMatrixEntry.
- *
- * Acceptance criteria:
- * 1. Fixture at test/fixtures/txs/permit2-off-chain-signature-TODO.json
- *    containing a captured eth_signTypedData_v4 request.
- * 2. Matrix entry asserts: decoded permit fields, spender label, expiry warning.
- * 3. Safety finding codes: PERMIT_SIGNATURE, or equivalent.
+ * This lane now has active assertions using a captured eth_signTypedData_v4
+ * fixture. We validate decoding/classification directly against the typed-data
+ * parser used by the proxy interception path.
  */
-describe("Permit off-chain signature matrix scaffold", () => {
-	alwaysTest("Permit off-chain signature fixture path reserved", () => {
-		const placeholder = "fixtures/txs/permit2-off-chain-signature-TODO.json";
-		expect(placeholder).toContain("TODO");
+describe("Permit off-chain signature replay lane", () => {
+	const fixturePath = "fixtures/txs/permit2-off-chain-signature.json";
+
+	alwaysTest("Permit off-chain signature fixture promoted from TODO", () => {
+		expect(fixturePath).not.toContain("TODO");
+		expect(existsSync(path.join(import.meta.dir, fixturePath))).toBe(true);
 	});
 
-	alwaysTest.todo(
-		"Permit2 off-chain typed-data signature replay (blocked: scan path does not yet intercept eth_signTypedData_v4)",
-	);
+	alwaysTest("Permit2 off-chain typed-data fixture yields permit risk findings", async () => {
+		const absolutePath = path.join(import.meta.dir, fixturePath);
+		const raw = await Bun.file(absolutePath).text();
+		const fixture: unknown = JSON.parse(raw);
+		expect(isRecord(fixture)).toBe(true);
+		if (!isRecord(fixture)) return;
+		expect(fixture.method).toBe("eth_signTypedData_v4");
+
+		const parsed = extractSignTypedDataV4Payload(fixture.params);
+		expect(parsed).not.toBeNull();
+		if (!parsed) return;
+
+		const assessment = analyzeSignTypedDataV4Risk(parsed, { nowUnix: 1_700_000_000n });
+		expect(assessment.permitLike).toBe(true);
+		expect(assessment.recommendation).toBe("warning");
+		expect(assessment.spender).toBe("0x9999999999999999999999999999999999999999");
+		expect(assessment.findings.some((finding) => finding.code === "PERMIT_SIGNATURE")).toBe(true);
+		expect(
+			assessment.findings.some((finding) => finding.code === "PERMIT_UNLIMITED_ALLOWANCE"),
+		).toBe(true);
+		expect(assessment.findings.some((finding) => finding.code === "PERMIT_ZERO_EXPIRY")).toBe(true);
+		expect(assessment.actionableNotes.join(" ")).toContain("Only sign if you trust");
+	});
 });
 
 /**

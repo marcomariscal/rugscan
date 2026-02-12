@@ -145,4 +145,61 @@ describe("jsonrpc proxy --once semantics", () => {
 			upstream.stop(true);
 		}
 	});
+
+	test("typed-data interception also triggers once shutdown", async () => {
+		const upstreamSeen: unknown[] = [];
+		const upstream = makeUpstream(upstreamSeen);
+		const proxy = createJsonRpcProxyServer({
+			upstreamUrl: `http://127.0.0.1:${upstream.port}`,
+			port: 0,
+			chain: "ethereum",
+			quiet: true,
+			once: true,
+			exitOnOnce: false,
+			policy: { threshold: "caution", onRisk: "block" },
+			scanFn: async (
+				_input: ScanInput,
+				_ctx: { chain: Chain; config: Config },
+			): Promise<ProxyScanOutcome> => ({ recommendation: "ok", simulationSuccess: true }),
+		});
+
+		try {
+			const typedDataPayload = {
+				types: {
+					EIP712Domain: [{ name: "name", type: "string" }],
+					Mail: [
+						{ name: "from", type: "address" },
+						{ name: "contents", type: "string" },
+					],
+				},
+				primaryType: "Mail",
+				domain: { chainId: 1 },
+				message: {
+					from: "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+					contents: "hello",
+				},
+			};
+			const signRes = await fetch(`http://127.0.0.1:${proxy.port}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: 20,
+					method: "eth_signTypedData_v4",
+					params: ["0x24274566a1ad6a9b056e8e2618549ebd2f5141a7", JSON.stringify(typedDataPayload)],
+				}),
+			});
+			expect(signRes.status).toBe(200);
+
+			const stopped = await waitForServerStop(`http://127.0.0.1:${proxy.port}`);
+			expect(stopped).toBe(true);
+			expect(
+				upstreamSeen.filter((entry) => isRecord(entry) && entry.method === "eth_signTypedData_v4")
+					.length,
+			).toBe(1);
+		} finally {
+			proxy.stop(true);
+			upstream.stop(true);
+		}
+	});
 });
