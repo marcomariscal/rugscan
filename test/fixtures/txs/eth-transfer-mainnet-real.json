@@ -1,0 +1,10 @@
+{
+	"chain": 1,
+	"to": "0x9d1115f12dd1a5ca910c5aff70245ec38c7f1117",
+	"from": "0x5d3911ae3ce315103648ab39e012abaeb0e1c051",
+	"value": "467381751583766000",
+	"data": "0x",
+	"forkBlock": 24377058,
+	"txHash": "0xc58c16d42980846cbaca330144ae1b62c7ed5a71a5c66c0280db4b23491297eb",
+	"txBlock": 24377059
+}

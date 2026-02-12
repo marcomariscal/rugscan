@@ -63,7 +63,98 @@ const KNOWN_SIGNATURES: Record<string, string> = {
 	permit: "permit(address,address,uint256,uint256,uint8,bytes32,bytes32)",
 };
 
-export type DecodedCallSource = "known-abi" | "signature-db" | "contract-abi";
+interface LocalSelectorFallback {
+	signature: string;
+	functionName: string;
+}
+
+const LOCAL_SELECTOR_FALLBACKS: Record<string, LocalSelectorFallback> = {
+	// Uniswap Universal Router
+	"0x3593564c": {
+		signature: "execute(bytes,bytes[],uint256)",
+		functionName: "execute",
+	},
+	"0x24856bc3": {
+		signature: "execute(bytes,bytes[])",
+		functionName: "execute",
+	},
+	// Uniswap V2 Router
+	"0x38ed1739": {
+		signature: "swapExactTokensForTokens(uint256,uint256,address[],address,uint256)",
+		functionName: "swapExactTokensForTokens",
+	},
+	"0x8803dbee": {
+		signature: "swapTokensForExactTokens(uint256,uint256,address[],address,uint256)",
+		functionName: "swapTokensForExactTokens",
+	},
+	"0x7ff36ab5": {
+		signature: "swapExactETHForTokens(uint256,address[],address,uint256)",
+		functionName: "swapExactETHForTokens",
+	},
+	"0xfb3bdb41": {
+		signature: "swapETHForExactTokens(uint256,address[],address,uint256)",
+		functionName: "swapETHForExactTokens",
+	},
+	"0x18cbafe5": {
+		signature: "swapExactTokensForETH(uint256,uint256,address[],address,uint256)",
+		functionName: "swapExactTokensForETH",
+	},
+	"0x4a25d94a": {
+		signature: "swapTokensForExactETH(uint256,uint256,address[],address,uint256)",
+		functionName: "swapTokensForExactETH",
+	},
+	// Uniswap V3 Router (legacy + router02 variants)
+	"0x414bf389": {
+		signature: "exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160))",
+		functionName: "exactInputSingle",
+	},
+	"0xdb3e2198": {
+		signature:
+			"exactOutputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160))",
+		functionName: "exactOutputSingle",
+	},
+	"0xeecd097a": {
+		signature: "exactInput((bytes,address,uint256,uint256,uint256,uint256))",
+		functionName: "exactInput",
+	},
+	"0x2c025145": {
+		signature: "exactOutput((bytes,address,uint256,uint256,uint256,uint256))",
+		functionName: "exactOutput",
+	},
+	"0x04e45aaf": {
+		signature: "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+		functionName: "exactInputSingle",
+	},
+	"0x5023b4df": {
+		signature: "exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+		functionName: "exactOutputSingle",
+	},
+	"0xc04b8d59": {
+		signature: "exactInput((bytes,address,uint256,uint256,uint256))",
+		functionName: "exactInput",
+	},
+	"0xf28c0498": {
+		signature: "exactOutput((bytes,address,uint256,uint256,uint256))",
+		functionName: "exactOutput",
+	},
+	// Router multicall wrappers
+	"0xac9650d8": {
+		signature: "multicall(bytes[])",
+		functionName: "multicall",
+	},
+	"0x5ae401dc": {
+		signature: "multicall(uint256,bytes[])",
+		functionName: "multicall",
+	},
+	// 1inch Aggregation Router
+	"0x12aa3caf": {
+		signature:
+			"swap(address,(address,address,address,address,uint256,uint256,uint256),bytes,bytes)",
+		functionName: "swap",
+	},
+};
+
+export type DecodedCallSource = "known-abi" | "signature-db" | "contract-abi" | "local-selector";
 export type DecodedCallStandard = "erc20" | "eip2612" | undefined;
 
 export interface DecodedCall {
@@ -98,8 +189,21 @@ export function decodeKnownCalldata(data: string): DecodedCall | null {
 				return null;
 		}
 	} catch {
-		return null;
+		return decodeLocalSelectorFallback(selector);
 	}
+}
+
+function decodeLocalSelectorFallback(selector: string): DecodedCall | null {
+	const normalized = selector.toLowerCase();
+	const fallback = LOCAL_SELECTOR_FALLBACKS[normalized];
+	if (!fallback) return null;
+	return {
+		selector: normalized,
+		signature: fallback.signature,
+		functionName: fallback.functionName,
+		source: "local-selector",
+		args: [],
+	};
 }
 
 export function decodeSignatureCandidates(data: string, signatures: string[]): DecodedCall[] {
