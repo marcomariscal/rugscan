@@ -78,8 +78,8 @@ Today’s `renderChecksSection()` surfaces:
 - Surface: **Front-and-center**
 
 #### `APPROVAL_TO_DANGEROUS_CONTRACT`
-- Trigger: spender contract analysis contains danger findings
-- Source: heuristic (derived from static analysis)
+- Trigger: spender risk scan contains danger findings
+- Source: heuristic (derived from deterministic spender checks)
 - Where: `src/approval.ts`
 - Surface: **Front-and-center**
 

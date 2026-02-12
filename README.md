@@ -6,6 +6,7 @@ Know what you're signing before you sign it.
 - Scan a **contract address** or an **unsigned transaction intent** (to/data/value) before signing.
 - Flags common drainer/scam signals (unverified code, phishing labels, risky approvals).
 - Optional local simulation (Anvil) to preview balance + approval changes.
+- Deterministic pre-sign checks only (no AI/source-code contract vulnerability auditing).
 
 > ⚠️ **Disclaimer:** Assay provides informational risk signals only. It is not financial, legal, tax, or investment advice. Use at your own risk.
 

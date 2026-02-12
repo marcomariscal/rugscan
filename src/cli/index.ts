@@ -138,6 +138,10 @@ Disclaimer:
   Not financial, legal, tax, or investment advice.
   Use at your own risk.
 
+Scope:
+  Deterministic pre-sign transaction safety checks.
+  No AI/source-code contract vulnerability auditing.
+
 Usage:
   assay scan [address] [--format json|sarif] [--calldata <json|hex|@file|->] [--to <address>] [--from <address>] [--value <value>] [--fail-on <caution|warning|danger>] [--verbose] [--offline|--rpc-only]
   assay safe <chain> <safeTxHash> [--safe-tx-json <path>] [--offline|--rpc-only] [--format json|text] [--verbose] [--quiet] [--no-sim] [--output <path|->]
