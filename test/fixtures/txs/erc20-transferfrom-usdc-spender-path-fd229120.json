@@ -1,0 +1,12 @@
+{
+	"id": "erc20-transferfrom-usdc-spender-path",
+	"provenance": "Mainnet tx 0xfd229120c4d65d4d1dfdd0626d5acd59976b7a7f5821c92a7de5120e532aff91 — direct ERC20 transferFrom on USDC where caller (spender) moves approved funds from another wallet into its own address. Block 24439367 (Feb 2026). Covers spender-path transferFrom drain semantics.",
+	"txHash": "0xfd229120c4d65d4d1dfdd0626d5acd59976b7a7f5821c92a7de5120e532aff91",
+	"txBlock": 24439367,
+	"forkBlock": 24439366,
+	"chain": 1,
+	"to": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+	"from": "0x05ff6964d21e5dae3b1010d5ae0465b3c450f381",
+	"value": "0",
+	"data": "0x23b872dd000000000000000000000000cb201ea3a06f5ce89fe70ee78024548e4711cf8300000000000000000000000005ff6964d21e5dae3b1010d5ae0465b3c450f381000000000000000000000000000000000000000000000000000000000e2fcd69"
+}
