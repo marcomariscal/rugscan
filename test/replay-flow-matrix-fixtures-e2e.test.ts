@@ -200,6 +200,24 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "handleOps",
 	},
+	// === Pass 19: scaffold → real promotions (ProxyAdmin.upgrade + EntryPoint v0.7) ===
+	{
+		flow: "ProxyAdmin.upgrade proxy implementation (selector 0x99a88ec4)",
+		fixturePath: "fixtures/txs/proxy-admin-upgrade-selector-99a88ec4-ad25741c.json",
+		nativeDiff: "zero",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "upgrade",
+		requireVerifiedName: "ProxyAdmin",
+	},
+	{
+		flow: "EIP-4337 EntryPoint v0.7 handleOps (packed UserOperation)",
+		fixturePath: "fixtures/txs/eip4337-entrypoint-v07-handleops-a9c36c86.json",
+		nativeDiff: "zero",
+		intentIncludes: "EIP-4337",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "handleOps",
+		requireVerifiedName: "EntryPoint",
+	},
 	// === Pass 17: Ownership mutation + canonical L2 bridge (non-CCTP) ===
 	// Lane 7: Ownership transfer / role mutation
 	{
@@ -521,12 +539,7 @@ describe("Permit off-chain signature matrix scaffold", () => {
 });
 
 /**
- * Scaffold lane markers for lanes 4-6 edge cases.
- *
- * The primary fixtures for Bridge (CCTP depositForBurn), Proxy upgrade
- * (upgradeToAndCall), and EIP-4337 (handleOps) are real and exercised above
- * in REPLAY_MATRIX. These scaffolds track additional sub-variants that would
- * strengthen coverage once fixtures become available.
+ * Scaffold lane markers for remaining TODO fixtures.
  */
 const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
 	// Ownership transfer / role mutation — PROMOTED to real lane (Pass 17)
@@ -535,6 +548,8 @@ const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
 	// Marketplace order fulfillment (Seaport-style) — PROMOTED to real lane (Pass 18)
 	// Safe module enable / execTransactionFromModule — PROMOTED to real lane (Pass 18)
 	// Universal Router command-stream multi-step path — PROMOTED to real lane (Pass 18b)
+	// Proxy admin upgrade via ProxyAdmin.upgrade() — PROMOTED to real lane (Pass 19)
+	// EIP-4337 EntryPoint v0.7 handleOps — PROMOTED to real lane (Pass 19)
 	{
 		lane: "Flashloan path",
 		placeholderFixturePath: "fixtures/txs/flashloan-path-TODO.json",
@@ -543,28 +558,6 @@ const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
 			"Fixture decodes flashLoan/flashLoanSimple entrypoint",
 			"Intent explicitly states flashloan semantics (borrow + callback + repay)",
 			"Simulation/finding set flags transient borrow and repayment assumptions",
-		],
-	},
-	{
-		lane: "Proxy admin upgrade via ProxyAdmin.upgrade()",
-		placeholderFixturePath: "fixtures/txs/proxy-admin-upgrade-selector-99a88ec4-TODO.json",
-		skipReason:
-			"No mainnet fixture recorded for ProxyAdmin.upgrade(proxy, impl) selector 0x99a88ec4.",
-		acceptanceCriteria: [
-			"Real mainnet tx fixture with selector 0x99a88ec4",
-			"Decoded functionName: upgrade",
-			"UPGRADEABLE finding present",
-		],
-	},
-	{
-		lane: "EIP-4337 EntryPoint v0.7 handleOps",
-		placeholderFixturePath: "fixtures/txs/eip4337-entrypoint-v07-handleops-TODO.json",
-		skipReason:
-			"Current fixture uses EntryPoint v0.6 (0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789). v0.7 EntryPoint (0x0000000071727De22E5E9d8BAf0edAc6f37da032) may produce different finding codes.",
-		acceptanceCriteria: [
-			"Real mainnet tx fixture targeting v0.7 EntryPoint",
-			"Decoded functionName: handleOps",
-			"Validate any differences in finding codes vs v0.6",
 		],
 	},
 ];
