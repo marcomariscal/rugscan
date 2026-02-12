@@ -13,6 +13,10 @@ type ReplayMatrixEntry = {
 	intentIncludes?: string;
 	requireDecodedCalldata?: boolean;
 	requireCalldataEmpty?: boolean;
+	/** Assert decoded functionName matches exactly */
+	requireDecodedFunctionName?: string;
+	/** Assert a VERIFIED finding containing this contract name */
+	requireVerifiedName?: string;
 };
 
 type ParsedFixture = {
@@ -67,6 +71,29 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		fixturePath: "fixtures/txs/eth-transfer-mainnet-real.json",
 		nativeDiff: "negative",
 		requireCalldataEmpty: true,
+	},
+	// === Pass 12: Multicall, additional protocol (1inch), Safe execTransaction ===
+	{
+		flow: "Uniswap V3 SwapRouter multicall (exactInputSingle + unwrapWETH9)",
+		fixturePath: "fixtures/txs/uniswap-v3-swaprouter-multicall-695c6606.json",
+		nativeDiff: "positive",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "multicall",
+	},
+	{
+		flow: "1inch AggregationRouterV4 swap (additional protocol)",
+		fixturePath: "fixtures/txs/1inch-v4-uniswapv3swap-4e9ab241.json",
+		nativeDiff: "zero",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "uniswapV3Swap",
+		requireVerifiedName: "AggregationRouterV4",
+	},
+	{
+		flow: "Gnosis Safe execTransaction (USDT approve via Permit2)",
+		fixturePath: "fixtures/txs/gnosis-safe-exec-usdt-approve-ed42563e.json",
+		nativeDiff: "zero",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "execTransaction",
 	},
 ];
 
@@ -160,6 +187,27 @@ function hasFindingCode(findings: unknown, code: string): boolean {
 	return false;
 }
 
+function findDecodedFunctionName(findings: unknown): string | null {
+	if (!Array.isArray(findings)) return null;
+	for (const finding of findings) {
+		if (!isRecord(finding)) continue;
+		if (finding.code !== "CALLDATA_DECODED") continue;
+		if (!isRecord(finding.details)) continue;
+		if (isString(finding.details.functionName)) return finding.details.functionName;
+	}
+	return null;
+}
+
+function hasVerifiedFindingWithName(findings: unknown, name: string): boolean {
+	if (!Array.isArray(findings)) return false;
+	for (const finding of findings) {
+		if (!isRecord(finding)) continue;
+		if (finding.code !== "VERIFIED") continue;
+		if (isString(finding.message) && finding.message.includes(name)) return true;
+	}
+	return false;
+}
+
 describe("real replay flow matrix e2e", () => {
 	for (const entry of REPLAY_MATRIX) {
 		test(`${entry.flow} (${entry.fixturePath})`, async () => {
@@ -236,6 +284,15 @@ describe("real replay flow matrix e2e", () => {
 			}
 			if (entry.requireCalldataEmpty) {
 				expect(hasFindingCode(parsed.scan.findings, "CALLDATA_EMPTY")).toBe(true);
+			}
+			if (entry.requireDecodedFunctionName) {
+				const decoded = findDecodedFunctionName(parsed.scan.findings);
+				expect(decoded).toBe(entry.requireDecodedFunctionName);
+			}
+			if (entry.requireVerifiedName) {
+				expect(hasVerifiedFindingWithName(parsed.scan.findings, entry.requireVerifiedName)).toBe(
+					true,
+				);
 			}
 		}, 240000);
 	}
