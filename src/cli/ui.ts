@@ -2,6 +2,7 @@ import pc from "picocolors";
 import { KNOWN_SPENDERS } from "../approvals/known-spenders";
 import { getChainConfig } from "../chains";
 import { MAX_UINT160, MAX_UINT256 } from "../constants";
+import { getKnownTokenMetadata } from "../tokens/known";
 import type {
 	AnalysisResult,
 	ApprovalAnalysisResult,
@@ -673,6 +674,12 @@ function resolveActionLabel(result: AnalysisResult): string {
 	return base;
 }
 
+function isPlainEthTransferResult(result: AnalysisResult): boolean {
+	if (result.protocol !== "ETH Transfer") return false;
+	if (typeof result.intent !== "string") return false;
+	return result.intent.toLowerCase().startsWith("send ");
+}
+
 type DecodedCallContext = {
 	signature?: string;
 	selector?: string;
@@ -909,13 +916,15 @@ function buildReadableApprovalActionLabel(
 			? formatCompactSpenderLabel(spenderValue, result.contract.chain, result)
 			: "unknown";
 	const amount = parseBigIntValue(amountValue);
+	const knownToken = getKnownTokenMetadata(result.contract.address);
 	const amountLabel =
 		amount === null
 			? "UNKNOWN"
 			: amount === MAX_UINT160 || amount === MAX_UINT256
 				? "UNLIMITED"
-				: formatTokenAmount(amount, undefined);
-	const tokenLabel = formatCompactTokenLabel(result.contract.address, result.contract.name);
+				: formatTokenAmount(amount, knownToken?.decimals);
+	const tokenSymbol = knownToken?.symbol ?? result.contract.name;
+	const tokenLabel = formatCompactTokenLabel(result.contract.address, tokenSymbol);
 	const verb = decoded.functionName?.toLowerCase().startsWith("permit") ? "Permit" : "Approve";
 	return `${verb} · token: ${tokenLabel} · spender: ${spenderLabel} · amount: ${amountLabel}${callSuffix}`;
 }
@@ -1544,8 +1553,10 @@ function hasProxyUpgradeableSignal(result: AnalysisResult): boolean {
 function collectChecksFindings(result: AnalysisResult): Finding[] {
 	const deduped = new Map<string, Finding>();
 	const showProxyLine = hasProxyUpgradeableSignal(result);
+	const plainEthTransfer = isPlainEthTransferResult(result);
 	for (const finding of result.findings) {
 		if (isChecksNoiseFinding(finding)) continue;
+		if (plainEthTransfer && finding.code === "LOW_ACTIVITY") continue;
 		if (showProxyLine && (finding.code === "PROXY" || finding.code === "UPGRADEABLE")) {
 			continue;
 		}
@@ -1567,13 +1578,15 @@ function renderChecksSection(
 
 	const contextLine = formatChecksContextLine(result, mode);
 	const verificationState = contractVerificationState(result);
-	if (verificationState === "verified") {
+	if (verificationState === "verified" || isPlainEthTransferResult(result)) {
 		lines.push(COLORS.dim(contextLine));
 	} else {
 		lines.push(COLORS.warning(contextLine));
 	}
 
-	if (result.contract.verified) {
+	if (isPlainEthTransferResult(result)) {
+		lines.push(COLORS.ok(" ✓ Recipient is an EOA (native transfer)"));
+	} else if (result.contract.verified) {
 		lines.push(COLORS.ok(" ✓ Source verified"));
 	} else {
 		lines.push(COLORS.warning(" ⚠️ Source not verified (or unknown)"));

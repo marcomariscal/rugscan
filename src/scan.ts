@@ -1,5 +1,6 @@
 import { type AnalyzeOptions, analyze, determineRecommendation } from "./analyzer";
 import { analyzeCalldata } from "./analyzers/calldata";
+import { buildPlainEthTransferIntent } from "./calldata/plain-transfer";
 import { buildIntent } from "./intent";
 import {
 	type AnalyzeResponse,
@@ -133,8 +134,9 @@ async function mergeCalldataAnalysis(
 				contractName: analysis.contract.name,
 			})
 		: null;
+	const plainTransferIntent = buildPlainEthTransferIntent(input.calldata);
 	const hasFindings = calldataAnalysis.findings.length > 0;
-	if (!hasFindings && !intent) return analysis;
+	if (!hasFindings && !intent && !plainTransferIntent) return analysis;
 	const findings = hasFindings
 		? [...analysis.findings, ...calldataAnalysis.findings]
 		: analysis.findings;
@@ -142,7 +144,8 @@ async function mergeCalldataAnalysis(
 		...analysis,
 		findings,
 		recommendation: hasFindings ? determineRecommendation(findings) : analysis.recommendation,
-		intent: intent ?? analysis.intent,
+		protocol: plainTransferIntent ? "ETH Transfer" : analysis.protocol,
+		intent: plainTransferIntent ?? intent ?? analysis.intent,
 	};
 }
 

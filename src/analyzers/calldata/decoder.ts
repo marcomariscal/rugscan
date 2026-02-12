@@ -87,6 +87,47 @@ const UNIVERSAL_ROUTER_EXECUTE_ABI: Abi = [
 	},
 ];
 
+const MULTICALL_ABI: Abi = [
+	{
+		type: "function",
+		name: "multicall",
+		stateMutability: "payable",
+		inputs: [{ name: "data", type: "bytes[]" }],
+		outputs: [{ name: "results", type: "bytes[]" }],
+	},
+	{
+		type: "function",
+		name: "multicall",
+		stateMutability: "payable",
+		inputs: [
+			{ name: "deadline", type: "uint256" },
+			{ name: "data", type: "bytes[]" },
+		],
+		outputs: [{ name: "results", type: "bytes[]" }],
+	},
+];
+
+const SAFE_EXEC_TRANSACTION_ABI: Abi = [
+	{
+		type: "function",
+		name: "execTransaction",
+		stateMutability: "payable",
+		inputs: [
+			{ name: "to", type: "address" },
+			{ name: "value", type: "uint256" },
+			{ name: "data", type: "bytes" },
+			{ name: "operation", type: "uint8" },
+			{ name: "safeTxGas", type: "uint256" },
+			{ name: "baseGas", type: "uint256" },
+			{ name: "gasPrice", type: "uint256" },
+			{ name: "gasToken", type: "address" },
+			{ name: "refundReceiver", type: "address" },
+			{ name: "signatures", type: "bytes" },
+		],
+		outputs: [{ name: "success", type: "bool" }],
+	},
+];
+
 const UNIVERSAL_ROUTER_COMMAND_LABELS: Record<number, string> = {
 	0: "V3_SWAP_EXACT_IN",
 	1: "V3_SWAP_EXACT_OUT",
@@ -201,6 +242,16 @@ const LOCAL_SELECTOR_FALLBACKS: Record<string, LocalSelectorFallback> = {
 		signature: "multicall(uint256,bytes[])",
 		functionName: "multicall",
 	},
+	"0x49404b7c": {
+		signature: "unwrapWETH9(uint256,address)",
+		functionName: "unwrapWETH9",
+	},
+	// Safe
+	"0x6a761202": {
+		signature:
+			"execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)",
+		functionName: "execTransaction",
+	},
 	// 1inch Aggregation Router
 	"0x12aa3caf": {
 		signature:
@@ -208,6 +259,16 @@ const LOCAL_SELECTOR_FALLBACKS: Record<string, LocalSelectorFallback> = {
 		functionName: "swap",
 	},
 };
+
+const MAX_NESTED_DECODE_DEPTH = 2;
+
+interface NestedDecodedCall {
+	selector: string;
+	signature: string;
+	functionName: string;
+	args?: Record<string, unknown> | unknown[];
+	argNames?: string[];
+}
 
 export type DecodedCallSource = "known-abi" | "signature-db" | "contract-abi" | "local-selector";
 export type DecodedCallStandard = "erc20" | "eip2612" | undefined;
@@ -223,7 +284,7 @@ export interface DecodedCall {
 	argTypes?: string[];
 }
 
-export function decodeKnownCalldata(data: string): DecodedCall | null {
+export function decodeKnownCalldata(data: string, depth = 0): DecodedCall | null {
 	const selector = extractSelector(data);
 	if (!selector) return null;
 	if (!isHex(data)) return null;
@@ -244,17 +305,31 @@ export function decodeKnownCalldata(data: string): DecodedCall | null {
 				return null;
 		}
 	} catch {
-		return decodeLocalSelectorFallback(selector, data);
+		return decodeLocalSelectorFallback(selector, data, depth);
 	}
 }
 
-function decodeLocalSelectorFallback(selector: string, data: string): DecodedCall | null {
+function decodeLocalSelectorFallback(
+	selector: string,
+	data: string,
+	depth: number,
+): DecodedCall | null {
 	const normalized = selector.toLowerCase();
 	const fallback = LOCAL_SELECTOR_FALLBACKS[normalized];
 	if (!fallback) return null;
 
 	if (fallback.functionName === "execute") {
 		const decoded = decodeUniversalRouterExecute(data, normalized, fallback.signature);
+		if (decoded) return decoded;
+	}
+
+	if (fallback.functionName === "multicall") {
+		const decoded = decodeMulticall(data, normalized, fallback.signature, depth);
+		if (decoded) return decoded;
+	}
+
+	if (fallback.functionName === "execTransaction") {
+		const decoded = decodeSafeExecTransaction(data, normalized, fallback.signature, depth);
 		if (decoded) return decoded;
 	}
 
@@ -519,6 +594,124 @@ function decodeUniversalRouterExecute(
 	} catch {
 		return null;
 	}
+}
+
+function decodeMulticall(
+	data: string,
+	selector: string,
+	fallbackSignature: string,
+	depth: number,
+): DecodedCall | null {
+	if (!isHex(data)) return null;
+	try {
+		const decoded = decodeFunctionData({ abi: MULTICALL_ABI, data });
+		const dataValue = getArg(decoded.args, 0, "data");
+		const dataArray = Array.isArray(dataValue) ? dataValue : getArg(decoded.args, 1, "data");
+		if (!Array.isArray(dataArray)) return null;
+
+		const nestedCalls: Record<string, unknown>[] = [];
+		for (const entry of dataArray) {
+			if (typeof entry !== "string" || !isHex(entry)) continue;
+			const nested = decodeNestedKnownCalldata(entry, depth);
+			if (!nested) continue;
+			nestedCalls.push({
+				selector: nested.selector,
+				signature: nested.signature,
+				functionName: nested.functionName,
+				...(nested.args !== undefined ? { args: nested.args } : {}),
+				...(nested.argNames ? { argNames: nested.argNames } : {}),
+			});
+		}
+
+		const args: Record<string, unknown> = {
+			callCount: dataArray.length,
+			innerCalls: nestedCalls,
+		};
+		const argNames = ["callCount", "innerCalls"];
+
+		const deadline = getArg(decoded.args, 0, "deadline");
+		const formattedDeadline = formatDecodedValue(deadline);
+		if (
+			Array.isArray(decoded.args) &&
+			decoded.args.length > 1 &&
+			formattedDeadline !== undefined &&
+			formattedDeadline !== null
+		) {
+			args.deadline = formattedDeadline;
+			argNames.push("deadline");
+		}
+
+		return {
+			selector,
+			signature: fallbackSignature,
+			functionName: "multicall",
+			source: "local-selector",
+			args,
+			argNames,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function decodeSafeExecTransaction(
+	data: string,
+	selector: string,
+	fallbackSignature: string,
+	depth: number,
+): DecodedCall | null {
+	if (!isHex(data)) return null;
+	try {
+		const decoded = decodeFunctionData({ abi: SAFE_EXEC_TRANSACTION_ABI, data });
+		const toValue = getArg(decoded.args, 0, "to");
+		const valueValue = getArg(decoded.args, 1, "value");
+		const dataValue = getArg(decoded.args, 2, "data");
+		const operationValue = getArg(decoded.args, 3, "operation");
+		if (typeof toValue !== "string" || typeof dataValue !== "string") return null;
+
+		const innerDecoded = decodeNestedKnownCalldata(dataValue, depth);
+		const args: Record<string, unknown> = {
+			to: normalizeAddress(toValue),
+			value: formatDecodedValue(valueValue),
+			operation: formatDecodedValue(operationValue),
+		};
+		const argNames = ["to", "value", "operation"];
+
+		if (innerDecoded) {
+			args.innerCall = {
+				selector: innerDecoded.selector,
+				signature: innerDecoded.signature,
+				functionName: innerDecoded.functionName,
+				...(innerDecoded.args !== undefined ? { args: innerDecoded.args } : {}),
+				...(innerDecoded.argNames ? { argNames: innerDecoded.argNames } : {}),
+			};
+			argNames.push("innerCall");
+		}
+
+		return {
+			selector,
+			signature: fallbackSignature,
+			functionName: "execTransaction",
+			source: "local-selector",
+			args,
+			argNames,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function decodeNestedKnownCalldata(data: string, depth: number): NestedDecodedCall | null {
+	if (depth >= MAX_NESTED_DECODE_DEPTH) return null;
+	const decoded = decodeKnownCalldata(data, depth + 1);
+	if (!decoded) return null;
+	return {
+		selector: decoded.selector,
+		signature: decoded.signature,
+		functionName: decoded.functionName,
+		...(decoded.args !== undefined ? { args: decoded.args } : {}),
+		...(decoded.argNames ? { argNames: decoded.argNames } : {}),
+	};
 }
 
 export function decodeUniversalRouterCommandLabels(commands: string): string[] {

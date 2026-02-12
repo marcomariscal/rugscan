@@ -1,6 +1,7 @@
 import { determineRecommendation } from "../analyzer";
 import { decodeKnownCalldata } from "../analyzers/calldata/decoder";
 import { KNOWN_SPENDERS } from "../approvals/known-spenders";
+import { isPlainEthTransfer } from "../calldata/plain-transfer";
 import type { ScanInput } from "../schema";
 import type { AnalysisResult, BalanceSimulationResult, Finding } from "../types";
 
@@ -147,7 +148,7 @@ export function buildSimulationNotRun(input: ScanInput["calldata"]): BalanceSimu
 	if (!input.to) {
 		notes.push("Hint: missing target (`to`) address.");
 	}
-	if (!input.data || input.data === "0x") {
+	if ((!input.data || input.data === "0x") && !isPlainEthTransfer(input)) {
 		notes.push("Hint: missing calldata (`data`).");
 	}
 	const value = parseNumericValue(input.value);

@@ -8,6 +8,7 @@ import {
 } from "viem";
 import { decodeKnownCalldata } from "../analyzers/calldata/decoder";
 import { isRecord, toBigInt } from "../analyzers/calldata/utils";
+import { isPlainEthTransfer } from "../calldata/plain-transfer";
 import { getChainConfig } from "../chains";
 import type { CalldataInput } from "../schema";
 import type { TimingStore } from "../timing";
@@ -897,7 +898,7 @@ function buildFailureHints(tx: CalldataInput): string[] {
 	if (!tx.to) {
 		hints.push("Hint: missing target (`to`) address.");
 	}
-	if (!tx.data || tx.data === "0x") {
+	if ((!tx.data || tx.data === "0x") && !isPlainEthTransfer(tx)) {
 		hints.push("Hint: missing calldata (`data`).");
 	}
 	const value = parseValue(tx.value);
