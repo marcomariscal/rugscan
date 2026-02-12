@@ -12,6 +12,7 @@ type ReplayMatrixEntry = {
 	fixturePath: string;
 	nativeDiff: NativeDiffExpectation;
 	intentIncludes?: string;
+	intentExcludes?: string[];
 	requireDecodedCalldata?: boolean;
 	requireCalldataEmpty?: boolean;
 	/** Assert decoded functionName matches exactly */
@@ -20,6 +21,8 @@ type ReplayMatrixEntry = {
 	requireVerifiedName?: string;
 	/** Assert required finding codes are present */
 	requireFindingCodes?: string[];
+	/** Assert forbidden finding codes are absent */
+	forbidFindingCodes?: string[];
 };
 
 type ReplayLaneScaffold = {
@@ -150,6 +153,16 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "setApprovalForAll",
 		requireFindingCodes: ["SIM_APPROVAL_FOR_ALL_UNKNOWN_OPERATOR"],
+	},
+	{
+		flow: "ERC721 setApprovalForAll revoke (ENS operator false-positive guard)",
+		fixturePath: "fixtures/txs/erc721-approval-for-all-ens-revoke-false.json",
+		nativeDiff: "zero",
+		intentIncludes: "Revoke",
+		intentExcludes: ["Grant"],
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "setApprovalForAll",
+		forbidFindingCodes: ["SIM_APPROVAL_FOR_ALL_UNKNOWN_OPERATOR"],
 	},
 	{
 		flow: "ERC1155 setApprovalForAll (Mirror MNFTs → operator)",
@@ -368,6 +381,11 @@ describe("real replay flow matrix e2e", () => {
 				expect(isString(parsed.scan.intent)).toBe(true);
 				if (isString(parsed.scan.intent)) {
 					expect(parsed.scan.intent).toContain(entry.intentIncludes);
+					if (entry.intentExcludes) {
+						for (const excluded of entry.intentExcludes) {
+							expect(parsed.scan.intent).not.toContain(excluded);
+						}
+					}
 				}
 			}
 
@@ -389,6 +407,11 @@ describe("real replay flow matrix e2e", () => {
 			if (entry.requireFindingCodes) {
 				for (const code of entry.requireFindingCodes) {
 					expect(hasFindingCode(parsed.scan.findings, code)).toBe(true);
+				}
+			}
+			if (entry.forbidFindingCodes) {
+				for (const code of entry.forbidFindingCodes) {
+					expect(hasFindingCode(parsed.scan.findings, code)).toBe(false);
 				}
 			}
 		}, 240000);
@@ -458,6 +481,70 @@ describe("Permit off-chain signature matrix scaffold", () => {
  * strengthen coverage once fixtures become available.
  */
 const SCAFFOLD_LANES: ReplayLaneScaffold[] = [
+	{
+		lane: "Ownership transfer / role mutation",
+		placeholderFixturePath: "fixtures/txs/ownership-role-mutation-TODO.json",
+		skipReason:
+			"No canonical fixture captured yet for transferOwnership/acceptOwnership/grantRole/revokeRole paths.",
+		acceptanceCriteria: [
+			"Fixture includes transferOwnership/acceptOwnership or grantRole/revokeRole calldata",
+			"Decoded functionName confirms ownership/role mutation selector",
+			"Intent text clearly states ownership or privileged role change",
+		],
+	},
+	{
+		lane: "Marketplace order fulfillment (Seaport-style)",
+		placeholderFixturePath: "fixtures/txs/seaport-fulfill-order-TODO.json",
+		skipReason:
+			"No replay fixture committed yet for Seaport fulfillOrder/fulfillAdvancedOrder/matchOrders paths.",
+		acceptanceCriteria: [
+			"Fixture targets Seaport contract with fulfillOrder/fulfillAdvancedOrder/matchOrders",
+			"Intent includes marketplace order fulfillment semantics",
+			"Simulation captures NFT/token movement legs relevant to order execution",
+		],
+	},
+	{
+		lane: "Universal Router command-stream multi-step path",
+		placeholderFixturePath: "fixtures/txs/universal-router-command-stream-multistep-TODO.json",
+		skipReason:
+			"Current matrix has basic Universal Router coverage; no dense multi-command stream fixture yet.",
+		acceptanceCriteria: [
+			"Fixture contains command stream with 3+ actionable steps",
+			"Decoded command labels preserved in intent as a step summary",
+			"Findings reflect combined approval/swap/sweep risk composition",
+		],
+	},
+	{
+		lane: "Canonical L2 bridge deposit/withdraw (non-CCTP)",
+		placeholderFixturePath: "fixtures/txs/bridge-canonical-l2-deposit-withdraw-TODO.json",
+		skipReason:
+			"No canonical L2 bridge fixture committed yet (Optimism/Arbitrum standard bridge paths).",
+		acceptanceCriteria: [
+			"Fixture decodes to canonical bridge deposit/withdraw selector (non-CCTP)",
+			"Intent states canonical bridge direction (deposit vs withdraw)",
+			"Native/token diff direction aligns with bridge movement semantics",
+		],
+	},
+	{
+		lane: "Safe module enable / execTransactionFromModule",
+		placeholderFixturePath: "fixtures/txs/safe-module-enable-exectxfrommodule-TODO.json",
+		skipReason: "No real fixture recorded for Safe module enablement/module-executed call path.",
+		acceptanceCriteria: [
+			"Fixture decodes enableModule or execTransactionFromModule",
+			"Intent calls out Safe module action, not plain Safe owner execution",
+			"Findings include explicit elevated-trust module execution warning",
+		],
+	},
+	{
+		lane: "Flashloan path",
+		placeholderFixturePath: "fixtures/txs/flashloan-path-TODO.json",
+		skipReason: "No flashloan replay fixture committed yet for Aave/Balancer-style callbacks.",
+		acceptanceCriteria: [
+			"Fixture decodes flashLoan/flashLoanSimple entrypoint",
+			"Intent explicitly states flashloan semantics (borrow + callback + repay)",
+			"Simulation/finding set flags transient borrow and repayment assumptions",
+		],
+	},
 	{
 		lane: "Bridge: Optimism Standard Bridge depositETH",
 		placeholderFixturePath: "fixtures/txs/bridge-optimism-deposit-eth-TODO.json",
