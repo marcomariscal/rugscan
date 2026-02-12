@@ -184,6 +184,14 @@ describe("calldata analysis", () => {
 			expect(decoded.details.source).toBe("local-selector");
 			expect(decoded.details.signature).toBe("execute(bytes,bytes[],uint256)");
 			expect(decoded.details.functionName).toBe("execute");
+			const args = decoded.details.args;
+			expect(isRecord(args)).toBe(true);
+			if (isRecord(args)) {
+				expect(Array.isArray(args.commandLabels)).toBe(true);
+				if (Array.isArray(args.commandLabels)) {
+					expect(args.commandLabels.length).toBeGreaterThan(0);
+				}
+			}
 		}
 	});
 

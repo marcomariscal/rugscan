@@ -262,12 +262,10 @@ async function simulateWithAnvilOnce(
 			await client.setBalance({ address: from, value: HIGH_BALANCE });
 
 			const contractCheckStarted = nowMs();
-			const isContractAccount = await checkContractAccountOnFork(client, from);
+			const senderIsContract = await checkContractAccountOnFork(client, from);
 			timings?.add("simulation.senderContractCheck", nowMs() - contractCheckStarted);
-			if (isContractAccount) {
-				balanceConfidence = "low";
-				approvalsConfidence = "low";
-				notes.push("Sender is a contract account; simulation is best-effort.");
+			if (senderIsContract) {
+				notes.push("Sender is a contract account; applying contract-sender confidence heuristic.");
 			}
 
 			const txValue = parseValue(tx.value) ?? 0n;
@@ -284,6 +282,7 @@ async function simulateWithAnvilOnce(
 					notes,
 					balanceConfidence,
 					approvalsConfidence,
+					senderIsContract,
 					budgetMs,
 				});
 			}
@@ -387,10 +386,16 @@ async function simulateWithAnvilOnce(
 			assetChanges.push(...buildErc20Changes(preBalances, postBalances));
 			assetChanges.push(...buildNftChanges(parsedLogs.transfers, from));
 
-			const actorApprovals = filterApprovalsByOwner(parsedLogs.approvals, from);
-			const hasActorApprovalEvents = actorApprovals.length > 0;
+			const actorApprovalsFromLogs = filterApprovalsByOwner(parsedLogs.approvals, from);
+			const actorApprovals = appendApproveCalldataSlotIfMissing({
+				approvals: actorApprovalsFromLogs,
+				tx,
+				owner: from,
+				token: to,
+			});
+			const hasApprovalSlots = actorApprovals.length > 0;
 			let approvals = mapParsedApprovalsToChanges(actorApprovals);
-			if (hasActorApprovalEvents) {
+			if (hasApprovalSlots) {
 				const previousBlock = receipt.blockNumber > 0n ? receipt.blockNumber - 1n : undefined;
 				if (previousBlock === undefined) {
 					notes.push("Unable to read pre-transaction approvals (missing previous block).");
@@ -432,6 +437,14 @@ async function simulateWithAnvilOnce(
 			);
 			const enrichedChanges = applyTokenMetadata(assetChanges, metadata);
 			const enrichedApprovals = applyApprovalMetadata(approvals, metadata);
+			const adjustedConfidence = applyContractSenderConfidenceHeuristic({
+				senderIsContract,
+				balanceConfidence,
+				approvalsConfidence,
+				balanceChanges: enrichedChanges,
+				approvalChanges: enrichedApprovals,
+				notes,
+			});
 
 			return {
 				success: receipt.status === "success",
@@ -440,11 +453,11 @@ async function simulateWithAnvilOnce(
 				nativeDiff,
 				balances: {
 					changes: enrichedChanges,
-					confidence: balanceConfidence,
+					confidence: adjustedConfidence.balanceConfidence,
 				},
 				approvals: {
 					changes: enrichedApprovals,
-					confidence: approvalsConfidence,
+					confidence: adjustedConfidence.approvalsConfidence,
 				},
 				notes,
 			};
@@ -478,6 +491,7 @@ export interface WalletFastSimulationOptions {
 	notes: string[];
 	balanceConfidence: SimulationConfidenceLevel;
 	approvalsConfidence: SimulationConfidenceLevel;
+	senderIsContract?: boolean;
 	budgetMs: number;
 }
 
@@ -610,12 +624,21 @@ export async function simulateWithAnvilWalletFast(
 	});
 	assetChanges.push(...buildNftChanges(parsedLogs.transfers, options.from));
 
-	const actorApprovals = filterApprovalsByOwner(parsedLogs.approvals, options.from);
-	const hasActorApprovalEvents = actorApprovals.length > 0;
+	const actorApprovalsFromLogs = filterApprovalsByOwner(parsedLogs.approvals, options.from);
+	const actorApprovals = appendApproveCalldataSlotIfMissing({
+		approvals: actorApprovalsFromLogs,
+		tx: options.tx,
+		owner: options.from,
+		token: options.to,
+	});
+	const hasActorApprovalEvents = actorApprovalsFromLogs.length > 0;
+	const hasApprovalSlots = actorApprovals.length > 0;
+	const hasSyntheticApproveSlot = actorApprovals.length > actorApprovalsFromLogs.length;
 	let approvals = mapParsedApprovalsToChanges(actorApprovals);
 
 	const approvalsStarted = nowMs();
-	const approvalsBudgetReached = nowMs() - startedAt >= options.budgetMs;
+	const approvalsBudgetReached =
+		nowMs() - startedAt >= options.budgetMs && !hasSyntheticApproveSlot;
 	if (approvalsBudgetReached) {
 		if (hasActorApprovalEvents) {
 			options.notes.push(
@@ -623,7 +646,7 @@ export async function simulateWithAnvilWalletFast(
 			);
 			approvalsConfidence = minConfidence(approvalsConfidence, "medium");
 		}
-	} else {
+	} else if (hasApprovalSlots) {
 		const previousBlock = receipt.blockNumber > 0n ? receipt.blockNumber - 1n : undefined;
 		if (previousBlock === undefined) {
 			options.notes.push(
@@ -690,6 +713,14 @@ export async function simulateWithAnvilWalletFast(
 
 	const enrichedChanges = applyTokenMetadata(assetChanges, metadata);
 	const enrichedApprovals = applyApprovalMetadata(approvals, metadata);
+	const adjustedConfidence = applyContractSenderConfidenceHeuristic({
+		senderIsContract: options.senderIsContract === true,
+		balanceConfidence,
+		approvalsConfidence,
+		balanceChanges: enrichedChanges,
+		approvalChanges: enrichedApprovals,
+		notes: options.notes,
+	});
 
 	return {
 		success: true,
@@ -698,11 +729,11 @@ export async function simulateWithAnvilWalletFast(
 		nativeDiff,
 		balances: {
 			changes: enrichedChanges,
-			confidence: balanceConfidence,
+			confidence: adjustedConfidence.balanceConfidence,
 		},
 		approvals: {
 			changes: enrichedApprovals,
-			confidence: approvalsConfidence,
+			confidence: adjustedConfidence.approvalsConfidence,
 		},
 		notes: options.notes,
 	};
@@ -1182,6 +1213,106 @@ function applyApprovalMetadata(
 			decimals: meta.decimals ?? approval.decimals,
 		};
 	});
+}
+
+function appendApproveCalldataSlotIfMissing(options: {
+	approvals: ParsedApproval[];
+	tx: CalldataInput;
+	owner: Address;
+	token: Address;
+}): ParsedApproval[] {
+	const inferred = inferApproveCalldataSlot(options.tx, options.owner, options.token);
+	if (!inferred) return options.approvals;
+	const hasMatch = options.approvals.some((approval) =>
+		approvalTargetsSameSlot(approval, inferred),
+	);
+	if (hasMatch) return options.approvals;
+	return [...options.approvals, inferred];
+}
+
+function inferApproveCalldataSlot(
+	tx: CalldataInput,
+	owner: Address,
+	token: Address,
+): ParsedApproval | null {
+	if (!tx.data || tx.data === "0x") return null;
+	const decoded = decodeKnownCalldata(tx.data);
+	if (!decoded || decoded.standard !== "erc20" || decoded.functionName !== "approve") {
+		return null;
+	}
+	if (!isRecord(decoded.args)) return null;
+	const spender = decoded.args.spender;
+	const amount = toBigInt(decoded.args.amount);
+	if (typeof spender !== "string" || !isAddress(spender) || amount === null) {
+		return null;
+	}
+	return {
+		standard: "erc20",
+		token,
+		owner,
+		spender,
+		amount,
+		scope: "token",
+		logIndex: Number.MAX_SAFE_INTEGER,
+	};
+}
+
+function approvalTargetsSameSlot(left: ParsedApproval, right: ParsedApproval): boolean {
+	if (left.standard !== right.standard) return false;
+	if (left.token.toLowerCase() !== right.token.toLowerCase()) return false;
+	if (left.owner.toLowerCase() !== right.owner.toLowerCase()) return false;
+	if (left.scope !== right.scope) return false;
+
+	if (left.scope === "all" || right.scope === "all") {
+		return left.spender.toLowerCase() === right.spender.toLowerCase();
+	}
+
+	if (left.standard === "erc721" && right.standard === "erc721") {
+		if (left.tokenId !== undefined || right.tokenId !== undefined) {
+			return left.tokenId === right.tokenId;
+		}
+	}
+
+	return left.spender.toLowerCase() === right.spender.toLowerCase();
+}
+
+function applyContractSenderConfidenceHeuristic(options: {
+	senderIsContract: boolean;
+	balanceConfidence: SimulationConfidenceLevel;
+	approvalsConfidence: SimulationConfidenceLevel;
+	balanceChanges: AssetChange[];
+	approvalChanges: ApprovalChange[];
+	notes: string[];
+}): {
+	balanceConfidence: SimulationConfidenceLevel;
+	approvalsConfidence: SimulationConfidenceLevel;
+} {
+	if (!options.senderIsContract) {
+		return {
+			balanceConfidence: options.balanceConfidence,
+			approvalsConfidence: options.approvalsConfidence,
+		};
+	}
+
+	const hasObservableDeltas =
+		options.balanceChanges.length > 0 || options.approvalChanges.length > 0;
+	if (hasObservableDeltas) {
+		options.notes.push(
+			"Contract sender had observable balance/approval deltas; confidence not downgraded.",
+		);
+		return {
+			balanceConfidence: options.balanceConfidence,
+			approvalsConfidence: options.approvalsConfidence,
+		};
+	}
+
+	options.notes.push(
+		"Contract sender produced no observable balance/approval deltas; confidence reduced.",
+	);
+	return {
+		balanceConfidence: minConfidence(options.balanceConfidence, "low"),
+		approvalsConfidence: minConfidence(options.approvalsConfidence, "low"),
+	};
 }
 
 function filterApprovalsByOwner(approvals: ParsedApproval[], owner: Address): ParsedApproval[] {

@@ -38,4 +38,24 @@ describe("intent templates", () => {
 		const intent = buildIntent(call, {});
 		expect(intent).toBe("Borrow 2500 0x0000000000000000000000000000000000000010 from Aave");
 	});
+
+	test("builds Universal Router execute intent from decoded command plan", () => {
+		const call: DecodedCall = {
+			selector: "0x3593564c",
+			signature: "execute(bytes,bytes[],uint256)",
+			functionName: "execute",
+			source: "local-selector",
+			args: {
+				commands: "0x0b1004",
+				commandsDecoded: [
+					{ index: 0, opcode: "0x0b", command: "WRAP_ETH", allowRevert: false },
+					{ index: 1, opcode: "0x10", command: "V4_SWAP", allowRevert: false },
+					{ index: 2, opcode: "0x04", command: "SWEEP", allowRevert: false },
+				],
+			},
+		};
+
+		const intent = buildIntent(call, {});
+		expect(intent).toBe("Uniswap Universal Router: WRAP_ETH → V4_SWAP → SWEEP");
+	});
 });
