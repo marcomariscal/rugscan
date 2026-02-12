@@ -1,0 +1,12 @@
+{
+	"id": "ownership-transfer-gmnft",
+	"provenance": "Mainnet tx 0x0f66c130a21c00efd499a2348eade6d09db23a66e8db21a0148352adb8e6cf0a — transferOwnership(address) call on GMNFT contract. Block 24423718 (Feb 2026). Covers ownership/role mutation scaffold lane.",
+	"txHash": "0x0f66c130a21c00efd499a2348eade6d09db23a66e8db21a0148352adb8e6cf0a",
+	"txBlock": 24423718,
+	"forkBlock": 24423717,
+	"chain": 1,
+	"to": "0x283c7f94f808fed4c9216579471b0c2ff3ea287f",
+	"from": "0xdf7386d7a223d65b88a6c5fabfcb946b2c86187e",
+	"value": "0",
+	"data": "0xf2fde38b000000000000000000000000e2382918fbadbd0e8e8a208bb97f8dcaeab675ae"
+}

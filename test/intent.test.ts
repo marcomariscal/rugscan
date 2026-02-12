@@ -283,4 +283,64 @@ describe("intent templates", () => {
 			"Permit2: Allow 0x9999999999999999999999999999999999999999 to spend up to UNLIMITED USDC until 2025-01-01 00:00 UTC",
 		);
 	});
+
+	test("humanizes transferOwnership as ownership transfer", () => {
+		const call: DecodedCall = {
+			selector: "0xf2fde38b",
+			signature: "transferOwnership(address)",
+			functionName: "transferOwnership",
+			source: "contract-abi",
+			args: {
+				newOwner: "0xe2382918fbadbd0e8e8a208bb97f8dcaeab675ae",
+			},
+		};
+
+		const intent = buildIntent(call, { contractName: "GMNFT" });
+		expect(intent).toBe(
+			"Transfer contract ownership to 0xe2382918fbadbd0e8e8a208bb97f8dcaeab675ae",
+		);
+	});
+
+	test("humanizes acceptOwnership as pending ownership acceptance", () => {
+		const call: DecodedCall = {
+			selector: "0x79ba5097",
+			signature: "acceptOwnership()",
+			functionName: "acceptOwnership",
+			source: "contract-abi",
+			args: {},
+		};
+
+		const intent = buildIntent(call, {});
+		expect(intent).toBe("Accept pending contract ownership");
+	});
+
+	test("humanizes Optimism depositETH as bridge action", () => {
+		const call: DecodedCall = {
+			selector: "0xb1a1a882",
+			signature: "depositETH(uint32,bytes)",
+			functionName: "depositETH",
+			source: "signature-db",
+			args: [200000, "0x"],
+		};
+
+		const intent = buildIntent(call, {});
+		expect(intent).toBe("Bridge ETH to Optimism (L2 gas 200000)");
+	});
+
+	test("Aave depositETH still routes to Aave template", () => {
+		const call: DecodedCall = {
+			selector: "0x474cf53d",
+			signature: "depositETH(address,address,uint16)",
+			functionName: "depositETH",
+			source: "contract-abi",
+			args: [
+				"0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+				"0xc18080123fa536981e5b984e334c2e5c33179843",
+				0,
+			],
+		};
+
+		const intent = buildIntent(call, {});
+		expect(intent).toBe("Supply ETH to Aave");
+	});
 });
