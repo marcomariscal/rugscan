@@ -1,0 +1,19 @@
+{
+	"id": "eip7702-delegation",
+	"provenance": "Mainnet type-4 tx 0x0dc3e11d7f2c43b5a17b6b8f745d99b2f456a1d2ef3ccccd3092397202787db2 (block 24443432, Feb 2026) captured via eth_getTransactionByHash from ethereum-rpc.publicnode.com. Contains one EIP-7702 authorizationList delegation entry to 0x840c0aa3e04af730edb108482e44f21de09ceac9.",
+	"txHash": "0x0dc3e11d7f2c43b5a17b6b8f745d99b2f456a1d2ef3ccccd3092397202787db2",
+	"txBlock": 24443432,
+	"forkBlock": 24443431,
+	"chain": 1,
+	"to": "0x4225235143c29fc6414295de71d997117cdeefa6",
+	"from": "0x2fe9b62a7d06380b81a064c781908b06af55fde6",
+	"value": "0",
+	"data": "0x1ab385b4",
+	"authorizationList": [
+		{
+			"address": "0x840c0aa3e04af730edb108482e44f21de09ceac9",
+			"chainId": 1,
+			"nonce": 0
+		}
+	]
+}

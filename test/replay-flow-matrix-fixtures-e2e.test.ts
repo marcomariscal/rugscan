@@ -27,6 +27,8 @@ type ReplayMatrixEntry = {
 	requireFindingCodes?: string[];
 	/** Assert forbidden finding codes are absent */
 	forbidFindingCodes?: string[];
+	/** Assert simulation notes include these substrings */
+	requireSimulationNoteIncludes?: string[];
 };
 
 type ReplayLaneScaffold = {
@@ -36,6 +38,12 @@ type ReplayLaneScaffold = {
 	acceptanceCriteria: string[];
 };
 
+type FixtureAuthorizationEntry = {
+	address: string;
+	chainId: number;
+	nonce: number;
+};
+
 type ParsedFixture = {
 	chain: number;
 	forkBlock: number;
@@ -43,6 +51,7 @@ type ParsedFixture = {
 	from: string;
 	value: string;
 	data: string;
+	authorizationList?: FixtureAuthorizationEntry[];
 };
 
 const foundryDefaultAnvilPath = path.join(process.env.HOME ?? "", ".foundry", "bin", "anvil");
@@ -279,6 +288,14 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "flashLoanSimple",
 	},
+	// Lane 12: EIP-7702 type-4 authorization delegation path
+	{
+		flow: "EIP-7702 type-4 delegation path (authorizationList)",
+		fixturePath: "fixtures/txs/eip7702-delegation-0dc3e11d.json",
+		nativeDiff: "zero",
+		requireFindingCodes: ["EIP7702_AUTHORIZATION"],
+		requireSimulationNoteIncludes: ["authorization list detected but not replayed"],
+	},
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -291,6 +308,30 @@ function isString(value: unknown): value is string {
 
 function isNumber(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value);
+}
+
+function parseFixtureAuthorizationList(value: unknown): FixtureAuthorizationEntry[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) {
+		throw new Error("authorizationList must be an array when provided");
+	}
+
+	const parsed: FixtureAuthorizationEntry[] = [];
+	for (const entry of value) {
+		if (!isRecord(entry)) {
+			throw new Error("authorizationList entry must be an object");
+		}
+		if (!isString(entry.address) || !isNumber(entry.chainId) || !isNumber(entry.nonce)) {
+			throw new Error("authorizationList entry must include address, chainId, nonce");
+		}
+		parsed.push({
+			address: entry.address,
+			chainId: entry.chainId,
+			nonce: entry.nonce,
+		});
+	}
+
+	return parsed.length > 0 ? parsed : undefined;
 }
 
 function parseFixture(value: unknown): ParsedFixture {
@@ -313,6 +354,7 @@ function parseFixture(value: unknown): ParsedFixture {
 			from: value.from,
 			value: value.value,
 			data: value.data,
+			authorizationList: parseFixtureAuthorizationList(value.authorizationList),
 		};
 	}
 
@@ -326,6 +368,7 @@ function parseFixture(value: unknown): ParsedFixture {
 				from: tx.from,
 				value: tx.value,
 				data: tx.data,
+				authorizationList: parseFixtureAuthorizationList(tx.authorizationList),
 			};
 		}
 	}
@@ -360,6 +403,16 @@ function readNativeDiff(simulation: unknown): bigint {
 		throw new Error("simulation.nativeDiff missing or invalid");
 	}
 	return BigInt(simulation.nativeDiff);
+}
+
+function hasSimulationNoteContaining(simulation: unknown, text: string): boolean {
+	if (!isRecord(simulation)) return false;
+	const notes = simulation.notes;
+	if (!Array.isArray(notes)) return false;
+	for (const note of notes) {
+		if (isString(note) && note.includes(text)) return true;
+	}
+	return false;
 }
 
 function hasFindingCode(findings: unknown, code: string): boolean {
@@ -403,13 +456,17 @@ describe("real replay flow matrix e2e", () => {
 			const rawFixture = await Bun.file(absoluteFixturePath).text();
 			const parsedFixture = parseFixture(JSON.parse(rawFixture));
 
-			const calldata = JSON.stringify({
+			const calldataPayload = {
 				to: parsedFixture.to,
 				from: parsedFixture.from,
 				value: parsedFixture.value,
 				data: parsedFixture.data,
 				chain: String(parsedFixture.chain),
-			});
+				...(parsedFixture.authorizationList
+					? { authorizationList: parsedFixture.authorizationList }
+					: {}),
+			};
+			const calldata = JSON.stringify(calldataPayload);
 
 			const configPath = path.join(
 				process.env.TMPDIR ?? "/tmp",
@@ -493,35 +550,19 @@ describe("real replay flow matrix e2e", () => {
 					expect(hasFindingCode(parsed.scan.findings, code)).toBe(false);
 				}
 			}
+			if (entry.requireSimulationNoteIncludes) {
+				for (const noteFragment of entry.requireSimulationNoteIncludes) {
+					expect(hasSimulationNoteContaining(simulation, noteFragment)).toBe(true);
+				}
+			}
 		}, 240000);
 	}
 });
 
 /**
- * EIP-7702 (type-4 transaction) matrix scaffold.
- *
- * No real on-chain EIP-7702 fixture is available yet (the EIP is relatively new
- * and mainnet adoption is sparse). Once a representative tx lands on-chain:
- * 1. Record the fixture at test/fixtures/txs/eip7702-delegation-<hash>.json
- * 2. Replace the TODO entry below with a full ReplayMatrixEntry
- * 3. Remove this scaffold block
- *
- * The unit-level coverage (extraction + finding generation) lives in
- * test/eip7702-authorization.unit.test.ts.
+ * EIP-7702 replay lane is now covered in the main REPLAY_MATRIX
+ * (fixtures/txs/eip7702-delegation-0dc3e11d.json).
  */
-describe("EIP-7702 type-4 matrix scaffold", () => {
-	alwaysTest("EIP-7702 authorization list fixture path reserved", () => {
-		const placeholder = "fixtures/txs/eip7702-delegation-TODO.json";
-		// Intentional: this test documents the missing fixture path so it shows up
-		// in test output and grep. It passes unconditionally — the real assertion
-		// will come when the fixture file exists.
-		expect(placeholder).toContain("TODO");
-	});
-
-	alwaysTest.todo(
-		"EIP-7702 delegation replay with real on-chain fixture (blocked: no mainnet fixture yet)",
-	);
-});
 
 /**
  * Lane 1 supplement: Permit / Permit2 off-chain signatures.
