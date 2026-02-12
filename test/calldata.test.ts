@@ -147,6 +147,67 @@ describe("calldata analysis", () => {
 		expect(result.findings.some((finding) => finding.code === "UNLIMITED_APPROVAL")).toBe(true);
 	});
 
+	test("uses local router selector fallback for real universal router payloads", async () => {
+		let calls = 0;
+		globalThis.fetch = async () => {
+			calls += 1;
+			throw new Error("network fetch should not be called in offline fallback test");
+		};
+
+		const rawFixture = await Bun.file(
+			`${import.meta.dir}/fixtures/txs/uniswap-v4-universalrouter-eth-swap-873d55dd.json`,
+		).text();
+		const parsedFixture: unknown = JSON.parse(rawFixture);
+		expect(isRecord(parsedFixture)).toBe(true);
+		if (!isRecord(parsedFixture)) throw new Error("Invalid fixture root");
+		expect(isRecord(parsedFixture.tx)).toBe(true);
+		if (!isRecord(parsedFixture.tx)) throw new Error("Invalid fixture tx");
+		expect(typeof parsedFixture.tx.to).toBe("string");
+		expect(typeof parsedFixture.tx.data).toBe("string");
+		if (typeof parsedFixture.tx.to !== "string" || typeof parsedFixture.tx.data !== "string") {
+			throw new Error("Invalid fixture tx calldata");
+		}
+
+		const result = await analyzeCalldata(
+			{
+				to: parsedFixture.tx.to,
+				data: parsedFixture.tx.data,
+			},
+			undefined,
+			{ offline: true },
+		);
+
+		expect(calls).toBe(0);
+		const decoded = result.findings.find((finding) => finding.code === "CALLDATA_DECODED");
+		expect(decoded).toBeDefined();
+		if (decoded?.details && isRecord(decoded.details)) {
+			expect(decoded.details.source).toBe("local-selector");
+			expect(decoded.details.signature).toBe("execute(bytes,bytes[],uint256)");
+			expect(decoded.details.functionName).toBe("execute");
+		}
+	});
+
+	test("uses local router selector fallback for common v2 swap selectors", async () => {
+		const result = await analyzeCalldata(
+			{
+				to: "0x0000000000000000000000000000000000000001",
+				data: "0x7ff36ab5",
+			},
+			undefined,
+			{ offline: true },
+		);
+
+		const decoded = result.findings.find((finding) => finding.code === "CALLDATA_DECODED");
+		expect(decoded).toBeDefined();
+		if (decoded?.details && isRecord(decoded.details)) {
+			expect(decoded.details.source).toBe("local-selector");
+			expect(decoded.details.signature).toBe(
+				"swapExactETHForTokens(uint256,address[],address,uint256)",
+			);
+			expect(decoded.details.functionName).toBe("swapExactETHForTokens");
+		}
+	});
+
 	test("falls back to 4byte signature lookup", async () => {
 		let calls = 0;
 		globalThis.fetch = async () => {
