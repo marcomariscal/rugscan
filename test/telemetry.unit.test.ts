@@ -285,6 +285,22 @@ describe("telemetry event schema", () => {
 		expect(result.success).toBe(true);
 	});
 
+	test("scan_started validates for cli address scans", () => {
+		const event = {
+			...base,
+			source: "cli" as const,
+			event: "scan_started" as const,
+			inputKind: "address" as const,
+			method: "assay_scan" as const,
+			mode: "default" as const,
+			threshold: "caution" as const,
+			txFingerprint: hashWithSalt("tx", salt),
+			actionFingerprint: hashWithSalt("action", salt),
+		};
+		const result = telemetryEventSchema.safeParse(event);
+		expect(result.success).toBe(true);
+	});
+
 	test("scan_result validates", () => {
 		const event = {
 			...base,

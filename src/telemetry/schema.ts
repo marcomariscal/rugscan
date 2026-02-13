@@ -8,6 +8,8 @@ const chainSchema = z.enum(["ethereum", "base", "arbitrum", "optimism", "polygon
 
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 
+export const telemetrySourceSchema = z.enum(["proxy", "cli", "server", "sdk_viem"]);
+
 const telemetryBaseSchema = z
 	.object({
 		eventVersion: z.literal(1),
@@ -15,7 +17,7 @@ const telemetryBaseSchema = z
 		ts: z.string().datetime(),
 		sessionId: z.string().uuid(),
 		correlationId: z.string().uuid(),
-		source: z.literal("proxy"),
+		source: telemetrySourceSchema,
 		installId: hashSchema,
 		actorWalletHash: hashSchema.nullable(),
 		chain: chainSchema,
@@ -25,8 +27,13 @@ const telemetryBaseSchema = z
 const scanStartedSchema = telemetryBaseSchema
 	.extend({
 		event: z.literal("scan_started"),
-		inputKind: z.enum(["calldata", "typed_data"]),
-		method: z.enum(["eth_sendTransaction", "eth_sendRawTransaction", "eth_signTypedData_v4"]),
+		inputKind: z.enum(["address", "calldata", "typed_data"]),
+		method: z.enum([
+			"assay_scan",
+			"eth_sendTransaction",
+			"eth_sendRawTransaction",
+			"eth_signTypedData_v4",
+		]),
 		mode: z.enum(["default", "offline"]),
 		threshold: recommendationSchema,
 		txFingerprint: hashSchema.nullable(),
@@ -74,5 +81,6 @@ export const telemetryEventSchema = z.discriminatedUnion("event", [
 	userActionOutcomeSchema,
 ]);
 
+export type TelemetrySource = z.infer<typeof telemetrySourceSchema>;
 export type TelemetrySeverityBucket = z.infer<typeof telemetrySeverityBucketSchema>;
 export type TelemetryEvent = z.infer<typeof telemetryEventSchema>;

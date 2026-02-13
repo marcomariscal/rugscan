@@ -4,6 +4,7 @@ import { renderResultBox } from "../cli/ui";
 import { type ScanOptions, scanWithAnalysis } from "../scan";
 import type { AnalyzeResponse, AuthorizationEntry, CalldataInput, ScanInput } from "../schema";
 import { scanInputSchema } from "../schema";
+import { createProxyTelemetry, type ProxyTelemetry } from "../telemetry";
 import type { AnalysisResult, Config, Recommendation } from "../types";
 
 const RECOMMENDATION_ORDER: Recommendation[] = ["ok", "caution", "warning", "danger"];
@@ -16,6 +17,31 @@ function recommendationAtLeast(actual: Recommendation, threshold: Recommendation
 	// If we somehow get an unknown recommendation, treat it as risky.
 	if (actualIndex === -1 || thresholdIndex === -1) return true;
 	return actualIndex >= thresholdIndex;
+}
+
+function simulationStatusForTelemetry(analysis: AnalysisResult): "success" | "failed" | "not_run" {
+	const status = analysis.simulation?.success;
+	if (status === true) return "success";
+	if (status === false) return "failed";
+	return "not_run";
+}
+
+function findingCodesForTelemetry(response: AnalyzeResponse): string[] {
+	const codes: string[] = [];
+	for (const finding of response.scan.findings) {
+		if (!finding.code) continue;
+		codes.push(finding.code);
+		if (codes.length >= 5) break;
+	}
+	return codes;
+}
+
+function safeEmitTelemetry(emit: () => void): void {
+	try {
+		emit();
+	} catch {
+		// Telemetry is best-effort only.
+	}
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -216,9 +242,21 @@ export interface AssayViemTransportOptions {
 	threshold: Recommendation;
 	onRisk?: AssayViemOnRisk;
 	scanFn?: AssayScanFn;
+	telemetry?: ProxyTelemetry;
 }
 
 export function createAssayViemTransport(options: AssayViemTransportOptions): Transport {
+	const telemetry =
+		options.telemetry ??
+		createProxyTelemetry({
+			source: "sdk_viem",
+			onError: (error) => {
+				if (process.env.ASSAY_TELEMETRY_DEBUG !== "1") return;
+				const message = error instanceof Error ? error.message : String(error);
+				process.stderr.write(`telemetry error: ${message}\n`);
+			},
+		});
+
 	return (params) => {
 		const upstream = options.upstream(params);
 		const upstreamRequest = upstream.request;
@@ -229,6 +267,8 @@ export function createAssayViemTransport(options: AssayViemTransportOptions): Tr
 				return await upstreamRequest(args, requestOptions);
 			}
 
+			const startedAt = Date.now();
+			const correlationId = crypto.randomUUID();
 			const chainId = typeof params.chain?.id === "number" ? `${params.chain.id}` : undefined;
 			const requestId = typeof requestOptions?.uid === "string" ? requestOptions.uid : undefined;
 
@@ -259,6 +299,23 @@ export function createAssayViemTransport(options: AssayViemTransportOptions): Tr
 				});
 			}
 
+			const telemetryChain = validated.data.calldata?.chain ?? chainId;
+			const telemetryCalldata = validated.data.calldata;
+			safeEmitTelemetry(() => {
+				telemetry.emitScanStarted({
+					correlationId,
+					chain: telemetryChain,
+					actorAddress: telemetryCalldata?.from,
+					to: telemetryCalldata?.to,
+					data: telemetryCalldata?.data,
+					value: telemetryCalldata?.value,
+					method,
+					inputKind: "calldata",
+					threshold: options.threshold,
+					offline: false,
+				});
+			});
+
 			const scanFn = options.scanFn ?? scanWithAnalysis;
 			let analysis: AnalysisResult;
 			let response: AnalyzeResponse;
@@ -280,6 +337,22 @@ export function createAssayViemTransport(options: AssayViemTransportOptions): Tr
 				});
 			}
 
+			safeEmitTelemetry(() => {
+				telemetry.emitScanResult({
+					correlationId,
+					chain: telemetryChain,
+					actorAddress: telemetryCalldata?.from,
+					to: telemetryCalldata?.to,
+					data: telemetryCalldata?.data,
+					value: telemetryCalldata?.value,
+					requestId: response.requestId,
+					recommendation: response.scan.recommendation,
+					simulationStatus: simulationStatusForTelemetry(analysis),
+					findingCodes: findingCodesForTelemetry(response),
+					latencyMs: Date.now() - startedAt,
+				});
+			});
+
 			const recommendation = analysis.recommendation;
 			const simulationSuccess = analysis.simulation?.success ?? false;
 			const isRisky = recommendationAtLeast(recommendation, options.threshold);
@@ -297,6 +370,23 @@ export function createAssayViemTransport(options: AssayViemTransportOptions): Tr
 					simulationSuccess,
 				});
 
+				safeEmitTelemetry(() => {
+					telemetry.emitUserActionOutcome({
+						correlationId,
+						chain: telemetryChain,
+						actorAddress: telemetryCalldata?.from,
+						to: telemetryCalldata?.to,
+						data: telemetryCalldata?.data,
+						value: telemetryCalldata?.value,
+						requestId: response.requestId,
+						recommendation,
+						decision: simulationSuccess ? "blocked_policy" : "blocked_simulation",
+						prompted: false,
+						promptResponse: "na",
+						upstreamForwarded: false,
+					});
+				});
+
 				throw new AssayTransportError({
 					message: `Assay blocked transaction (${method})`,
 					reason: !simulationSuccess ? "simulation_failed" : "risky",
@@ -309,6 +399,22 @@ export function createAssayViemTransport(options: AssayViemTransportOptions): Tr
 				});
 			}
 
+			safeEmitTelemetry(() => {
+				telemetry.emitUserActionOutcome({
+					correlationId,
+					chain: telemetryChain,
+					actorAddress: telemetryCalldata?.from,
+					to: telemetryCalldata?.to,
+					data: telemetryCalldata?.data,
+					value: telemetryCalldata?.value,
+					requestId: response.requestId,
+					recommendation,
+					decision: "forwarded",
+					prompted: false,
+					promptResponse: "na",
+					upstreamForwarded: true,
+				});
+			});
 			return await upstreamRequest(args, requestOptions);
 		}) satisfies typeof upstreamRequest;
 

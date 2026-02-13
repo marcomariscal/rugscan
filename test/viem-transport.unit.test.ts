@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createTransport } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { mainnet } from "viem/chains";
 import { buildAnalyzeResponse } from "../src/scan";
 import type { ScanInput } from "../src/schema";
 import { type AssayScanFn, AssayTransportError, createAssayViemTransport } from "../src/sdk/viem";
+import { createAppendOnlyTelemetryWriter, createProxyTelemetry } from "../src/telemetry";
 import type { AnalysisResult, BalanceSimulationResult, Config, Recommendation } from "../src/types";
 
 function buildSimulation(success: boolean): BalanceSimulationResult {
@@ -175,6 +179,62 @@ describe("viem transport - unit", () => {
 		expect(result).toBe("0xdeadbeef");
 		expect(calls.length).toBe(1);
 		expect(calls[0]?.method).toBe("eth_sendTransaction");
+	});
+
+	test("emits telemetry events for decision-observable SDK path", async () => {
+		const tmpDir = mkdtempSync(path.join(os.tmpdir(), "assay-viem-telemetry-"));
+		const filePath = path.join(tmpDir, "events.jsonl");
+
+		try {
+			const writer = createAppendOnlyTelemetryWriter({ filePath });
+			const telemetry = createProxyTelemetry({
+				source: "sdk_viem",
+				env: { ASSAY_TELEMETRY_SALT: "test-salt" },
+				writer,
+			});
+
+			const { transport: upstream } = createUpstream();
+			const config: Config = {};
+			const scanFn: AssayScanFn = async (input: ScanInput, options) => {
+				const analysis = buildAnalysis({ recommendation: "ok", simulationSuccess: true });
+				const response = buildAnalyzeResponse(input, analysis, options?.requestId);
+				return { analysis, response };
+			};
+
+			const transport = createAssayViemTransport({
+				upstream,
+				config,
+				threshold: "warning",
+				scanFn,
+				telemetry,
+			});
+			const client = transport({ chain: mainnet });
+
+			await client.request({
+				method: "eth_sendTransaction",
+				params: [
+					{
+						to: "0x66a9893cc07d91d95644aedd05d03f95e1dba8af",
+						from: "0x24274566a1ad6a9b056e8e2618549ebd2f5141a7",
+						data: "0x",
+						value: "0x0",
+						chainId: "0x1",
+					},
+				],
+			});
+
+			await telemetry.flush();
+			const lines = readFileSync(filePath, "utf-8").trim().split("\n");
+			expect(lines.length).toBe(3);
+			expect(JSON.parse(lines[0]).event).toBe("scan_started");
+			expect(JSON.parse(lines[1]).event).toBe("scan_result");
+			const outcome = JSON.parse(lines[2]);
+			expect(outcome.event).toBe("user_action_outcome");
+			expect(outcome.decision).toBe("forwarded");
+			expect(outcome.source).toBe("sdk_viem");
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
 	});
 
 	test("does not forward on analysis error", async () => {

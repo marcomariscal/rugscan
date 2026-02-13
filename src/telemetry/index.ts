@@ -11,6 +11,7 @@ export {
 	type ProxyScanResultInput,
 	type ProxyScanStartedInput,
 	type ProxyTelemetry,
+	type ProxyTelemetryOptions,
 	type ProxyUserActionOutcomeInput,
 	type TelemetryDecision,
 	type TelemetryPromptResponse,
@@ -18,7 +19,9 @@ export {
 export {
 	type TelemetryEvent,
 	type TelemetrySeverityBucket,
+	type TelemetrySource,
 	telemetryEventSchema,
 	telemetrySeverityBucketSchema,
+	telemetrySourceSchema,
 } from "./schema";
 export { createAppendOnlyTelemetryWriter, type TelemetryWriter } from "./writer";

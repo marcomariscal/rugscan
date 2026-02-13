@@ -10,11 +10,13 @@ import { buildSafeIngestPlan } from "../safe/ingest";
 import { loadSafeMultisigTransaction } from "../safe/load";
 import { resolveScanChain, scanWithAnalysis } from "../scan";
 import {
+	type AnalyzeResponse,
 	type AuthorizationEntry,
 	type CalldataInput,
 	type ScanInput,
 	scanInputSchema,
 } from "../schema";
+import { createProxyTelemetry } from "../telemetry";
 import type { ApprovalContext, ApprovalTx, Chain, Recommendation } from "../types";
 import { runDoctor } from "./doctor";
 import { formatSarif } from "./formatters/sarif";
@@ -334,6 +336,32 @@ async function runScan(args: string[]) {
 		process.exit(1);
 	}
 
+	const correlationId = crypto.randomUUID();
+	const startedAt = Date.now();
+	const telemetry = createProxyTelemetry({
+		source: "cli",
+		onError: (error) => {
+			if (process.env.ASSAY_TELEMETRY_DEBUG !== "1") return;
+			const message = error instanceof Error ? error.message : String(error);
+			process.stderr.write(`telemetry error: ${message}\n`);
+		},
+	});
+	const telemetryTarget = parsed.data.address ?? parsed.data.calldata?.to;
+	safeEmitTelemetry(() => {
+		telemetry.emitScanStarted({
+			correlationId,
+			chain,
+			actorAddress: parsed.data.calldata?.from,
+			to: telemetryTarget,
+			data: parsed.data.calldata?.data ?? "0x",
+			value: parsed.data.calldata?.value,
+			method: "assay_scan",
+			inputKind: parsed.data.address ? "address" : "calldata",
+			threshold: failOn,
+			offline,
+		});
+	});
+
 	try {
 		const config = await loadConfig();
 		if (offline) {
@@ -369,6 +397,22 @@ async function runScan(args: string[]) {
 			progress,
 		});
 
+		safeEmitTelemetry(() => {
+			telemetry.emitScanResult({
+				correlationId,
+				chain,
+				actorAddress: parsed.data.calldata?.from,
+				to: telemetryTarget,
+				data: parsed.data.calldata?.data ?? "0x",
+				value: parsed.data.calldata?.value,
+				requestId: response.requestId,
+				recommendation: response.scan.recommendation,
+				simulationStatus: simulationStatusForTelemetry(response),
+				findingCodes: findingCodesForTelemetry(response),
+				latencyMs: Date.now() - startedAt,
+			});
+		});
+
 		const outputPayload =
 			format === "json"
 				? JSON.stringify(response, null, 2)
@@ -382,12 +426,14 @@ async function runScan(args: string[]) {
 						});
 
 		await writeOutput(output, outputPayload, format === "text");
+		await telemetry.flush().catch(() => undefined);
 
 		const exitCode = recommendationToExitCode(response.scan.recommendation, failOn);
 		process.exit(exitCode);
 	} catch (error) {
 		console.error(renderError("Scan failed:"));
 		console.error(error);
+		await telemetry.flush().catch(() => undefined);
 		process.exit(1);
 	}
 }
@@ -1101,6 +1147,32 @@ function safeJsonParse(value: string): unknown | null {
 		return JSON.parse(value);
 	} catch {
 		return null;
+	}
+}
+
+function simulationStatusForTelemetry(response: AnalyzeResponse): "success" | "failed" | "not_run" {
+	const status = response.scan.simulation?.status;
+	if (status === "success" || status === "failed" || status === "not_run") {
+		return status;
+	}
+	return "not_run";
+}
+
+function findingCodesForTelemetry(response: AnalyzeResponse): string[] {
+	const codes: string[] = [];
+	for (const finding of response.scan.findings) {
+		if (!finding.code) continue;
+		codes.push(finding.code);
+		if (codes.length >= 5) break;
+	}
+	return codes;
+}
+
+function safeEmitTelemetry(emit: () => void): void {
+	try {
+		emit();
+	} catch {
+		// Telemetry is best-effort only.
 	}
 }
 

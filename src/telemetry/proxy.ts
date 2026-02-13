@@ -7,12 +7,12 @@ import {
 	hashWithSalt,
 	resolveTelemetrySalt,
 } from "./hash";
-import type { TelemetryEvent, TelemetrySeverityBucket } from "./schema";
+import type { TelemetryEvent, TelemetrySeverityBucket, TelemetrySource } from "./schema";
 import { createAppendOnlyTelemetryWriter, type TelemetryWriter } from "./writer";
 
 type TelemetryChain = "ethereum" | "base" | "arbitrum" | "optimism" | "polygon" | "unknown";
 
-export type TelemetryInputKind = "calldata" | "typed_data";
+export type TelemetryInputKind = "address" | "calldata" | "typed_data";
 
 export type TelemetryDecision =
 	| "forwarded"
@@ -34,7 +34,7 @@ interface ProxyTelemetryBaseInput {
 }
 
 export interface ProxyScanStartedInput extends ProxyTelemetryBaseInput {
-	method: "eth_sendTransaction" | "eth_sendRawTransaction" | "eth_signTypedData_v4";
+	method: "assay_scan" | "eth_sendTransaction" | "eth_sendRawTransaction" | "eth_signTypedData_v4";
 	inputKind: TelemetryInputKind;
 	threshold: Recommendation;
 	offline: boolean;
@@ -64,8 +64,9 @@ export interface ProxyTelemetry {
 	flush(): Promise<void>;
 }
 
-interface ProxyTelemetryOptions {
+export interface ProxyTelemetryOptions {
 	env?: NodeJS.ProcessEnv;
+	source?: TelemetrySource;
 	sessionId?: string;
 	now?: () => Date;
 	writer?: TelemetryWriter;
@@ -115,6 +116,7 @@ export function createProxyTelemetry(options?: ProxyTelemetryOptions): ProxyTele
 	const enabled = isTelemetryEnabled(options?.env);
 	const writer = options?.writer ?? createAppendOnlyTelemetryWriter({ onError: options?.onError });
 	const now = options?.now ?? (() => new Date());
+	const source = options?.source ?? "proxy";
 	const sessionId = options?.sessionId ?? crypto.randomUUID();
 	const saltPromise = enabled ? resolveTelemetrySalt({ env: options?.env }) : Promise.resolve("");
 
@@ -127,7 +129,7 @@ export function createProxyTelemetry(options?: ProxyTelemetryOptions): ProxyTele
 		ts: string;
 		sessionId: string;
 		correlationId: string;
-		source: "proxy";
+		source: TelemetrySource;
 		installId: string;
 		actorWalletHash: string | null;
 		chain: TelemetryChain;
@@ -138,7 +140,7 @@ export function createProxyTelemetry(options?: ProxyTelemetryOptions): ProxyTele
 			ts: now().toISOString(),
 			sessionId,
 			correlationId: input.correlationId,
-			source: "proxy",
+			source,
 			installId: ctx.installId,
 			actorWalletHash: hashAddress(input.actorAddress, ctx.salt),
 			chain: normalizeChain(input.chain),
