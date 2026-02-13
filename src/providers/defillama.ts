@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from "../http";
+import { matchTopProtocolAddress } from "../protocols/top-protocol-registry";
 import type { Chain, ProtocolMatch } from "../types";
 import type { ProviderRequestOptions } from "./request-options";
 
@@ -11,75 +12,6 @@ const CHAIN_NAMES: Record<Chain, string> = {
 	arbitrum: "arbitrum",
 	optimism: "optimism",
 	polygon: "polygon",
-};
-
-interface ProtocolOverride {
-	name: string;
-	slug: string;
-}
-
-const KNOWN_PROTOCOL_ADDRESSES: Partial<Record<Chain, Record<string, ProtocolOverride>>> = {
-	ethereum: {
-		// Uniswap
-		"0x7a250d5630b4cf539739df2c5dacb4c659f2488d": { name: "Uniswap V2", slug: "uniswap-v2" },
-		"0xe592427a0aece92de3edee1f18e0157c05861564": { name: "Uniswap V3", slug: "uniswap-v3" },
-		"0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45": { name: "Uniswap V3", slug: "uniswap-v3" },
-		"0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad": { name: "Uniswap", slug: "uniswap" },
-		"0x66a9893cc07d91d95644aedd05d03f95e1dba8af": { name: "Uniswap", slug: "uniswap" },
-		// Aave
-		"0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2": { name: "Aave V3", slug: "aave-v3" },
-		"0xd322a49006fc828f9b5b37ab215f99b4e5cab19c": { name: "Aave V3", slug: "aave-v3" },
-		"0x7d2768de32b0b80b7a3454c06bdac94a69ddc7a9": { name: "Aave V2", slug: "aave-v2" },
-		// Curve
-		"0xbebc44782c7db0a1a60cb6fe97d0e3d5c3c9f0fe": { name: "Curve DEX", slug: "curve-dex" },
-		"0x99a58482bd75cbab83b27ec03ca68ff489b5788f": { name: "Curve DEX", slug: "curve-dex" },
-		// 1inch
-		"0x1111111254eeb25477b68fb85ed929f73a960582": { name: "1inch", slug: "1inch-network" },
-		"0x1111111254fb6c44bac0bed2854e76f90643097d": { name: "1inch", slug: "1inch-network" },
-		// WETH
-		"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": { name: "WETH", slug: "weth" },
-		// USDC/Circle
-		"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": { name: "Circle USDC", slug: "circle" },
-		// USDT/Tether
-		"0xdac17f958d2ee523a2206206994597c13d831ec7": { name: "Tether USDT", slug: "tether" },
-		// Lido
-		"0xae7ab96520de3a18e5e111b5eaab095312d7fe84": { name: "Lido", slug: "lido" },
-		// Compound
-		"0x3d9819210a31b4961b30ef54be2aed79b9c9cd3b": { name: "Compound", slug: "compound-finance" },
-		// Cap
-		"0xcccc62962d17b8914c62d74ffb843d73b2a3cccc": { name: "Cap", slug: "cap" },
-		"0xdb549616407f8a30799f77f12b6b85aec936782d": { name: "Cap", slug: "cap" },
-		// ether.fi / weETH adapter
-		"0xcfc6d9bd7411962bfe7145451a7ef71a24b6a7a2": {
-			name: "ether.fi/weETH adapter",
-			slug: "ether-fi-weeth-adapter",
-		},
-		"0xe87797a1afb329216811dfa22c87380128ca17d8": {
-			name: "ether.fi/weETH adapter",
-			slug: "ether-fi-weeth-adapter",
-		},
-	},
-	base: {
-		// Seamless Protocol (Aave V3 fork)
-		"0x0e02eb705be325407707662c6f6d3466e939f3a0": {
-			name: "Seamless Protocol",
-			slug: "seamless-protocol",
-		},
-		"0x1c7a460413dd4e964f96d8dfc56e7223ce88cd85": {
-			name: "Seamless Protocol",
-			slug: "seamless-protocol",
-		},
-		// Seamless ILM vaults (representative known deployments)
-		"0x6426811ff283fa7c78f0bc5d71858c2f79c0fc3d": {
-			name: "Seamless Protocol",
-			slug: "seamless-protocol",
-		},
-		// Seamless ILM 3x Loop wstETH/ETH vault (ERC1967Proxy → LoopStrategy)
-		"0x258730e23cf2f25887cb962d32bd10b878ea8a4e": {
-			name: "Seamless Protocol",
-			slug: "seamless-protocol",
-		},
-	},
 };
 
 interface Protocol {
@@ -157,10 +89,10 @@ export async function matchProtocol(
 ): Promise<ProtocolMatch | null> {
 	const chainName = CHAIN_NAMES[chain];
 	const normalizedAddress = address.toLowerCase();
-	const manualMatch = KNOWN_PROTOCOL_ADDRESSES[chain]?.[normalizedAddress];
+	const manualMatch = matchTopProtocolAddress(normalizedAddress, chain);
 	if (manualMatch) {
 		// Avoid network dependency for known addresses.
-		return { name: manualMatch.name, slug: manualMatch.slug };
+		return manualMatch;
 	}
 
 	if (options?.allowNetwork === false) {
@@ -195,15 +127,6 @@ export async function matchProtocol(
 interface ParsedAddress {
 	chain: Chain | null;
 	address: string;
-}
-
-function _resolveManualMatch(protocols: Protocol[], match: ProtocolOverride): ProtocolMatch {
-	for (const protocol of protocols) {
-		if (protocol.slug === match.slug) {
-			return { name: protocol.name, tvl: protocol.tvl, slug: protocol.slug };
-		}
-	}
-	return { name: match.name, slug: match.slug };
 }
 
 function getProtocolAddresses(raw: unknown): string[] {
