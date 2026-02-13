@@ -42,6 +42,56 @@ describe("defillama", () => {
 		expect(result).toBeNull();
 	});
 
+	// New Phase 1 protocols resolve without network lookup
+	bunTest("Balancer V2 Vault resolves without network lookup", async () => {
+		const result = await matchProtocol("0xba12222222228d8ba445958a75a0704d566bf2c8", "ethereum", {
+			allowNetwork: false,
+		});
+		expect(result).not.toBeNull();
+		expect(result?.name).toBe("Balancer V2");
+		expect(result?.slug).toBe("balancer-v2");
+	});
+
+	bunTest("CoW Protocol GPv2Settlement resolves without network lookup", async () => {
+		const result = await matchProtocol("0x9008d19f58aabd9ed0d60971565aa8510560ab41", "ethereum", {
+			allowNetwork: false,
+		});
+		expect(result).not.toBeNull();
+		expect(result?.name).toBe("CoW Protocol");
+	});
+
+	bunTest("0x Exchange Proxy resolves without network lookup", async () => {
+		const result = await matchProtocol("0xdef1c0ded9bec7f1a1670819833240f027b25eff", "ethereum", {
+			allowNetwork: false,
+		});
+		expect(result).not.toBeNull();
+		expect(result?.name).toBe("0x Protocol");
+	});
+
+	bunTest("Morpho Blue resolves without network lookup", async () => {
+		const result = await matchProtocol("0xbbbbbbbbbb9cc5e90e3b3af64bdaf62c37eeffcb", "ethereum", {
+			allowNetwork: false,
+		});
+		expect(result).not.toBeNull();
+		expect(result?.name).toBe("Morpho");
+	});
+
+	bunTest("Seaport 1.6 resolves without network lookup", async () => {
+		const result = await matchProtocol("0x0000000000000068f116a894984e2db1123eb395", "ethereum", {
+			allowNetwork: false,
+		});
+		expect(result).not.toBeNull();
+		expect(result?.name).toBe("OpenSea Seaport");
+	});
+
+	bunTest("1inch AggregationRouter V6 resolves without network lookup", async () => {
+		const result = await matchProtocol("0x111111125421ca6dc452d289314280a0f8842a65", "ethereum", {
+			allowNetwork: false,
+		});
+		expect(result).not.toBeNull();
+		expect(result?.name).toBe("1inch");
+	});
+
 	bunTest("Cap proxy resolves without network lookup", async () => {
 		const result = await matchProtocol("0xcccc62962d17b8914c62d74ffb843d73b2a3cccc", "ethereum", {
 			allowNetwork: false,
@@ -76,5 +126,30 @@ describe("defillama", () => {
 		expect(result).not.toBeNull();
 		expect(result?.name).toBe("ether.fi/weETH adapter");
 		expect(result?.slug).toBe("ether-fi-weeth-adapter");
+	});
+
+	// Base chain entries
+	bunTest("USDC on Base resolves without network lookup", async () => {
+		const result = await matchProtocol("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", "base", {
+			allowNetwork: false,
+		});
+		expect(result).not.toBeNull();
+		expect(result?.name).toBe("Circle USDC");
+	});
+
+	bunTest("WETH on Base resolves without network lookup", async () => {
+		const result = await matchProtocol("0x4200000000000000000000000000000000000006", "base", {
+			allowNetwork: false,
+		});
+		expect(result).not.toBeNull();
+		expect(result?.name).toBe("WETH");
+	});
+
+	bunTest("Uniswap Universal Router on Base resolves without network lookup", async () => {
+		const result = await matchProtocol("0x6ff5693b99212da76ad316178a184ab56d299b43", "base", {
+			allowNetwork: false,
+		});
+		expect(result).not.toBeNull();
+		expect(result?.name).toBe("Uniswap");
 	});
 });

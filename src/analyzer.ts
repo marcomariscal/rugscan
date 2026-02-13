@@ -1,6 +1,7 @@
 import { type AnalyzeMode, type AnalyzeProviderId, createAnalyzePolicy } from "./analyzer-policy";
 import { createTimeBudget, runWithTimeout } from "./budget";
 import { resolveContractName } from "./name-resolution";
+import { inferProtocolFallback } from "./protocols/fallback-heuristics";
 import * as defillama from "./providers/defillama";
 import * as etherscan from "./providers/etherscan";
 import * as goplus from "./providers/goplus";
@@ -541,6 +542,19 @@ export async function analyze(
 			if (implementationProtocol) {
 				protocolNameForFriendly = implementationProtocol.name;
 			}
+		}
+	}
+
+	if (!protocolLabel || !protocolNameForFriendly) {
+		const protocolFallback = inferProtocolFallback({
+			address: addr,
+			chain,
+			implementationName,
+			proxyName: contractName,
+		});
+		if (protocolFallback) {
+			protocolLabel = protocolLabel ?? formatProtocolLabel(protocolFallback);
+			protocolNameForFriendly = protocolNameForFriendly ?? protocolFallback.name;
 		}
 	}
 
