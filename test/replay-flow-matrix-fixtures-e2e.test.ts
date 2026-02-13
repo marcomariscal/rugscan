@@ -33,6 +33,8 @@ type ReplayMatrixEntry = {
 	requireApprovalStandard?: "erc20" | "erc721" | "erc1155" | "permit2";
 	/** Assert a simulation approval change has approved=true|false */
 	requireApprovalApproved?: boolean;
+	/** Assert scan.contract.tags includes this protocol fragment */
+	requireProtocolTagIncludes?: string;
 };
 
 type ReplayLaneScaffold = {
@@ -166,26 +168,31 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		flow: "ERC721 setApprovalForAll (ENS → OpenSea operator)",
 		fixturePath: "fixtures/txs/erc721-approval-for-all-ens-opensea-true.json",
 		nativeDiff: "zero",
+		intentIncludes: "Grant",
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "setApprovalForAll",
 		requireFindingCodes: ["SIM_APPROVAL_FOR_ALL_UNKNOWN_OPERATOR"],
 		requireApprovalStandard: "erc721",
 		requireApprovalApproved: true,
+		requireProtocolTagIncludes: "ENS",
 	},
 	{
 		flow: "ERC721 setApprovalForAll revoke (ENS operator false-positive guard)",
 		fixturePath: "fixtures/txs/erc721-approval-for-all-ens-revoke-false.json",
 		nativeDiff: "zero",
+		intentIncludes: "Revoke",
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "setApprovalForAll",
 		forbidFindingCodes: ["SIM_APPROVAL_FOR_ALL_UNKNOWN_OPERATOR"],
 		requireApprovalStandard: "erc721",
 		requireApprovalApproved: false,
+		requireProtocolTagIncludes: "ENS",
 	},
 	{
 		flow: "ERC1155 setApprovalForAll (Mirror MNFTs → operator)",
 		fixturePath: "fixtures/txs/erc1155-approval-for-all-mirror-mnfts-opensea-true.json",
 		nativeDiff: "zero",
+		intentIncludes: "Grant",
 		requireDecodedCalldata: true,
 		requireFindingCodes: ["SIM_APPROVAL_FOR_ALL_UNKNOWN_OPERATOR"],
 		requireApprovalStandard: "erc1155",
@@ -199,6 +206,7 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		intentIncludes: "Bridge",
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "depositForBurn",
+		requireProtocolTagIncludes: "Circle CCTP",
 	},
 	// Lane 5: Proxy admin upgrade call path
 	{
@@ -265,6 +273,7 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		intentIncludes: "Seaport",
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "fulfillBasicOrder",
+		requireProtocolTagIncludes: "OpenSea Seaport",
 	},
 	// Lane 10: Safe module exec (execTransactionFromModuleReturnData)
 	{
@@ -274,6 +283,7 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		intentIncludes: "Safe module exec",
 		requireDecodedCalldata: true,
 		requireDecodedFunctionName: "execTransactionFromModuleReturnData",
+		requireProtocolTagIncludes: "Safe",
 	},
 	// === Pass 18b: Universal Router command-stream multi-step path ===
 	// Lane 11: Dense multi-command Universal Router execution (3+ commands)
@@ -299,8 +309,19 @@ const REPLAY_MATRIX: ReplayMatrixEntry[] = [
 		flow: "EIP-7702 type-4 delegation path (authorizationList)",
 		fixturePath: "fixtures/txs/eip7702-delegation-0dc3e11d.json",
 		nativeDiff: "zero",
+		intentIncludes: "Delegate sender EOA",
 		requireFindingCodes: ["EIP7702_AUTHORIZATION"],
 		requireSimulationNoteIncludes: ["authorization list detected but not replayed"],
+	},
+	// Lane 13: Seamless Protocol ILM leverage-token redeem (ERC-4626 vault on Base)
+	{
+		flow: "Seamless ILM 3x wstETH/ETH redeem (ERC-4626 vault, Base)",
+		fixturePath: "fixtures/txs/seamless-ilm-redeem-wsteth-634fca6e.json",
+		nativeDiff: "zero",
+		intentIncludes: "Redeem",
+		requireDecodedCalldata: true,
+		requireDecodedFunctionName: "redeem",
+		requireProtocolTagIncludes: "Seamless Protocol",
 	},
 ];
 
@@ -545,6 +566,15 @@ describe("real replay flow matrix e2e", () => {
 						}
 					}
 				}
+			}
+			if (entry.requireProtocolTagIncludes) {
+				const scanContract = isRecord(parsed.scan.contract) ? parsed.scan.contract : null;
+				const tags = scanContract && Array.isArray(scanContract.tags) ? scanContract.tags : [];
+				const expectedTag = entry.requireProtocolTagIncludes.toLowerCase();
+				const hasProtocolTag = tags.some(
+					(tag) => isString(tag) && tag.toLowerCase().includes(expectedTag),
+				);
+				expect(hasProtocolTag).toBe(true);
 			}
 
 			if (entry.requireDecodedCalldata) {

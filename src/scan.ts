@@ -64,6 +64,27 @@ const CHAIN_ID_LOOKUP: Record<string, Chain> = {
 
 const DEFAULT_CHAIN: Chain = "ethereum";
 
+const PROTOCOL_LABEL_FALLBACKS: Partial<Record<Chain, Record<string, string>>> = {
+	ethereum: {
+		"0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85": "ENS",
+		"0x0000000000000068f116a894984e2db1123eb395": "OpenSea Seaport",
+		"0x00000000000001ad428e4906ae43d8f9852d0dd6": "OpenSea Seaport",
+		"0x00000000006c3852cbef3e08e8df289169ede581": "OpenSea Seaport",
+		"0xbd3fa81b58ba92a82136038b25adec7066af3155": "Circle CCTP",
+	},
+	base: {
+		// Seamless Protocol ILM vaults (representative known deployments)
+		"0x6426811ff283fa7c78f0bc5d71858c2f79c0fc3d": "Seamless Protocol",
+		"0x258730e23cf2f25887cb962d32bd10b878ea8a4e": "Seamless Protocol",
+	},
+};
+
+const SAFE_FUNCTION_FALLBACKS = new Set([
+	"exectransaction",
+	"exectransactionfrommodule",
+	"exectransactionfrommodulereturndata",
+]);
+
 export function resolveScanChain(value?: string): Chain | null {
 	if (!value) return DEFAULT_CHAIN;
 	const normalized = value.toLowerCase();
@@ -137,8 +158,16 @@ async function mergeCalldataAnalysis(
 		: null;
 	const plainTransferIntent = buildPlainEthTransferIntent(input.calldata);
 	const eip7702Findings = buildEip7702Findings(input.calldata);
+	const eip7702Intent = buildEip7702Intent(input.calldata);
+	const protocolFallback = resolveProtocolLabelFallback(
+		analysis.contract.chain,
+		input.calldata.to,
+		calldataAnalysis.decoded?.functionName,
+	);
 	const hasFindings = calldataAnalysis.findings.length > 0 || eip7702Findings.length > 0;
-	if (!hasFindings && !intent && !plainTransferIntent) return analysis;
+	if (!hasFindings && !intent && !plainTransferIntent && !eip7702Intent && !protocolFallback) {
+		return analysis;
+	}
 	const findings = hasFindings
 		? [...analysis.findings, ...calldataAnalysis.findings, ...eip7702Findings]
 		: analysis.findings;
@@ -146,8 +175,8 @@ async function mergeCalldataAnalysis(
 		...analysis,
 		findings,
 		recommendation: hasFindings ? determineRecommendation(findings) : analysis.recommendation,
-		protocol: plainTransferIntent ? "ETH Transfer" : analysis.protocol,
-		intent: plainTransferIntent ?? intent ?? analysis.intent,
+		protocol: plainTransferIntent ? "ETH Transfer" : (analysis.protocol ?? protocolFallback),
+		intent: plainTransferIntent ?? intent ?? eip7702Intent ?? analysis.intent,
 	};
 }
 
@@ -180,6 +209,31 @@ function buildEip7702Findings(calldata: CalldataInput): Finding[] {
 	});
 
 	return findings;
+}
+
+function buildEip7702Intent(calldata: CalldataInput): string | null {
+	const authList = calldata.authorizationList;
+	if (!authList || authList.length === 0) return null;
+
+	if (authList.length === 1) {
+		const delegate = authList[0];
+		if (!delegate) return null;
+		return `Delegate sender EOA to ${delegate.address} via EIP-7702`;
+	}
+
+	return `Delegate sender EOA to ${authList.length} contracts via EIP-7702`;
+}
+
+function resolveProtocolLabelFallback(
+	chain: Chain,
+	to: string,
+	functionName?: string,
+): string | undefined {
+	const byAddress = PROTOCOL_LABEL_FALLBACKS[chain]?.[to.toLowerCase()];
+	if (byAddress) return byAddress;
+	if (!functionName) return undefined;
+	if (SAFE_FUNCTION_FALLBACKS.has(functionName.toLowerCase())) return "Safe";
+	return undefined;
 }
 
 export function buildAnalyzeResponse(

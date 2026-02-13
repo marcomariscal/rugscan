@@ -1694,7 +1694,13 @@ function isChecksNoiseFinding(finding: Finding): boolean {
 		finding.code === "CALLDATA_SIGNATURES" ||
 		finding.code === "CALLDATA_EMPTY" ||
 		finding.code === "VERIFIED" ||
-		finding.code === "KNOWN_PROTOCOL"
+		finding.code === "KNOWN_PROTOCOL" ||
+		// UNVERIFIED and UNKNOWN_SECURITY are already represented by the hardcoded
+		// verification-state line ("✓ Source verified" / "⚠️ Source not verified")
+		// and the Context line ("verified" / "unverified" / "unknown"). Showing
+		// them again as [UNVERIFIED] / [UNKNOWN_SECURITY] is noisy duplication.
+		finding.code === "UNVERIFIED" ||
+		finding.code === "UNKNOWN_SECURITY"
 	);
 }
 

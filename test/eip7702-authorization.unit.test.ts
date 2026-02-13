@@ -172,6 +172,8 @@ describe("EIP-7702 authorization list — scan findings", () => {
 		expect(finding?.level).toBe("warning");
 		expect(finding?.message).toContain("delegates sender EOA");
 		expect(analysis.recommendation).toBe("caution");
+		expect(analysis.intent).toBe(`Delegate sender EOA to ${DELEGATE_CONTRACT} via EIP-7702`);
+		expect(response.scan.intent).toBe(`Delegate sender EOA to ${DELEGATE_CONTRACT} via EIP-7702`);
 
 		const responseFinding = response.scan.findings.find(
 			(entry) => entry.code === "EIP7702_AUTHORIZATION",

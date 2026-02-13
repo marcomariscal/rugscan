@@ -59,6 +59,27 @@ const KNOWN_PROTOCOL_ADDRESSES: Partial<Record<Chain, Record<string, ProtocolOve
 			slug: "ether-fi-weeth-adapter",
 		},
 	},
+	base: {
+		// Seamless Protocol (Aave V3 fork)
+		"0x0e02eb705be325407707662c6f6d3466e939f3a0": {
+			name: "Seamless Protocol",
+			slug: "seamless-protocol",
+		},
+		"0x1c7a460413dd4e964f96d8dfc56e7223ce88cd85": {
+			name: "Seamless Protocol",
+			slug: "seamless-protocol",
+		},
+		// Seamless ILM vaults (representative known deployments)
+		"0x6426811ff283fa7c78f0bc5d71858c2f79c0fc3d": {
+			name: "Seamless Protocol",
+			slug: "seamless-protocol",
+		},
+		// Seamless ILM 3x Loop wstETH/ETH vault (ERC1967Proxy → LoopStrategy)
+		"0x258730e23cf2f25887cb962d32bd10b878ea8a4e": {
+			name: "Seamless Protocol",
+			slug: "seamless-protocol",
+		},
+	},
 };
 
 interface Protocol {

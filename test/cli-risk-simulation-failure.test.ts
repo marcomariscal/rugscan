@@ -144,18 +144,19 @@ describe("cli recommendation label with simulation failures", () => {
 		};
 
 		const output = stripAnsi(renderResultBox(analysis, { hasCalldata: true }));
-		expect(output).toContain("+1 more (use --verbose)");
+
+		// UNVERIFIED is now absorbed into the hardcoded verification-state line
+		// ("⚠️ Source not verified") so it shouldn't appear as a separate [UNVERIFIED] finding.
+		expect(output).not.toContain("[UNVERIFIED]");
+		expect(output).toContain("⚠️ Source not verified (or unknown)");
 
 		const phishingIndex = output.indexOf("KNOWN_PHISHING");
-		const unverifiedIndex = output.indexOf("UNVERIFIED");
 		const newContractIndex = output.indexOf("NEW_CONTRACT");
 		expect(output).toContain("⚠️ Proxy / upgradeable (code can change)");
 		expect(output).not.toContain("[UPGRADEABLE]");
 		expect(phishingIndex).toBeGreaterThanOrEqual(0);
-		expect(unverifiedIndex).toBeGreaterThanOrEqual(0);
 		expect(newContractIndex).toBeGreaterThanOrEqual(0);
-		expect(phishingIndex).toBeLessThan(unverifiedIndex);
-		expect(unverifiedIndex).toBeLessThan(newContractIndex);
+		expect(phishingIndex).toBeLessThan(newContractIndex);
 	});
 
 	test("explorer links suppress zero-address entries", () => {

@@ -38,6 +38,10 @@ export const KNOWN_SPENDERS: Record<Chain, KnownSpender[]> = {
 	],
 	base: [
 		{
+			name: "Seamless ILM Router",
+			address: "0xb0764de7eef0ac69855c431334b7bc51a96e6dba",
+		},
+		{
 			name: "Uniswap V2 Router",
 			address: "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
 		},

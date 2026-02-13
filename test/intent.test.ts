@@ -218,12 +218,22 @@ describe("intent templates", () => {
 				approved: false,
 			},
 		};
+		const grantCallWithAliasArgNames: DecodedCall = {
+			...grantCall,
+			args: {
+				to: "0x0000000000000000000000000000000000000abc",
+				approved: true,
+			},
+		};
 
 		expect(buildIntent(grantCall, { contractName: "ENS" })).toBe(
 			"Grant 0x0000000000000000000000000000000000000abc operator access to all ENS tokens",
 		);
 		expect(buildIntent(revokeCall, { contractName: "ENS" })).toBe(
 			"Revoke 0x0000000000000000000000000000000000000abc operator access to all ENS tokens",
+		);
+		expect(buildIntent(grantCallWithAliasArgNames, { contractName: "ENS" })).toBe(
+			"Grant 0x0000000000000000000000000000000000000abc operator access to all ENS tokens",
 		);
 	});
 
@@ -362,5 +372,104 @@ describe("intent templates", () => {
 
 		const intent = buildIntent(call, {});
 		expect(intent).toBe("Supply ETH to Aave");
+	});
+
+	test("builds ERC-4626 redeem intent", () => {
+		const call: DecodedCall = {
+			selector: "0xba087652",
+			signature: "redeem(uint256,address,address)",
+			functionName: "redeem",
+			source: "contract-abi",
+			args: {
+				shares: "1995052739657609",
+				receiver: "0x6b821bd540ef180ab6e8219af224f9ba52045471",
+				owner: "0x6b821bd540ef180ab6e8219af224f9ba52045471",
+			},
+		};
+
+		const intent = buildIntent(call, { contractName: "ILM 3x wstETH/ETH" });
+		expect(intent).toContain("Redeem");
+		expect(intent).toContain("shares");
+		expect(intent).toContain("ILM 3x wstETH/ETH");
+	});
+
+	test("builds ERC-4626 deposit intent", () => {
+		const call: DecodedCall = {
+			selector: "0x6e553f65",
+			signature: "deposit(uint256,address)",
+			functionName: "deposit",
+			source: "contract-abi",
+			args: {
+				assets: "5000000000000000000",
+				receiver: "0x6b821bd540ef180ab6e8219af224f9ba52045471",
+			},
+		};
+
+		const intent = buildIntent(call, { contractName: "ILM 3x wstETH/ETH" });
+		expect(intent).toContain("Deposit");
+		expect(intent).toContain("ILM 3x wstETH/ETH");
+	});
+
+	test("builds ERC-4626 withdraw intent", () => {
+		const call: DecodedCall = {
+			selector: "0xb460af94",
+			signature: "withdraw(uint256,address,address)",
+			functionName: "withdraw",
+			source: "contract-abi",
+			args: {
+				assets: "3000000000000000000",
+				receiver: "0x6b821bd540ef180ab6e8219af224f9ba52045471",
+				owner: "0x6b821bd540ef180ab6e8219af224f9ba52045471",
+			},
+		};
+
+		const intent = buildIntent(call, { contractName: "Vault" });
+		expect(intent).toContain("Withdraw");
+		expect(intent).toContain("Vault");
+	});
+
+	test("WETH deposit still routes to WETH template (not ERC-4626)", () => {
+		const call: DecodedCall = {
+			selector: "0xd0e30db0",
+			signature: "deposit()",
+			functionName: "deposit",
+			source: "known-abi",
+			args: [],
+		};
+
+		const intent = buildIntent(call, { contractName: "WETH" });
+		expect(intent).toBe("Wrap ETH → WETH");
+	});
+
+	test("WETH withdraw still routes to WETH template (not ERC-4626)", () => {
+		const call: DecodedCall = {
+			selector: "0x2e1a7d4d",
+			signature: "withdraw(uint256)",
+			functionName: "withdraw",
+			source: "known-abi",
+			args: { wad: "1000000000000000000" },
+		};
+
+		const intent = buildIntent(call, { contractName: "WETH" });
+		expect(intent).toContain("Unwrap");
+		expect(intent).toContain("WETH");
+	});
+
+	test("Aave withdraw still routes to Aave template (not ERC-4626)", () => {
+		const call: DecodedCall = {
+			selector: "0x69328dec",
+			signature: "withdraw(address,uint256,address)",
+			functionName: "withdraw",
+			source: "contract-abi",
+			args: {
+				asset: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+				amount: "500000000",
+				to: "0x1234567890abcdef1234567890abcdef12345678",
+			},
+		};
+
+		const intent = buildIntent(call, {});
+		expect(intent).toContain("Withdraw");
+		expect(intent).toContain("from Aave");
 	});
 });

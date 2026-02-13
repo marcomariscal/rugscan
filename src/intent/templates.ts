@@ -138,6 +138,10 @@ function readArg(call: DecodedCall, name: string, index: number): unknown {
 		if (Object.hasOwn(args, indexKey)) {
 			return args[indexKey];
 		}
+		const values = Object.values(args);
+		if (index >= 0 && index < values.length) {
+			return values[index];
+		}
 	}
 	return undefined;
 }
@@ -921,6 +925,55 @@ const safeExecTransactionFromModule: IntentTemplate = {
 	},
 };
 
+const erc4626Deposit: IntentTemplate = {
+	id: "erc4626-deposit",
+	match: (call) =>
+		call.functionName === "deposit" &&
+		(call.signature === "deposit(uint256,address)" || call.selector === "0x6e553f65"),
+	render: (call, context) => {
+		const assets = formatTokenAmount(readArg(call, "assets", 0), context);
+		const receiver = formatValue(readArg(call, "receiver", 1));
+		const label = context.contractName ?? "vault";
+		if (assets && receiver) {
+			return `Deposit ${assets} into ${label} (receiver ${receiver})`;
+		}
+		if (assets) {
+			return `Deposit ${assets} into ${label}`;
+		}
+		return `Deposit into ${label}`;
+	},
+};
+
+const erc4626Redeem: IntentTemplate = {
+	id: "erc4626-redeem",
+	match: (call) =>
+		call.functionName === "redeem" &&
+		(call.signature === "redeem(uint256,address,address)" || call.selector === "0xba087652"),
+	render: (call, context) => {
+		const shares = formatTokenAmount(readArg(call, "shares", 0), context);
+		const label = context.contractName ?? "vault";
+		if (shares) {
+			return `Redeem ${shares} shares from ${label}`;
+		}
+		return `Redeem shares from ${label}`;
+	},
+};
+
+const erc4626Withdraw: IntentTemplate = {
+	id: "erc4626-withdraw",
+	match: (call) =>
+		call.functionName === "withdraw" &&
+		(call.signature === "withdraw(uint256,address,address)" || call.selector === "0xb460af94"),
+	render: (call, context) => {
+		const assets = formatTokenAmount(readArg(call, "assets", 0), context);
+		const label = context.contractName ?? "vault";
+		if (assets) {
+			return `Withdraw ${assets} from ${label}`;
+		}
+		return `Withdraw from ${label}`;
+	},
+};
+
 export const INTENT_TEMPLATES: IntentTemplate[] = [
 	erc20Approve,
 	erc20Transfer,
@@ -929,6 +982,12 @@ export const INTENT_TEMPLATES: IntentTemplate[] = [
 	erc721SetApprovalForAll,
 	ownableTransferOwnership,
 	ownableAcceptOwnership,
+	// ERC-4626 vault templates must precede Aave ones because Aave's
+	// withdraw/supply/borrow templates match on functionName alone while
+	// these check the specific ERC-4626 signatures/selectors.
+	erc4626Deposit,
+	erc4626Redeem,
+	erc4626Withdraw,
 	aaveBorrow,
 	aaveRepay,
 	aaveSupply,
